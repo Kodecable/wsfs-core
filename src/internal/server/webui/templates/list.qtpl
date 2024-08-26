@@ -1,0 +1,75 @@
+{% import (
+    "net/url"
+    "strings"
+    "time"
+    "github.com/dustin/go-humanize"
+) %}
+
+{% code
+type FileInfo struct {
+	Name  string
+    IsDir bool
+    Size  int64
+	MTime time.Time
+}
+%}
+
+{% func List(cacheId string, paths []string, files []FileInfo, showDirSize bool) %}<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <title>{% if len(paths) != 1 %}{%s paths[len(paths)-1] %} - {% endif %}WSFS WebUI</title>
+    <link rel="shortcut icon" href="/img/favicon.ico?webui-assets={%s= cacheId %}">
+    <script src="/js/list.js?webui-assets={%s= cacheId %}"></script>
+    <link rel="stylesheet" type="text/css" href="/css/main.css?webui-assets={%s= cacheId %}">
+    <link rel="stylesheet" type="text/css" href="/css/list.css?webui-assets={%s= cacheId %}">
+</head>
+
+<body>
+    <main class="page column">
+        <div class="path">{% stripspace %}
+            {% for i, path := range paths %}
+                <a href="{%s= strings.Repeat("../", len(paths)-i-1) %}">{%s path %}</a>
+            {% endfor %}
+            {% endstripspace %}
+        </div>
+        <div class="row">
+		    <button type="button" onclick="OpenFileInputer()">
+			    <span class="icon uploadFileIcon"></span><div data-t>Upload</div>
+		    </button>
+		    <button type="button" onclick="NewFolder()">
+			    <span class="icon newFolderIcon"></span><div data-t>New folder</div>
+		    </button>
+	    </div>
+        <table id="files">
+            <thead>
+            <th id="nameHeader" data-t>Name</th>
+            <th id="sizeHeader" data-t>Size</th>
+            <th id="timeHeader" data-t>Modification Time</th>{% stripspace %}
+            </thead>
+            <tbody>
+            {% for _, file := range files %}
+            {% newline %}{% endstripspace %}            {% stripspace %}
+            <tr {% if file.IsDir %}{% space %}class="dirItem"{% endif %}>
+                <td><div><a href="{%s= (&url.URL{Path: file.Name}).EscapedPath() %}{% if file.IsDir%}/{% endif %}">{%s file.Name %}</a></div></td>
+                {% comment %}
+                    Quicktemplate did provided %u to escape URL. But it will escape ' ' to '+' in path.
+                    This way won't.
+                    Golang std http server do not decode '+' to ' ' in path.
+                {% endcomment %}
+                <td>{% if !file.IsDir || showDirSize %}{%s= humanize.IBytes(uint64(file.Size)) %}{% endif %}</td>
+                <td>{%s= file.MTime.Format("2006-01-02 15:04:05") %}</td>
+            </tr>
+            {% endfor %}
+            {% endstripspace %}
+            </tbody>
+        </table>
+    </main>
+    <input type='file' id='FileInputer' style='opacity:0' onchange='UploadFiles()' multiple />
+</body>
+<script src="/js/i18n.js?webui-assets={%s= cacheId %}"></script>
+
+</html>
+{% endfunc %}

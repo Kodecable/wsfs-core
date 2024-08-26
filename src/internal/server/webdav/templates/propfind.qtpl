@@ -1,0 +1,56 @@
+{% import (
+    "net/url"
+    "net/http"
+    "os"
+) %}
+
+{% stripspace %}
+
+{% func PropfindBegin() %}
+<?xml version="1.0" encoding="UTF-8"?>
+<D:multistatus xmlns:D="DAV:">
+{% endfunc %}
+
+{% func PropfindEnd() %}
+</D:multistatus>
+{% endfunc %}
+
+{% func PropfindOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool) %}
+<D:response>
+    <D:href>{%s= (&url.URL{Path: name}).EscapedPath() %}</D:href>
+    {% comment %}
+        Quicktemplate did provided %u to escape URL. But it will escape '/' to '%2F'.
+        This way used by golang/x/webdav won't.
+        Not sure which one is right, but I guess golang/x/webdav more normatively in webdav protocal.
+    {% endcomment %}
+    <D:propstat>
+        <D:prop>
+            <D:resourcetype>{% if fi.IsDir() %}<D:collection />{% endif %}</D:resourcetype>
+            {% if !fi.IsDir() %}
+                <D:getcontenttype>
+                    {% if enableContentTypeProbe %}
+                        {%s fileContentType(name) %}
+                    {% else %}
+                        application/octet-stream
+                    {% endif %}
+                </D:getcontenttype>
+                <D:getcontentlength>{%dl fi.Size() %}</D:getcontentlength>
+            {% endif %}
+            <D:displayname>{%s fileDisplayName(name) %}</D:displayname>
+            <D:getlastmodified>{%s= fi.ModTime().UTC().Format(http.TimeFormat) %}</D:getlastmodified>
+        </D:prop>
+        <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+</D:response>
+{% endfunc %}
+
+{% func PropfindBADResponse(name string, str string) %}
+<D:response>
+    <D:href>{%u name %}</D:href>
+    <D:propstat>
+        <D:status>{%s str %}</D:status>
+    </D:propstat>
+</D:response>
+{% endfunc %}
+
+{% endstripspace %}

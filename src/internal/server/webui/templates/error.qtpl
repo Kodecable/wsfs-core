@@ -1,0 +1,19 @@
+{% func Error(cacheId string, status int, msg string) %}<!DOCTYPE html>
+<html lang="zh-cmn-Hans">
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <title>{%d status %} - WSFS WebUI</title>
+    <link rel="shortcut icon" href="/img/favicon.ico?webui-assets={%s= cacheId %}">
+    <script src="/js/main.js?webui-assets={%s= cacheId %}"></script>
+    <link rel="stylesheet" type="text/css" href="/css/main.css?webui-assets={%s= cacheId %}">
+</head>
+<body>
+<main class="dialog column">
+	<h1>{%d status %}</h1>
+    <p>{%s msg %}</p>
+	<a style="text-align: right" href="/" data-t>Return to root</a>
+</main>
+</body>
+<script src="/js/i18n.js?webui-assets={%s= cacheId %}"></script>
+</html>{% endfunc %}
