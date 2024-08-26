@@ -1,0 +1,9 @@
+build
+release
+run
+.vscode
+*.autosave
+.DS_Store
+.directory
+.*.swp
+__debug_bin*

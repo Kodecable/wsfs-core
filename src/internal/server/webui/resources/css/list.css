@@ -1,0 +1,192 @@
+.path {
+    height: 24px;
+    padding: 6px 16px;
+    overflow: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+
+    ::-webkit-scrollbar {
+        display: none;
+    }
+
+    flex-grow: 1;
+    background-color: var(--component-background);
+}
+
+.path>a {
+    display: inline-block;
+    margin: auto;
+    height: 16px;
+}
+
+.path>a::after {
+    content: "/";
+}
+
+#files {
+    display: block;
+    width: 100%;
+}
+
+#files>thead>tr>th:nth-child(1) {
+    padding-left: 36px;
+    width: 99%;
+}
+
+@media (max-width: 800px) {
+    #files>thead {
+        display: block;
+        width: 100%;
+    }
+
+    #files>thead>tr>th:nth-child(1) {
+        width: 100%;
+    }
+}
+
+#files>tbody>tr {
+    transition: all 0.2s linear;
+}
+
+#files>tbody>tr:hover {
+    background-color: var(--focus);
+}
+
+#files>tbody>tr>td {
+    padding-right: 6px;
+}
+
+#files>tbody>tr>td:nth-child(1) {
+    width: 99%;
+}
+
+#files>tbody>tr>td:nth-child(1)>div {
+    position: relative;
+    height: 36px;
+    width: 100%;
+}
+
+#files>tbody>tr>td:nth-child(1)>div>a:hover {
+    text-decoration: none;
+}
+
+#files>tbody>tr>td:nth-child(1)>div>a {
+    position: absolute;
+    width: 100%;
+    top: 0;
+    left: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    display: block;
+}
+
+#files>tbody>tr>td:nth-child(1)>div>a::before {
+    content: "";
+    display: inline-block;
+    vertical-align: middle;
+    width: 36px;
+    height: 36px;
+    background-size: 24px;
+    background-position: center 40%;
+    /* lift up a bit to align with with text */
+    background-repeat: no-repeat;
+    flex-shrink: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M80-160v-640h334l66.667 66.666H880v66.667H146.666v440.001l100-373.335H940L820.667-160H80Z'/%3E%3C/svg%3E");
+}
+
+#files>tbody>tr:not(.dirItem)>td:nth-child(1)>div>a::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M160-80v-800h414l226 226v574H160Zm380.667-542.667h192.667L540.667-813.334v190.667Z'/%3E%3C/svg%3E");
+}
+
+@media (prefers-color-scheme: dark) {
+    #files>tbody>tr>td:nth-child(1)>div>a::before {
+        filter: invert(.75);
+    }
+}
+
+#files>tbody>tr>td:nth-child(2) {
+    font-family: Consolas, monospace;
+    width: 1px;
+    white-space: nowrap;
+    min-width: 6em;
+}
+
+#files>tbody>tr>td:nth-child(3) {
+    font-family: Consolas, monospace;
+    width: 1px;
+    white-space: nowrap;
+}
+
+@media (max-width: 800px) {
+    #files>thead>tr>th:not(:nth-child(1)) {
+        display: none;
+    }
+
+    #files>tbody>tr>td:not(:nth-child(1)) {
+        display: none;
+    }
+
+    #files>tbody>tr>td:nth-child(1) {
+        width: calc(100vw - 64px);
+        display: inline-block;
+        padding: 0;
+    }
+}
+
+.SortAsc::after {
+    display: inline-block;
+    font-weight: bold;
+    content: ">";
+    margin: 4px;
+    transform: rotate(90deg);
+}
+
+.SortDes::after {
+    display: inline-block;
+    font-weight: bold;
+    content: ">";
+    margin: 4px;
+    transform: rotate(-90deg);
+}
+
+#PopupDialogBackground {
+    display: flex;
+    z-index: 1;
+    background-color: #3F3F3F77;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+#ProgrssTitle {
+    text-wrap: nowrap;
+}
+
+#ProgressDesc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-wrap: nowrap;
+}
+
+#Progress {
+    height: 36px;
+    width: 100%;
+    background-color: var(--component-background);
+}
+
+#ProgressValue {
+    height: 100%;
+    width: 0%;
+    background-color: var(--text);
+}
+
+.newFolderIcon {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M80-160v-640h334l66.667 66.666H880V-160H80Zm473.333-160h66.666v-86.667h86.667v-66.666h-86.667V-560h-66.666v86.667h-86.667v66.666h86.667V-320Z'/%3E%3C/svg%3E");
+}
+
+.uploadFileIcon {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M448-201.333h66.667v-189.668l76 76.001 46.666-47L480-516.667l-156 156L371-314l77-77.001v189.668ZM160-80v-800h414l226 226v574H160Zm380.667-542.667h192.667L540.667-813.334v190.667Z'/%3E%3C/svg%3E");
+}

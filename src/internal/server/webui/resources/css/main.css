@@ -1,0 +1,199 @@
+:root {
+    --background: #ffffff;
+    --body-background: #f4f4f4;
+    --text: #000000;
+    --focus: #efefef;
+    --component-background: #F9F9F9;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background: #242424;
+        --body-background: #000000;
+        --text: #bfbfbf;
+        --focus: #2f2f2f;
+        --component-background: #303030;
+    }
+}
+
+body {
+    background: var(--body-background);
+    min-height: 100%;
+    font-family: Microsoft Yahei, MS Gothic, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, PingFang SC, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif;
+    font-size: 16px;
+    margin: 0;
+}
+
+main {
+    background: var(--background);
+    margin: 0;
+    padding: 0;
+    box-shadow: 0px 0px 24px 0px rgba(0, 0, 0, 0.18);
+}
+
+.page {
+    padding: 32px;
+    width: 736px;
+    margin: 32px auto;
+    overflow-x: hidden;
+}
+
+.dialog {
+    background: var(--background);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 450px;
+    padding: 32px;
+}
+
+@media (max-width: 800px) {
+    body {
+        background: var(--background);
+    }
+
+    main {
+        box-shadow: none;
+    }
+
+    .dialog,
+    .page {
+        width: calc(100% - 64px);
+        margin: 0;
+    }
+}
+
+.column {
+    display: flex;
+    gap: 16px;
+    flex-direction: column;
+}
+
+.row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+}
+
+.row-separation {
+    justify-content: space-between;
+}
+
+.rrow {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+}
+
+h1 {
+    color: var(--text);
+    font-size: 32px;
+    margin: 0px;
+}
+
+h2 {
+    color: var(--text);
+    font-size: 28px;
+    margin: 0px;
+}
+
+h3 {
+    color: var(--text);
+    font-size: 24px;
+    margin: 0px;
+}
+
+a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+ul {
+    margin: 0px;
+}
+
+p {
+    color: var(--text);
+    margin: 0px;
+}
+
+label {
+    color: var(--text);
+    margin: 0px;
+}
+
+a:hover {
+    color: var(--text);
+    text-decoration: underline;
+}
+
+svg {
+    fill: currentColor;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+td {
+    color: var(--text);
+}
+
+th {
+    color: var(--text);
+    text-align: left;
+    white-space: nowrap;
+}
+
+tr {
+    height: 36px;
+}
+
+thead {
+    border-bottom: #e3e3e3 1px solid;
+}
+
+@media (prefers-color-scheme: dark) {
+    thead {
+        border-bottom: #686868 1px solid;
+    }
+}
+
+button {
+    border: 0;
+    margin: 0;
+    padding: 0 8px 0 0;
+    background: transparent;
+    cursor: pointer;
+	transition: all 0.2s linear;
+    font-size: 16px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    color: var(--text);
+}
+
+button:hover {
+    background: var(--focus);
+}
+
+.icon {
+    display: inline-block;
+    width: 36px;
+    height: 36px;
+    background-size: 24px;
+    background-position: center;
+    background-repeat: no-repeat;
+    flex-shrink: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+    .icon {
+        filter: invert(.75);
+    }
+}
