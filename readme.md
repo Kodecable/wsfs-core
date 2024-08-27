@@ -22,7 +22,7 @@ The output will be located in the `Build` directory.
 
 WSFS-Core is a single executable file, which is all you need.
 
-Pre-built binaries and software packages are also available.
+Pre-built binaries and packages are also available.
 
 ## Usage
 
@@ -32,12 +32,12 @@ You can learn command usage by:
 $ wsfs --help
 ```
 
-Server config file exmaple is also [available](https://github.com/Kodecable/wsfs-core/blob/main/doc/server-config-exmaple.toml)
+Server config file exmaple is also [available](https://github.com/Kodecable/wsfs-core/blob/main/doc/server-config-exmaple.toml).
 
-In android, you may need root and run command like this to mount WSFS
+In android, you may need root and run command like this to mount WSFS.
 
 ```shell
-$ wsfs mount "wsfs://USERNAME:PASSWORD@HOST:PORT/PATH" MOUNTPOINT --uid 0 --gid 0 --nobody-uid 9999 --nobody-gid 9999 --direct-mount
+$ wsfs mount "wsfs://USERNAME:PASSWORD@HOST:PORT/?wsfs" MOUNTPOINT --uid 0 --gid 0 --nobody-uid 9999 --nobody-gid 9999 --direct-mount
 ```
 
 ## License
