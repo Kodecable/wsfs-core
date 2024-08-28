@@ -4,7 +4,7 @@
 
 WSFS-Core is an implementation of WSFS which designed to provide a lightweight, nearly complete remote-mounting experience.
 
-Written in pure Go, WSFS-Core can serve WSFS on almost all Go-supported operating systems and architectures. It can also mounting WSFS on Windows, Linux (including Android), *BSD, and Darwin. (Currently, It is recommended to run WSFS-Core on Linux.)
+Written in pure Go, WSFS-Core can serve WSFS on almost all Go-supported operating systems and architectures. It can also mounting WSFS on Windows, Linux (including Android) and Darwin. (Currently, It is recommended to run WSFS-Core on Linux.)
 
 WSFS-Core can also serve a limited WebDAV and a simple WebUI when serve WSFS.
 
