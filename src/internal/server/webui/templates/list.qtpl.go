@@ -97,10 +97,10 @@ func StreamList(qw422016 *qt422016.Writer, cacheId string, paths []string, files
         </div>
         <div class="row">
 		    <button type="button" onclick="OpenFileInputer()">
-			    <span class="icon uploadFileIcon"></span><div>上传文件</div>
+			    <span class="icon uploadFileIcon"></span><div data-t>Upload</div>
 		    </button>
 		    <button type="button" onclick="NewFolder()">
-			    <span class="icon newFolderIcon"></span><div>新建文件夹</div>
+			    <span class="icon newFolderIcon"></span><div data-t>New folder</div>
 		    </button>
 	    </div>
         <table id="files">

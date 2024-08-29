@@ -35,63 +35,58 @@ func StreamError(qw422016 *qt422016.Writer, cacheId string, status int, msg stri
 	qw422016.N().S(cacheId)
 //line internal/server/webui/templates/error.qtpl:7
 	qw422016.N().S(`">
-    <script src="/js/main.js?webui-assets=`)
-//line internal/server/webui/templates/error.qtpl:8
-	qw422016.N().S(cacheId)
-//line internal/server/webui/templates/error.qtpl:8
-	qw422016.N().S(`"></script>
     <link rel="stylesheet" type="text/css" href="/css/main.css?webui-assets=`)
-//line internal/server/webui/templates/error.qtpl:9
+//line internal/server/webui/templates/error.qtpl:8
 	qw422016.N().S(cacheId)
-//line internal/server/webui/templates/error.qtpl:9
+//line internal/server/webui/templates/error.qtpl:8
 	qw422016.N().S(`">
 </head>
 <body>
 <main class="dialog column">
 	<h1>`)
-//line internal/server/webui/templates/error.qtpl:13
+//line internal/server/webui/templates/error.qtpl:12
 	qw422016.N().D(status)
-//line internal/server/webui/templates/error.qtpl:13
+//line internal/server/webui/templates/error.qtpl:12
 	qw422016.N().S(`</h1>
     <p>`)
-//line internal/server/webui/templates/error.qtpl:14
+//line internal/server/webui/templates/error.qtpl:13
 	qw422016.E().S(msg)
-//line internal/server/webui/templates/error.qtpl:14
+//line internal/server/webui/templates/error.qtpl:13
 	qw422016.N().S(`</p>
-	<a style="text-align: right" href="/">回到根目录</a>
+	<a style="text-align: right" href="/" data-t>Return to root</a>
 </main>
 </body>
 <script src="/js/i18n.js?webui-assets=`)
-//line internal/server/webui/templates/error.qtpl:18
+//line internal/server/webui/templates/error.qtpl:17
 	qw422016.N().S(cacheId)
-//line internal/server/webui/templates/error.qtpl:18
+//line internal/server/webui/templates/error.qtpl:17
 	qw422016.N().S(`"></script>
 </html>`)
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 }
 
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 func WriteError(qq422016 qtio422016.Writer, cacheId string, status int, msg string) {
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 	qw422016 := qt422016.AcquireWriter(qq422016)
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 	StreamError(qw422016, cacheId, status, msg)
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 	qt422016.ReleaseWriter(qw422016)
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 }
 
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 func Error(cacheId string, status int, msg string) string {
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 	qb422016 := qt422016.AcquireByteBuffer()
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 	WriteError(qb422016, cacheId, status, msg)
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 	qs422016 := string(qb422016.B)
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 	qt422016.ReleaseByteBuffer(qb422016)
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 	return qs422016
-//line internal/server/webui/templates/error.qtpl:19
+//line internal/server/webui/templates/error.qtpl:18
 }
