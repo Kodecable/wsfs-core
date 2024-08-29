@@ -4,12 +4,12 @@ let GLocale = {}
 
 function I18nText(text) {
     let ttext = GLocale[text]
-    return Exists(ttext) ? ttext : text
+    return ttext != undefined ? ttext : text
 }
 
 function I18nElement(element) {
     let ttext = GLocale[element.innerHTML]
-    if (Exists(ttext)) element.innerHTML = ttext
+    if (ttext != undefined) element.innerHTML = ttext
 }
 
 {
