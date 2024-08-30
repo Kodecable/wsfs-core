@@ -17,13 +17,13 @@ var (
 )
 
 type session struct {
-	ActiveDt uint32 // to mark unactived session
-	ConnLock sync.Mutex
-	handler  *Handler
-	storage  *storage.Storage
-	fds      sync.Map
-	fdLast   atomic.Uint32
-	wg       sync.WaitGroup
+	inactiveCount uint32 // to mark unactived session
+	ConnLock      sync.Mutex
+	handler       *Handler
+	storage       *storage.Storage
+	fds           sync.Map
+	fdLast        atomic.Uint32
+	wg            sync.WaitGroup
 }
 
 func newSession(handler *Handler, storage *storage.Storage) *session {
@@ -54,7 +54,7 @@ func (s *session) takeConn(conn *websocket.Conn) {
 
 func (s *session) onLoopExit() {
 	log.Info().Msg("Session hibernated")
-	s.ActiveDt = 0
+	s.inactiveCount = 0
 	s.ConnLock.Unlock()
 }
 

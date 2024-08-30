@@ -120,7 +120,7 @@ func NewServer(c *config.Server) (s *Server, err error) {
 	if err != nil {
 		return
 	}
-	go s.wsfsHandler.StopDeactivedSession()
+	go s.wsfsHandler.CollecteInactivedSession()
 
 	return
 }

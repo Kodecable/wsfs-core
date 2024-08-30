@@ -20,8 +20,10 @@ var (
 )
 
 const (
-	sessionIdMinLength = 13
-	sessionIdAlphabet  = "Lb1VKhJAxiFuNezc2fvPMns7TakWrCqmUDj4R5twBpH9oQyZXdEg863SGY"
+	sessionIdMinLength        = 13
+	sessionIdAlphabet         = "Lb1VKhJAxiFuNezc2fvPMns7TakWrCqmUDj4R5twBpH9oQyZXdEg863SGY"
+	sessionInactiveScanPeriod = 3 * time.Minute
+	sessionInactiveMaxCount   = 5
 )
 
 type Suser struct {
@@ -54,9 +56,9 @@ func NewHandler(errorPage util.ErrorPageFunc, c *config.Server) (h Handler, err 
 	return
 }
 
-func (h *Handler) StopDeactivedSession() {
+func (h *Handler) CollecteInactivedSession() {
 	for {
-		time.Sleep(3 * time.Minute)
+		time.Sleep(sessionInactiveScanPeriod)
 		h.sessions.Range(func(key, value any) bool {
 			s := value.(*session)
 			if s == nil {
@@ -64,9 +66,9 @@ func (h *Handler) StopDeactivedSession() {
 			}
 
 			if s.ConnLock.TryLock() {
-				s.ActiveDt += 1
+				s.inactiveCount += 1
 
-				if s.ActiveDt >= 5 {
+				if s.inactiveCount >= sessionInactiveMaxCount {
 					h.delSession(key.(uint64))
 					return true // continue
 				}
