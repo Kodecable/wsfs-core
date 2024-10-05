@@ -17,7 +17,7 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 
 	// winfsp-fuse opts
 	// https://github.com/winfsp/winfsp/blob/2bf9a6c16e3bba46be6ec4ade6d7c70a262d27da/src/dll/fuse/fuse.c#L628
-	opts := []string{"-o", "uid=-1,gid=-1", "-o", "-o dothidden"}
+	opts := []string{"-o", "uid=-1,gid=-1", "-o", "dothidden"}
 
 	if buildinfo.IsDebug() {
 		opts = append(opts, "-d")
@@ -25,7 +25,7 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 
 	if opt.MasqueradeAsNtfs {
 		opts = append(opts, "-o")
-		opts = append(opts, "FileSystemName=NTFS")
+		opts = append(opts, "ExactFileSystemName=NTFS")
 	} else {
 		opts = append(opts, "-o")
 		opts = append(opts, "FileSystemName=WSFS")
