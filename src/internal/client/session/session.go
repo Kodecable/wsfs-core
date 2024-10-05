@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -11,6 +12,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 )
+
+type ReDialFunc func() (*websocket.Conn, error)
 
 const (
 	dataPerMsg = 4096
@@ -43,19 +46,17 @@ func msg(vals ...any) *util.Buffer {
 }
 
 type Session struct {
-	reDial       func() *websocket.Conn
-	reusmeId     string
+	exitErr      error
+	exitWg       sync.WaitGroup
+	reDial       ReDialFunc
 	writeRequest chan *util.Buffer
 	readRequests [256]chan *util.Buffer
 	clientMarks  [256]sync.Mutex
 	lastMark     atomic.Uint32
 }
 
-func NewSession(reusmeId string, reDial func() *websocket.Conn) (*Session, error) {
-	s := &Session{reusmeId: reusmeId, reDial: reDial}
-	if s.reusmeId == "" {
-		log.Warn().Msg("Session resume not available")
-	}
+func NewSession(reDial ReDialFunc) (*Session, error) {
+	s := &Session{reDial: reDial}
 
 	s.writeRequest = make(chan *util.Buffer)
 	for i := range s.readRequests {
@@ -63,6 +64,11 @@ func NewSession(reusmeId string, reDial func() *websocket.Conn) (*Session, error
 	}
 
 	return s, nil
+}
+
+func (s *Session) exit(err error) {
+	s.exitErr = err
+	s.exitWg.Done()
 }
 
 func (s *Session) newClientMark() uint8 {
@@ -77,7 +83,18 @@ func (s *Session) newClientMark() uint8 {
 	return v
 }
 
-func (s *Session) TakeConn(conn *websocket.Conn) {
+func (s *Session) Start(conn *websocket.Conn) {
+	s.exitErr = nil
+	s.exitWg.Add(1)
+	s.takeConn(conn)
+}
+
+func (s *Session) Wait() error {
+	s.exitWg.Wait()
+	return s.exitErr
+}
+
+func (s *Session) takeConn(conn *websocket.Conn) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go s.writeLoop(conn, ctx, cancel)
@@ -226,14 +243,21 @@ func (s *Session) errorMode() {
 
 	if s.reDial == nil {
 		util.Unused(cancel)
-		log.Warn().Msg("Connection resume not configed")
+		log.Warn().Msg("Connection redial not configed")
+		s.exit(errors.New("recovery failed"))
 		return
 	}
-	conn := s.reDial()
-	log.Warn().Msg("Reconnected to server")
+	log.Info().Msg("Try recovery session")
+	conn, err := s.reDial()
+	if err != nil {
+		util.Unused(cancel)
+		s.exit(err)
+		return
+	}
+	log.Info().Msg("Reconnected to server")
 	cancel()
 	wg.Wait()
 	log.Warn().Msg("Error mode deactivated")
 
-	s.TakeConn(conn)
+	s.takeConn(conn)
 }
