@@ -11,6 +11,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	ReDialMaxCount = 16
+)
+
 type MountOption struct {
 	AttrTimeout  time.Duration
 	EntryTimeout time.Duration
@@ -42,7 +46,6 @@ func dial(url, username, password, resumeId string) (conn *websocket.Conn, rsp *
 
 	conn, rsp, err = dialer.Dial(url, header)
 	if err != nil {
-		log.Error().Err(err).Msg("Uable to connect to server")
 		return
 	}
 	if conn.Subprotocol() != "WSFS/draft.1" {
@@ -53,28 +56,57 @@ func dial(url, username, password, resumeId string) (conn *websocket.Conn, rsp *
 	return
 }
 
+func reDialFunc(url, username, password, resumeId string) func() (*websocket.Conn, error) {
+	if resumeId == "" {
+		return func() (*websocket.Conn, error) { return nil, errors.New("server do not support session resume") }
+	}
+	return func() (*websocket.Conn, error) {
+		for range ReDialMaxCount {
+			conn, rsp, err := dial(url, username, password, resumeId)
+			if err == nil {
+				return conn, nil
+			}
+
+			if rsp != nil {
+				switch rsp.StatusCode {
+				case http.StatusUnauthorized:
+					return nil, errors.New("http unauthorized")
+				case http.StatusBadRequest:
+					return nil, errors.New("this session can not be resumed")
+				case http.StatusPreconditionFailed:
+					log.Info().Msg("Waiting for session to be resumable")
+				default:
+					log.Error().Err(err).Msg("Uable to connect to server")
+				}
+			} else {
+				log.Error().Err(err).Msg("Uable to connect to server")
+			}
+
+			time.Sleep(10 * time.Second)
+		}
+		return nil, errors.New("too many retries")
+	}
+}
+
 func Mount(mountpoint string, url string, username, password string, opt MountOption) error {
 	conn, rsp, err := dial(url, username, password, "")
 	if err != nil {
+		log.Error().Err(err).Msg("Uable to connect to server")
 		return err
 	}
 
 	resumeId := rsp.Header.Get("X-Wsfs-Resume")
-	s, err := session.NewSession(resumeId, func() *websocket.Conn {
-		for {
-			conn, _, err := dial(url, username, password, resumeId)
-			if err == nil {
-				return conn
-			}
-			time.Sleep(10 * time.Second)
-		}
-	})
+	if resumeId == "" {
+		log.Warn().Msg("Server do not support session resume")
+	}
+
+	s, err := session.NewSession(reDialFunc(url, username, password, resumeId))
 	if err != nil {
 		log.Error().Err(err).Msg("Uable to create session")
 		return err
 	}
 
-	s.TakeConn(conn)
+	s.Start(conn)
 
 	err = fuseMount(mountpoint, s, opt)
 	if err != nil {

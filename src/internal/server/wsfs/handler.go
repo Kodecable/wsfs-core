@@ -83,7 +83,7 @@ func (h *Handler) CollecteInactivedSession() {
 func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, st *storage.Storage) {
 	if !websocket.IsWebSocketUpgrade(req) {
 		if req.Method == "GET" {
-			h.errorPage(rsp, req, http.StatusBadRequest, "WSFS Endpoint") //TODO: error msg
+			h.errorPage(rsp, req, http.StatusBadRequest, "This is WSFS endpoint.")
 		} else {
 			rsp.WriteHeader(http.StatusBadRequest)
 		}
@@ -93,12 +93,12 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, st *stor
 	var id uint64
 	var idstr = ""
 	if resumeHeader := req.Header.Get("X-Wsfs-Resume"); resumeHeader != "" {
-		result := h.ider.Decode(resumeHeader)
-		if len(result) != 0 {
+		if result := h.ider.Decode(resumeHeader); len(result) == 1 {
+			id = result[0]
+		} else {
 			rsp.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		id = result[0]
 	} else {
 		var err error
 		id = h.newSession(st)
@@ -109,6 +109,7 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, st *stor
 			return
 		}
 	}
+
 	session := h.getSession(id)
 	if session == nil {
 		rsp.WriteHeader(http.StatusBadRequest)

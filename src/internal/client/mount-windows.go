@@ -7,6 +7,7 @@ import (
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/client/windows"
 
+	"github.com/rs/zerolog/log"
 	"github.com/winfsp/cgofuse/fuse"
 )
 
@@ -32,6 +33,14 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 
 	opts = append(opts, "-o")
 	opts = append(opts, "volname="+opt.VolumeLabel)
+
+	go func() {
+		err := session.Wait()
+		if err != nil {
+			log.Error().Err(err).Msg("Session exit with error")
+		}
+		host.Unmount()
+	}()
 
 	host.Mount(mountpoint, opts)
 	return nil

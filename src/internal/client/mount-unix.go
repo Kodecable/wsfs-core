@@ -31,7 +31,7 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 			Debug:             buildinfo.IsDebug(),
 			DirectMount:       !opt.UseFusemount,
 			DirectMountStrict: !opt.UseFusemount,
-			FsName:            opt.FuseFsName, // First column in "df -T": original dir
+			FsName:            opt.FuseFsName, // First column in "df -T"
 			Name:              "wsfs",         // Second column in "df -T" will be shown as "fuse." + Name
 		},
 	}
@@ -49,10 +49,19 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 	}
 	log.Warn().Str("Mountpoint", mountpoint).Msg("Mounted")
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
+
 	go func() {
-		<-c
+		<-sigc
+		server.Unmount()
+	}()
+
+	go func() {
+		err := session.Wait()
+		if err != nil {
+			log.Error().Err(err).Msg("Session exit with error")
+		}
 		server.Unmount()
 	}()
 

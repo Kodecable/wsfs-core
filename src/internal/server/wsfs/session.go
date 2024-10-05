@@ -17,7 +17,7 @@ var (
 )
 
 type session struct {
-	inactiveCount uint32 // to mark unactived session
+	inactiveCount uint32
 	ConnLock      sync.Mutex
 	handler       *Handler
 	storage       *storage.Storage
