@@ -1,3 +1,5 @@
+//go:build windows || unix
+
 package client
 
 import (
@@ -12,7 +14,8 @@ import (
 )
 
 const (
-	ReDialMaxCount = 16
+	sessionRecoveryRetryMaxCount = 10
+	sessionRecoveryRetrySeconds  = 5
 )
 
 type MountOption struct {
@@ -61,7 +64,7 @@ func reDialFunc(url, username, password, resumeId string) func() (*websocket.Con
 		return func() (*websocket.Conn, error) { return nil, errors.New("server do not support session resume") }
 	}
 	return func() (*websocket.Conn, error) {
-		for range ReDialMaxCount {
+		for range sessionRecoveryRetryMaxCount {
 			conn, rsp, err := dial(url, username, password, resumeId)
 			if err == nil {
 				return conn, nil
@@ -82,7 +85,7 @@ func reDialFunc(url, username, password, resumeId string) func() (*websocket.Con
 				log.Error().Err(err).Msg("Uable to connect to server")
 			}
 
-			time.Sleep(10 * time.Second)
+			time.Sleep(sessionRecoveryRetrySeconds * time.Second)
 		}
 		return nil, errors.New("too many retries")
 	}
