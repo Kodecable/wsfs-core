@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"wsfs-core/buildinfo"
@@ -57,13 +58,17 @@ var QuickServeCmd = &cobra.Command{
 			if _, err := strconv.ParseUint(arg, 10, 16); err == nil {
 				serverConfig.Listener.Address = ":" + arg
 			} else {
+				if ok, _ := regexp.MatchString(`.*:?\/\/`, arg); !ok {
+					arg = "//" + arg
+				}
+
 				parsedUrl, err := url.Parse(arg)
 				if err != nil {
 					exitWithError(2, "Parse arg failed", err)
 				}
 
 				switch strings.ToLower(parsedUrl.Scheme) {
-				case "http", "tcp", "":
+				case "http", "wsfs", "tcp", "":
 					serverConfig.Listener.Network = "tcp"
 				case "unix":
 					serverConfig.Listener.Network = "unix"
