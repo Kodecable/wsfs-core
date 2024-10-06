@@ -22,6 +22,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var cacheIdRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
 type Server struct {
 	httpServer http.Server
 	errorChan  chan error
@@ -47,7 +49,7 @@ func NewServer(c *config.Server) (s *Server, err error) {
 		httpServer: http.Server{},
 		errorChan:  make(chan error),
 		reloaded:   false,
-		cacheId:    util.RandomString(8, util.DefaultRandomStringRunes),
+		cacheId:    util.RandomString(8, cacheIdRunes),
 	}
 
 	storages := map[string]*storage.Storage{}

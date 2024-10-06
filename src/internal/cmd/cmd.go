@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"wsfs-core/internal/cmd/hash"
+	quickserve "wsfs-core/internal/cmd/quick-serve"
 	"wsfs-core/internal/cmd/serve"
 	"wsfs-core/internal/cmd/version"
 
@@ -20,6 +21,7 @@ func Execute() error {
 
 func init() {
 	rootCmd.AddCommand(serve.ServeCmd)
+	rootCmd.AddCommand(quickserve.QuickServeCmd)
 	rootCmd.AddCommand(version.VersionCmd)
 	rootCmd.AddCommand(hash.HashCmd)
 }
