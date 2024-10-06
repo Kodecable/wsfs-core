@@ -1,6 +1,7 @@
 package wsfs
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sync"
@@ -40,6 +41,8 @@ type Handler struct {
 	sessions    sync.Map
 	sessionLast atomic.Uint64
 	suser       Suser
+
+	Stop context.CancelFunc
 }
 
 func NewHandler(errorPage util.ErrorPageFunc, c *config.Server) (h Handler, err error) {
@@ -57,9 +60,15 @@ func NewHandler(errorPage util.ErrorPageFunc, c *config.Server) (h Handler, err 
 }
 
 func (h *Handler) CollecteInactivedSession() {
+	var ctx context.Context
+	ctx, h.Stop = context.WithCancel(context.Background())
+
 	for {
 		time.Sleep(sessionInactiveScanPeriod)
+		existsSession := false
 		h.sessions.Range(func(key, value any) bool {
+			existsSession = true
+
 			s := value.(*session)
 			if s == nil {
 				return true // continue
@@ -77,6 +86,9 @@ func (h *Handler) CollecteInactivedSession() {
 			}
 			return true
 		})
+		if ctx.Err() != nil && !existsSession {
+			return
+		}
 	}
 }
 
