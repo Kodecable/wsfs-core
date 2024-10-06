@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 	"wsfs-core/buildinfo"
@@ -38,10 +39,16 @@ var MountCmd = &cobra.Command{
 		setUids()
 		util.SetupZerolog(noLogTime, logLevel)
 
-		inputedEndpoint, err := url.Parse(args[0])
+		urlArg := args[0]
+		if ok, _ := regexp.MatchString(`.*:?\/\/`, urlArg); !ok {
+			urlArg = "//" + urlArg
+		}
+
+		inputedEndpoint, err := url.Parse(urlArg)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Parse endpoint url failed")
 			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
 
 		endpoint := url.URL{
