@@ -179,6 +179,7 @@ func (s *Server) Reload(c *config.Server) (*Server, error) {
 	newServer.reloaded = true
 	newServer.errorChan = s.errorChan
 
+	s.wsfsHandler.Stop()
 	err = s.httpServer.Shutdown(context.Background())
 	if err != nil {
 		s.errorChan <- err

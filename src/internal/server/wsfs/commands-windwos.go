@@ -22,6 +22,5 @@ func (s *session) cmdFsStat(clientMark uint8, writeCh chan<- *util.Buffer, lpath
 	var free, total, avail uint64
 	windows.GetDiskFreeSpaceEx(str, &free, &total, &avail)
 
-	//fake data
 	writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, free, total, avail)
 }
