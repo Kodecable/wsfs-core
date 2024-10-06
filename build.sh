@@ -104,14 +104,20 @@ clean_hooks(){
 
 build(){
     cd "$BasePath/src"
+    ENVVAR="CGO_ENABLED=0 GOOS=$1"
+    case $2 in
+        amd64*) ENVVAR="$ENVVAR GOARCH=amd64 GOAMD64=${2:5}" ;;
+        *) ENVVAR="$ENVVAR GOARCH=$2" ;;
+    esac
+    
     EXENAME="../build/$BuildName-$1-$2"
     if [ "$1" = "windows" ]; then
         EXENAME="$EXENAME.exe"
     fi
     if [ "$BuildMode" == "release" ]; then
-        CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -trimpath -ldflags "-s -w" -o "$EXENAME"
+        sh -c "${ENVVAR} go build -trimpath -ldflags '-s -w' -o ${EXENAME}"
     else
-        CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -o "$EXENAME"
+        sh -c "${ENVVAR} go build -o ${EXENAME}"
     fi
     echo "build $1 $2 done"
 }
@@ -121,12 +127,16 @@ buildAllArch(){
         linux)
             build linux 386
             build linux amd64
+            build linux amd64v3
             build linux arm
             build linux arm64
             ;;
         windows)
             build windows 386
             build windows amd64
+            build windows amd64v3
+            build windows arm
+            build windows arm64
             ;;
         *)
             echo "You need to specify a specific arch for this os"
