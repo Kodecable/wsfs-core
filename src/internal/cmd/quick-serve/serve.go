@@ -90,17 +90,21 @@ var QuickServeCmd = &cobra.Command{
 					serverConfig.Users = append(serverConfig.Users, config.User{Name: username, SecretHash: string(hash), Storage: storageId})
 				}
 
-				hostname := parsedUrl.Hostname()
-				if strings.Contains(hostname, ":") {
-					// it's an ipv6 address
-					hostname = "[" + hostname + "]"
-				}
-				if port := parsedUrl.Port(); port != "" {
-					hostname += ":" + port
+				if parsedUrl.Scheme == "unix" {
+					serverConfig.Listener.Address = parsedUrl.Path
 				} else {
-					hostname += ":20001"
+					hostname := parsedUrl.Hostname()
+					if strings.Contains(hostname, ":") {
+						// it's an ipv6 address
+						hostname = "[" + hostname + "]"
+					}
+					if port := parsedUrl.Port(); port != "" {
+						hostname += ":" + port
+					} else {
+						hostname += ":20001"
+					}
+					serverConfig.Listener.Address = hostname
 				}
-				serverConfig.Listener.Address = hostname
 			}
 		}
 

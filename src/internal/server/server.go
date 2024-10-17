@@ -130,10 +130,35 @@ func NewServer(c *config.Server) (s *Server, err error) {
 func (s *Server) Run(listenerConfig config.Listener, tlsConfig config.TLS) error {
 	var httpServerTlsConfig *tls.Config
 
+	if listenerConfig.Network == "unix" {
+		fi, err := os.Stat(listenerConfig.Address)
+		if err == nil {
+			if fi.Mode()&os.ModeSocket != 0 {
+				err := os.Remove(listenerConfig.Address)
+				if err != nil {
+					log.Warn().Err(err).Msg("Unable to remove old sock file")
+				}
+			} else {
+				log.Warn().Err(err).Msg("Sock file exists and not a unix socket")
+			}
+		} else if !os.IsNotExist(err) {
+			log.Warn().Err(err).Msg("Unable to check sock file status")
+		}
+	}
+
 	listener, err := net.Listen(listenerConfig.Network, listenerConfig.Address)
 	if err != nil {
 		goto end
 	}
+
+	defer func() {
+		if listenerConfig.Network == "unix" {
+			err := os.Remove(listenerConfig.Address)
+			if err != nil {
+				log.Error().Err(err).Msg("Unable to remove sock file")
+			}
+		}
+	}()
 
 	s.httpServer = http.Server{
 		Handler: s,
