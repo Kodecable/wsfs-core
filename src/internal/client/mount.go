@@ -34,11 +34,6 @@ type MountOption struct {
 }
 
 func dial(url, username, password, resumeId string) (conn *websocket.Conn, rsp *http.Response, err error) {
-	dialer := websocket.Dialer{
-		Subprotocols:      []string{"WSFS/draft.1"},
-		EnableCompression: false,
-	}
-
 	header := http.Header{}
 	if username != "" {
 		header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+password)))
@@ -47,7 +42,7 @@ func dial(url, username, password, resumeId string) (conn *websocket.Conn, rsp *
 		header.Set("X-Wsfs-Resume", resumeId)
 	}
 
-	conn, rsp, err = dialer.Dial(url, header)
+	conn, rsp, err = wsdial(url, header)
 	if err != nil {
 		return
 	}
