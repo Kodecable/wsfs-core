@@ -65,7 +65,9 @@ var MountCmd = &cobra.Command{
 			endpoint.Scheme = "ws"
 		case "wsfss", "https":
 			endpoint.Scheme = "wss"
-		case "ws", "wss", "unix":
+		case "unix":
+			endpoint.Scheme = "unix+wsfs"
+		case "ws", "wss", "unix+wsfs", "unix+wsfss":
 			endpoint.Scheme = inputedEndpoint.Scheme
 		default:
 			fmt.Fprintln(os.Stderr, "Bad endpoint url: unknown scheme")
