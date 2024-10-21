@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/share/wsfsprotocol"
@@ -19,7 +20,8 @@ import (
 type fsNode struct {
 	fs.Inode
 
-	RootData *fsRoot
+	RootData     *fsRoot
+	readdirCache atomic.Pointer[dirCache]
 }
 
 func (n *fsNode) path() string {
@@ -107,6 +109,15 @@ func attrFromFi(path string, attr *fuse.Attr, fi *session.FileInfo, suser *Suser
 	}
 }
 
+func attrFromDirItem(path string, attr *fuse.Attr, di *session.DirItem, suser *Suser_t) {
+	attrFromFi(path, attr, &session.FileInfo{
+		Size:  di.Size,
+		MTime: di.MTime,
+		Mode:  di.Mode,
+		Owner: di.Owner,
+	}, suser)
+}
+
 func idFromStat(attr *fuse.Attr) fs.StableAttr {
 	return fs.StableAttr{
 		Mode: attr.Mode,
@@ -119,12 +130,17 @@ var _ = (fs.NodeLookuper)((*fsNode)(nil))
 
 func (n *fsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	p := filepath.Join(n.path(), name)
-	fi, code := n.RootData.session.CmdGetAttr(p)
-	if code != wsfsprotocol.ErrorOK {
-		return nil, errorCodeMap[code]
-	}
 
-	attrFromFi(p, &out.Attr, &fi, &n.RootData.suser)
+	item, ok := lookupDirCache(&n.readdirCache, name)
+	if ok {
+		attrFromDirItem(p, &out.Attr, &item, &n.RootData.suser)
+	} else {
+		fi, code := n.RootData.session.CmdGetAttr(p)
+		if code != wsfsprotocol.ErrorOK {
+			return nil, errorCodeMap[code]
+		}
+		attrFromFi(p, &out.Attr, &fi, &n.RootData.suser)
+	}
 
 	node := n.RootData.NewNode()
 	ch := n.NewInode(ctx, node, idFromStat(&out.Attr))
@@ -228,12 +244,6 @@ func (n *fsNode) Opendir(_ context.Context) syscall.Errno {
 	return fs.OK
 }
 
-var _ = (fs.DirStream)((*dirStream)(nil))
-
-type dirStream struct {
-	items []session.DirItem
-}
-
 func (d *dirStream) HasNext() bool {
 	return len(d.items) > 0
 }
@@ -257,6 +267,7 @@ func (n *fsNode) Readdir(_ context.Context) (fs.DirStream, syscall.Errno) {
 	if code != wsfsprotocol.ErrorOK {
 		return nil, errorCodeMap[code]
 	}
+	saveDirCache(&n.readdirCache, items, n.RootData.timeout)
 	return &dirStream{items: items}, fs.OK
 }
 
