@@ -72,14 +72,13 @@ func (s *Session) exit(err error) {
 }
 
 func (s *Session) newClientMark() uint8 {
-	v := uint8(s.lastMark.Load())
+	var v uint8
 	for {
+		v = uint8(s.lastMark.Add(1))
 		if s.clientMarks[v].TryLock() {
 			break
 		}
-		v++
 	}
-	s.lastMark.Store(uint32(v))
 	return v
 }
 
