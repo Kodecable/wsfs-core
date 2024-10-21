@@ -142,7 +142,7 @@ func init() {
 		os.Exit(1)
 	}
 
-	storage, err := os.Getwd()
+	workingDir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Unable to determine working directory")
 		fmt.Fprintln(os.Stderr, err)
@@ -157,5 +157,5 @@ func init() {
 	QuickServeCmd.Flags().Uint32VarP(&gid, "gid", "", defaultIds.UserGroup, "Gid in filesystem")
 	QuickServeCmd.Flags().Uint32VarP(&otherUid, "other-uid", "", defaultIds.NobodyUser, "Nobody uid in filesystem")
 	QuickServeCmd.Flags().Uint32VarP(&otherGid, "other-gid", "", defaultIds.NobodyGroup, "Nobody gid in filesystem")
-	QuickServeCmd.Flags().StringVarP(&storage, "storage", "s", storage, "Nobody gid in filesystem")
+	QuickServeCmd.Flags().StringVarP(&storage, "storage", "s", workingDir, "Storage path")
 }
