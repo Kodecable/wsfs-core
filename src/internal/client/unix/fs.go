@@ -4,6 +4,7 @@ package unix
 
 import (
 	"hash/maphash"
+	"time"
 	"wsfs-core/internal/client/session"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -17,13 +18,15 @@ var inodeHashSeed = maphash.MakeSeed()
 type fsRoot struct {
 	session    *session.Session
 	mountpoint string
+	timeout    time.Duration
 	suser      Suser_t
 }
 
-func NewRoot(sesseion *session.Session, suser Suser_t) *fsRoot {
+func NewRoot(sesseion *session.Session, suser Suser_t, timeout time.Duration) *fsRoot {
 	return &fsRoot{
 		session: sesseion,
 		suser:   suser,
+		timeout: timeout,
 	}
 }
 
