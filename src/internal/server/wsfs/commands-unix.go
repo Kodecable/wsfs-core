@@ -180,19 +180,19 @@ func (s *session) cmdRead(clientMark uint8, writeCh chan<- *util.Buffer, wfd uin
 	}
 	sfd := rsfd.(sfd_t)
 
-	if size < dataPerMsg {
+	if size < maxReadPayLoad {
 		readAndSend(clientMark, writeCh, int(sfd), size, wsfsprotocol.ErrorOK)
 	} else {
-		for range size / dataPerMsg {
-			ok := readAndSend(clientMark, writeCh, int(sfd), dataPerMsg, wsfsprotocol.ErrorPartialResponse)
+		for range size / maxReadPayLoad {
+			ok := readAndSend(clientMark, writeCh, int(sfd), maxReadPayLoad, wsfsprotocol.ErrorPartialResponse)
 			if !ok {
 				return
 			}
 		}
-		if size%dataPerMsg == 0 {
+		if size%maxReadPayLoad == 0 {
 			writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
 		} else {
-			readAndSend(clientMark, writeCh, int(sfd), size%dataPerMsg, wsfsprotocol.ErrorOK)
+			readAndSend(clientMark, writeCh, int(sfd), size%maxReadPayLoad, wsfsprotocol.ErrorOK)
 		}
 	}
 }
@@ -494,20 +494,20 @@ func (s *session) cmdReadAt(clientMark uint8, writeCh chan<- *util.Buffer, wfd u
 	}
 	sfd := rsfd.(sfd_t)
 
-	if size < dataPerMsg {
+	if size < maxReadPayLoad {
 		readAtAndSend(clientMark, writeCh, int(sfd), off, size, wsfsprotocol.ErrorOK)
 	} else {
-		for range size / dataPerMsg {
-			readed, ok := readAtAndSend(clientMark, writeCh, int(sfd), off, dataPerMsg, wsfsprotocol.ErrorPartialResponse)
+		for range size / maxReadPayLoad {
+			readed, ok := readAtAndSend(clientMark, writeCh, int(sfd), off, maxReadPayLoad, wsfsprotocol.ErrorPartialResponse)
 			if !ok {
 				return
 			}
 			off += readed
 		}
-		if size%dataPerMsg == 0 {
+		if size%maxReadPayLoad == 0 {
 			writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
 		} else {
-			readAtAndSend(clientMark, writeCh, int(sfd), off, size%dataPerMsg, wsfsprotocol.ErrorOK)
+			readAtAndSend(clientMark, writeCh, int(sfd), off, size%maxReadPayLoad, wsfsprotocol.ErrorOK)
 		}
 	}
 }

@@ -16,14 +16,14 @@ import (
 )
 
 const (
-	dataPerMsg     uint64 = 4096
-	maxDataInARead uint64 = dataPerMsg * 16
+	maxFrameSize          = wsfsprotocol.MaxResponseLength
+	maxReadPayLoad uint64 = uint64(maxFrameSize)
 )
 
 var (
 	bufPool = sync.Pool{
 		New: func() any {
-			return util.NewBuffer(int(dataPerMsg) + 2)
+			return util.NewBuffer(maxFrameSize)
 		},
 	}
 )
@@ -103,7 +103,7 @@ func (s *session) sendDirent(clientMark uint8, writeCh chan<- *util.Buffer, base
 			rsp.Put(wsfsprotocol.OWNER_NN)
 		} else {
 			rsp.Put(uint64(fi.Size()))
-			rsp.Put((fi.ModTime().Unix()))
+			rsp.Put(fi.ModTime().Unix())
 			rsp.Put(uint32(fi.Mode()))
 			rsp.Put(s.convOwner(fi))
 		}
@@ -173,7 +173,7 @@ func (s *session) cmdGetAttr(clientMark uint8, writeCh chan<- *util.Buffer, lpat
 		goto BAD
 	}
 	rsp.Put(uint64(fi.Size()))
-	rsp.Put((fi.ModTime().Unix()))
+	rsp.Put(fi.ModTime().Unix())
 	rsp.Put(uint32(fi.Mode()))
 	rsp.Put(s.convOwner(fi))
 	writeCh <- rsp

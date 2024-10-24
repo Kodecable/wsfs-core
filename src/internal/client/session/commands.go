@@ -155,8 +155,10 @@ func (s *Session) CmdReadLink(lpath string) (tpath string, code uint8) {
 	}
 }
 
+const maxWritePayload int = maxFrameSize - 1 - 1 - 4
+
 func (s *Session) CmdWrite(fd uint32, data []byte) (written uint64, code uint8) {
-	if len(data) < int(dataPerMsg) {
+	if len(data) < maxWritePayload {
 		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWrite, fd, data))
 		code = buf.ReadByteAt(1)
 		if code != wsfsprotocol.ErrorOK {
@@ -177,8 +179,8 @@ func (s *Session) CmdWrite(fd uint32, data []byte) (written uint64, code uint8) 
 		return
 	} else {
 		off := 0
-		for range len(data) / int(dataPerMsg) {
-			buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWrite, fd, data[off:off+int(dataPerMsg)]))
+		for range len(data) / maxWritePayload {
+			buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWrite, fd, data[off:off+maxWritePayload]))
 			code = buf.ReadByteAt(1)
 			if code != wsfsprotocol.ErrorOK {
 				buf.Done()
@@ -196,11 +198,11 @@ func (s *Session) CmdWrite(fd uint32, data []byte) (written uint64, code uint8) 
 			buf.Done()
 			bufPool.Put(buf)
 		}
-		if len(data)%int(dataPerMsg) == 0 {
+		if len(data)%maxWritePayload == 0 {
 			return uint64(off), wsfsprotocol.ErrorOK
 		}
 
-		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWrite, fd, data[off:off+len(data)%int(dataPerMsg)]))
+		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWrite, fd, data[off:off+len(data)%maxWritePayload]))
 		code = buf.ReadByteAt(1)
 		if code != wsfsprotocol.ErrorOK {
 			buf.Done()
@@ -388,8 +390,10 @@ func (s *Session) CmdReadAt(fd uint32, offset uint64, dest []byte) (uint64, uint
 	}
 }
 
+const maxWriteAtPayload int = maxFrameSize - 1 - 1 - 4 - 8
+
 func (s *Session) CmdWriteAt(fd uint32, offset uint64, data []byte) (written uint64, code uint8) {
-	if len(data) < int(dataPerMsg) {
+	if len(data) < maxWriteAtPayload {
 		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWriteAt, fd, offset, data))
 		code = buf.ReadByteAt(1)
 		if code != wsfsprotocol.ErrorOK {
@@ -410,8 +414,8 @@ func (s *Session) CmdWriteAt(fd uint32, offset uint64, data []byte) (written uin
 		return
 	} else {
 		off := 0
-		for range len(data) / int(dataPerMsg) {
-			buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWriteAt, fd, offset+uint64(off), data[off:off+int(dataPerMsg)]))
+		for range len(data) / maxWriteAtPayload {
+			buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWriteAt, fd, offset+uint64(off), data[off:off+maxWriteAtPayload]))
 			code = buf.ReadByteAt(1)
 			if code != wsfsprotocol.ErrorOK {
 				buf.Done()
@@ -429,11 +433,11 @@ func (s *Session) CmdWriteAt(fd uint32, offset uint64, data []byte) (written uin
 			buf.Done()
 			bufPool.Put(buf)
 		}
-		if len(data)%int(dataPerMsg) == 0 {
+		if len(data)%maxWriteAtPayload == 0 {
 			return uint64(off), wsfsprotocol.ErrorOK
 		}
 
-		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWriteAt, fd, offset+uint64(off), data[off:off+len(data)%int(dataPerMsg)]))
+		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWriteAt, fd, offset+uint64(off), data[off:off+len(data)%maxWriteAtPayload]))
 		code = buf.ReadByteAt(1)
 		if code != wsfsprotocol.ErrorOK {
 			buf.Done()
