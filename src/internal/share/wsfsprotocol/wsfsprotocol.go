@@ -3,6 +3,11 @@ package wsfsprotocol
 // There are consts defined by spec
 
 const (
+	MaxCommandLength  int = 8192
+	MaxResponseLength int = MaxCommandLength
+)
+
+const (
 	CmdOpen          uint8 = 1
 	CmdClose         uint8 = 2
 	CmdRead          uint8 = 3

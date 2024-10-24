@@ -16,21 +16,13 @@ import (
 type ReDialFunc func() (*websocket.Conn, error)
 
 const (
-	dataPerMsg = 4096
-
-	// In cmd writeAt call:
-	//  clientMark  1
-	//  cmdCode     1
-	//  fd          4
-	//  offset      8
-	//  data        dataPerMsg
-	bufSize = dataPerMsg + 1 + 1 + 4 + 8
+	maxFrameSize = wsfsprotocol.MaxCommandLength
 )
 
 var (
 	bufPool = sync.Pool{
 		New: func() any {
-			return util.NewBuffer(bufSize)
+			return util.NewBuffer(maxFrameSize)
 		},
 	}
 )
