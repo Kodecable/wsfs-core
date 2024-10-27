@@ -15,7 +15,6 @@ import (
 
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/rs/zerolog/log"
 )
 
 type fsNode struct {
@@ -134,7 +133,7 @@ func (n *fsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*
 
 	item, timeoutDelta, ok := lookupDirCache(&n.readdirCache, name)
 	if ok {
-		log.Debug().Str("Path", p).Msg("Lookup cached entry")
+		//log.Debug().Str("Path", p).Msg("Lookup cached entry")
 		out.SetAttrTimeout(timeoutDelta)
 		out.SetEntryTimeout(timeoutDelta)
 		if item.Name != "" {
@@ -143,7 +142,7 @@ func (n *fsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*
 			return nil, syscall.ENOENT
 		}
 	} else {
-		log.Debug().Str("Path", p).Msg("Lookup entry")
+		//log.Debug().Str("Path", p).Msg("Lookup entry")
 		fi, code := n.fsdata.session.CmdGetAttr(p)
 		if code != wsfsprotocol.ErrorOK {
 			return nil, errorCodeMap[code]
@@ -249,7 +248,7 @@ func (n *fsNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 var _ = (fusefs.NodeOpener)((*fsNode)(nil))
 
 func (n *fsNode) Open(_ context.Context, flags uint32) (fh fusefs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	log.Debug().Str("Path", n.path()).Msg("Open")
+	//log.Debug().Str("Path", n.path()).Msg("Open")
 	fd, code := n.fsdata.session.CmdOpen(n.path(), flags, 0o644)
 	return fd, 0, errorCodeMap[code]
 }
@@ -266,11 +265,11 @@ func (n *fsNode) Readdir(_ context.Context) (fusefs.DirStream, syscall.Errno) {
 	items, ok := getDirCache(&n.readdirCache)
 	if ok {
 		// TODO: pass timeout delta to fuse
-		log.Debug().Str("Path", n.path()).Msg("Read cached dir")
+		//log.Debug().Str("Path", n.path()).Msg("Read cached dir")
 		return &dirStream{items: items}, fusefs.OK
 	}
 
-	log.Debug().Str("Path", n.path()).Msg("Read dir")
+	//log.Debug().Str("Path", n.path()).Msg("Read dir")
 	items, code := n.fsdata.session.CmdReadDir(n.path())
 	if code != wsfsprotocol.ErrorOK {
 		return nil, errorCodeMap[code]

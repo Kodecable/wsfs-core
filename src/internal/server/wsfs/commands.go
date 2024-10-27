@@ -113,7 +113,6 @@ func (s *session) sendDirent(clientMark uint8, writeCh chan<- *util.Buffer, base
 
 func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path string) {
 	defer s.wg.Done()
-	const maxDrentInARsp = 16
 
 	if !util.IsUrlValid(path) {
 		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
@@ -137,15 +136,31 @@ func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 		return
 	}
 
-	if len(dirents) < maxDrentInARsp {
+	if len(dirents) == 0 {
 		s.sendDirent(clientMark, writeCh, path, dirents, wsfsprotocol.ErrorOK)
-	} else {
-		var off int = 0
-		for range len(dirents) / maxDrentInARsp {
-			s.sendDirent(clientMark, writeCh, path, dirents[off:off+maxDrentInARsp], wsfsprotocol.ErrorPartialResponse)
-			off += maxDrentInARsp
+		return
+	}
+
+	lastIndex := 0
+	msgSize := 2
+	for i, dirent := range dirents {
+		entSize := 0
+		entSize += len(dirent.Name())
+		entSize += 21
+		if msgSize+entSize > maxFrameSize {
+			if i == len(dirents)-1 {
+				s.sendDirent(clientMark, writeCh, path, dirents[lastIndex:i], wsfsprotocol.ErrorOK)
+			} else {
+				s.sendDirent(clientMark, writeCh, path, dirents[lastIndex:i], wsfsprotocol.ErrorPartialResponse)
+			}
+			lastIndex = i
+			msgSize = 2
+		} else {
+			msgSize += entSize
 		}
-		s.sendDirent(clientMark, writeCh, path, dirents[off:], wsfsprotocol.ErrorOK)
+	}
+	if msgSize != 2 {
+		s.sendDirent(clientMark, writeCh, path, dirents[lastIndex:], wsfsprotocol.ErrorOK)
 	}
 }
 
