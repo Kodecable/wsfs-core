@@ -19,16 +19,16 @@ import (
 )
 
 var (
-	volumeLabel       string
-	masqueradeAsNtfs  bool
-	fuseStructTimeout int16
-	directMount       bool
-	noLogTime         bool
-	uid               int64
-	gid               int64
-	nobodyUid         int64
-	nobodyGid         int64
-	logLevel          zerolog.Level = zerolog.InfoLevel
+	volumeLabel      string
+	masqueradeAsNtfs bool
+	structTimeout    int16
+	directMount      bool
+	noLogTime        bool
+	uid              int64
+	gid              int64
+	nobodyUid        int64
+	nobodyGid        int64
+	logLevel         zerolog.Level = zerolog.InfoLevel
 )
 
 var MountCmd = &cobra.Command{
@@ -75,9 +75,9 @@ var MountCmd = &cobra.Command{
 		}
 
 		opts := client.MountOption{
-			AttrTimeout:  time.Duration(fuseStructTimeout) * time.Second,
-			EntryTimeout: time.Duration(fuseStructTimeout) * time.Second,
-			//EnoentTimeout:    time.Duration(fuseStructTimeout) * time.Second,
+			AttrTimeout:      time.Duration(structTimeout) * time.Second,
+			EntryTimeout:     time.Duration(structTimeout) * time.Second,
+			NegativeTimeout:  time.Duration(structTimeout) * time.Second,
 			UseFusemount:     !directMount,
 			VolumeLabel:      volumeLabel,
 			MasqueradeAsNtfs: masqueradeAsNtfs,
@@ -137,7 +137,7 @@ func init() {
 	MountCmd.Flags().Int64VarP(&nobodyGid, "nobody-gid", "", -1, "Nobody gid in filesystem, lookup nobody gid when negtive (Unix only)")
 	MountCmd.Flags().StringVarP(&volumeLabel, "volume-label", "", "WSFS Storage", "Volume label (Windows only)")
 	MountCmd.Flags().BoolVarP(&directMount, "direct-mount", "", false, "Use mount syscall instead fusemount, root needed (Unix only)")
-	MountCmd.Flags().Int16VarP(&fuseStructTimeout, "fuse-struct-timeout", "", 1, "Fuse struct cache timeout in seconds, improves performance and inconsistency (Unix only)")
+	MountCmd.Flags().Int16VarP(&structTimeout, "struct-timeout", "", 1, "Fuse struct cache timeout in seconds, improves performance and inconsistency")
 	MountCmd.Flags().BoolVarP(&masqueradeAsNtfs, "masquerade-as-ntfs", "", false, "Allow Windows to run executable as administrator (Windows only)")
 	MountCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
 	MountCmd.Flags().VarP(

@@ -7,7 +7,7 @@ import (
 	"time"
 	"wsfs-core/internal/client/session"
 
-	"github.com/hanwen/go-fuse/v2/fs"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
 )
 
 const fsBlockSize = 4096
@@ -15,21 +15,26 @@ const fsFileNameLen = 255
 
 var inodeHashSeed = maphash.MakeSeed()
 
-type fsRoot struct {
-	session    *session.Session
+type fileSystem struct {
+	session *session.Session
+
 	mountpoint string
-	timeout    time.Duration
 	suser      Suser_t
+
+	structTimeout   time.Duration
+	negativeTimeout time.Duration
 }
 
-func NewRoot(sesseion *session.Session, suser Suser_t, timeout time.Duration) *fsRoot {
-	return &fsRoot{
-		session: sesseion,
-		suser:   suser,
-		timeout: timeout,
+func NewFS(sesseion *session.Session, suser Suser_t,
+	structTimeout, negativeTimeout time.Duration) *fileSystem {
+	return &fileSystem{
+		session:         sesseion,
+		suser:           suser,
+		structTimeout:   structTimeout,
+		negativeTimeout: negativeTimeout,
 	}
 }
 
-func (r *fsRoot) NewNode() fs.InodeEmbedder {
-	return &fsNode{RootData: r}
+func (r *fileSystem) NewNode() fusefs.InodeEmbedder {
+	return &fsNode{fsdata: r}
 }

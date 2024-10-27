@@ -61,6 +61,7 @@ func (s *Session) CmdRead(fd uint32, dest []byte) (uint64, uint8) {
 	}
 }
 
+// A vaild DirItem has a non-empty Name
 type DirItem struct {
 	Name  string
 	Size  uint64

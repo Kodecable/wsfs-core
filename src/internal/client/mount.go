@@ -19,9 +19,9 @@ const (
 )
 
 type MountOption struct {
-	AttrTimeout  time.Duration
-	EntryTimeout time.Duration
-	//EnoentTimeout    time.Duration
+	AttrTimeout      time.Duration
+	EntryTimeout     time.Duration
+	NegativeTimeout  time.Duration
 	UseFusemount     bool
 	VolumeLabel      string
 	MasqueradeAsNtfs bool

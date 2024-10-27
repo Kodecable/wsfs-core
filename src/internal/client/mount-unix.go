@@ -18,13 +18,20 @@ import (
 )
 
 func fuseMount(mountpoint string, session *session.Session, opt MountOption) error {
-	fsroot := unix.NewRoot(session, unix.Suser_t{
-		Uid: opt.Uid, Gid: opt.Gid, NobodyUid: opt.NobodyUid, NobodyGid: opt.NobodyGid}, opt.AttrTimeout)
+	fsroot := unix.NewFS(session,
+		unix.Suser_t{
+			Uid:       opt.Uid,
+			Gid:       opt.Gid,
+			NobodyUid: opt.NobodyUid,
+			NobodyGid: opt.NobodyGid},
+		opt.AttrTimeout,
+		opt.NegativeTimeout)
 	root := fsroot.NewNode()
 
 	opts := &fs.Options{
 		AttrTimeout:     &opt.AttrTimeout,
 		EntryTimeout:    &opt.EntryTimeout,
+		NegativeTimeout: &opt.NegativeTimeout,
 		NullPermissions: true, // Leave file permissions on "000" files as-is
 		MountOptions: fuse.MountOptions{
 			AllowOther:        false,

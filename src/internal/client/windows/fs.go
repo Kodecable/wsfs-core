@@ -47,7 +47,7 @@ func fileMode(mode uint32) (r uint32) {
 	return
 }
 
-func statFromFi(stat *fuse.Stat_t, fi *session.FileInfo) {
+func statFromFileInfo(stat *fuse.Stat_t, fi *session.FileInfo) {
 	stat.Size = int64(fi.Size)
 	stat.Atim = fuse.Timespec{Sec: fi.MTime, Nsec: 0}
 	stat.Ctim = fuse.Timespec{Sec: fi.MTime, Nsec: 0}
@@ -61,24 +61,34 @@ func statFromFi(stat *fuse.Stat_t, fi *session.FileInfo) {
 		stat.Blocks += 1
 	}
 
-	//we do not set file's uid and gid
+	// We set the 'Uid=-1,Gid=-1' flag to ignore file owner field,
+	// so there is no need to set file's uid and gid here
 }
 
-type fs struct {
+func statFromDirItem(stat *fuse.Stat_t, di *session.DirItem) {
+	statFromFileInfo(stat, &session.FileInfo{
+		Size:  di.Size,
+		MTime: di.MTime,
+		Mode:  di.Mode,
+		Owner: di.Owner,
+	})
+}
+
+type fileSystem struct {
 	fuse.FileSystemBase
 
 	session    *session.Session
 	mountpoint string
 }
 
-func NewFs(session *session.Session, mountpoint string) *fs {
-	return &fs{
+func NewFS(session *session.Session, mountpoint string) *fileSystem {
+	return &fileSystem{
 		session:    session,
 		mountpoint: mountpoint,
 	}
 }
 
-func (s *fs) Statfs(path string, stat *fuse.Statfs_t) int {
+func (s *fileSystem) Statfs(path string, stat *fuse.Statfs_t) int {
 	fsi, code := s.session.CmdFsStat(path)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
@@ -95,37 +105,37 @@ func (s *fs) Statfs(path string, stat *fuse.Statfs_t) int {
 	return ok
 }
 
-func (s *fs) Open(path string, flags int) (errc int, fh uint64) {
+func (s *fileSystem) Open(path string, flags int) (errc int, fh uint64) {
 	fd, code := s.session.CmdOpen(path, uint32(flags), defaultFileMode)
 	return errorCodeMap[code], uint64(fd)
 }
 
-func (s *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
+func (s *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 	fi, code := s.session.CmdGetAttr(path)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
 	}
 
-	statFromFi(stat, &fi)
+	statFromFileInfo(stat, &fi)
 	return ok
 }
 
-func (s *fs) Mkdir(path string, mode uint32) int {
+func (s *fileSystem) Mkdir(path string, mode uint32) int {
 	code := s.session.CmdMkdir(path, mode)
 	return errorCodeMap[code]
 }
 
-func (s *fs) Unlink(path string) int {
+func (s *fileSystem) Unlink(path string) int {
 	code := s.session.CmdRemove(path)
 	return errorCodeMap[code]
 }
 
-func (s *fs) Rmdir(path string) int {
+func (s *fileSystem) Rmdir(path string) int {
 	code := s.session.CmdRmDir(path)
 	return errorCodeMap[code]
 }
 
-func (s *fs) Symlink(target string, newpath string) int {
+func (s *fileSystem) Symlink(target string, newpath string) int {
 	if !strings.HasPrefix(target, s.mountpoint) {
 		return -fuse.EACCES
 	}
@@ -135,7 +145,7 @@ func (s *fs) Symlink(target string, newpath string) int {
 	return errorCodeMap[code]
 }
 
-func (s *fs) Readlink(path string) (int, string) {
+func (s *fileSystem) Readlink(path string) (int, string) {
 	path, code := s.session.CmdReadLink(path)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code], ""
@@ -143,7 +153,7 @@ func (s *fs) Readlink(path string) (int, string) {
 	return ok, filepath.Join(s.mountpoint, path)
 }
 
-func (s *fs) Rename(oldpath string, newpath string) int {
+func (s *fileSystem) Rename(oldpath string, newpath string) int {
 	code := s.session.CmdRename(oldpath, newpath, 0)
 	return errorCodeMap[code]
 }
@@ -178,12 +188,12 @@ func (s *fs) Access(path string, mask uint32) int {
 		return -fuse.EACCES
 }*/
 
-func (s *fs) Create(path string, flags int, mode uint32) (int, uint64) {
+func (s *fileSystem) Create(path string, flags int, mode uint32) (int, uint64) {
 	fd, code := s.session.CmdOpen(path, uint32(flags|os.O_CREATE), mode)
 	return errorCodeMap[code], uint64(fd)
 }
 
-func (s *fs) Truncate(path string, size int64, fh uint64) int {
+func (s *fileSystem) Truncate(path string, size int64, fh uint64) int {
 	var code uint8
 	if ^uint64(0) == fh {
 		code = s.session.CmdSetAttr(path,
@@ -197,7 +207,7 @@ func (s *fs) Truncate(path string, size int64, fh uint64) int {
 	return errorCodeMap[code]
 }
 
-func (s *fs) Read(path string, buff []byte, ofst int64, fh uint64) int {
+func (s *fileSystem) Read(path string, buff []byte, ofst int64, fh uint64) int {
 	readed, code := s.session.CmdReadAt(uint32(fh), uint64(ofst), buff)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
@@ -205,7 +215,7 @@ func (s *fs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 	return int(readed)
 }
 
-func (s *fs) Write(path string, buff []byte, ofst int64, fh uint64) int {
+func (s *fileSystem) Write(path string, buff []byte, ofst int64, fh uint64) int {
 	count, code := s.session.CmdWriteAt(uint32(fh), uint64(ofst), buff)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
@@ -213,43 +223,44 @@ func (s *fs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 	return int(count)
 }
 
-func (*fs) Flush(_ string, _ uint64) int {
+func (*fileSystem) Flush(_ string, _ uint64) int {
 	return ok
 }
 
-func (s *fs) Release(_ string, fh uint64) int {
+func (s *fileSystem) Release(_ string, fh uint64) int {
 	code := s.session.CmdClose(uint32(fh))
 	return errorCodeMap[code]
 }
 
-func (s *fs) Fsync(_ string, _ bool, fh uint64) int {
+func (s *fileSystem) Fsync(_ string, _ bool, fh uint64) int {
 	code := s.session.CmdSync(uint32(fh))
 	return errorCodeMap[code]
 }
 
-func (s *fs) Opendir(path string) (int, uint64) {
+func (s *fileSystem) Opendir(path string) (int, uint64) {
 	const O_DIRECTORY = 0x10000
 	fd, code := s.session.CmdOpen(path, uint32(os.O_RDONLY|O_DIRECTORY), 0)
 	return errorCodeMap[code], uint64(fd)
 }
 
-func (s *fs) Releasedir(_ string, fh uint64) int {
+func (s *fileSystem) Releasedir(_ string, fh uint64) int {
 	code := s.session.CmdClose(uint32(fh))
 	return errorCodeMap[code]
 }
 
-func (s *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, _ int64, _ uint64) int {
+func (s *fileSystem) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, _ int64, _ uint64) int {
 	items, code := s.session.CmdReadDir(path)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
 	}
 
 	fill(".", nil, 0)
-	//if path != "/" {
 	fill("..", nil, 0)
-	//}
 	for _, item := range items {
-		fill(item.Name, nil, 0)
+		stat := fuse.Stat_t{}
+		statFromDirItem(&stat, &item)
+		fill(item.Name, &stat, 0)
 	}
+
 	return ok
 }
