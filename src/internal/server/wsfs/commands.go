@@ -17,7 +17,7 @@ import (
 
 const (
 	maxFrameSize          = wsfsprotocol.MaxResponseLength
-	maxReadPayLoad uint64 = uint64(maxFrameSize)
+	maxReadPayLoad uint64 = uint64(maxFrameSize) - 2
 )
 
 var (
