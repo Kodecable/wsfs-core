@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 	"wsfs-core/internal/server/config"
+	internalerror "wsfs-core/internal/server/internalError"
 	"wsfs-core/internal/server/storage"
-	"wsfs-core/internal/util"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
@@ -35,19 +35,19 @@ type Suser struct {
 }
 
 type Handler struct {
-	ider        *sqids.Sqids
-	upgrader    websocket.Upgrader
-	errorPage   util.ErrorPageFunc
-	sessions    sync.Map
-	sessionLast atomic.Uint64
-	suser       Suser
+	ider         *sqids.Sqids
+	upgrader     websocket.Upgrader
+	errorHandler internalerror.ErrorHandler
+	sessions     sync.Map
+	sessionLast  atomic.Uint64
+	suser        Suser
 
 	Stop context.CancelFunc
 }
 
-func NewHandler(errorPage util.ErrorPageFunc, c *config.Server) (h Handler, err error) {
+func NewHandler(errorHandler internalerror.ErrorHandler, c *config.Server) (h Handler, err error) {
 	h.setupUpgrader()
-	h.errorPage = errorPage
+	h.errorHandler = errorHandler
 	h.ider, err = sqids.New(sqids.Options{
 		MinLength: sessionIdMinLength,
 		Alphabet:  sessionIdAlphabet,
@@ -94,11 +94,7 @@ func (h *Handler) CollecteInactivedSession() {
 
 func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, st *storage.Storage) {
 	if !websocket.IsWebSocketUpgrade(req) {
-		if req.Method == "GET" {
-			h.errorPage(rsp, req, http.StatusBadRequest, "This is WSFS endpoint.")
-		} else {
-			rsp.WriteHeader(http.StatusBadRequest)
-		}
+		h.errorHandler.ServeErrorPage(rsp, req, http.StatusBadRequest, "This is WSFS endpoint")
 		return
 	}
 

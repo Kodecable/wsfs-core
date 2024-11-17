@@ -6,10 +6,9 @@ import (
 	"net/http"
 	"os"
 	"wsfs-core/internal/server/config"
-	"wsfs-core/internal/server/errrsp"
+	internalerror "wsfs-core/internal/server/internalError"
 	"wsfs-core/internal/server/storage"
 	"wsfs-core/internal/server/webdav/templates"
-	"wsfs-core/internal/util"
 
 	"github.com/rs/zerolog/log"
 )
@@ -30,10 +29,10 @@ type Handler struct {
 	enableWebui            bool
 	allowPropfindInfDepth  bool
 	enableContentTypeProbe bool
-	serveErrorPage         util.ErrorPageFunc
+	errorHandler           internalerror.ErrorHandler
 }
 
-func NewHandler(c *config.Webdav, serveErrorPage util.ErrorPageFunc) (h Handler, err error) {
+func NewHandler(c *config.Webdav, errorHandler internalerror.ErrorHandler) (h Handler, err error) {
 	h.Enable = c.Enable
 	if !h.Enable {
 		return
@@ -41,7 +40,7 @@ func NewHandler(c *config.Webdav, serveErrorPage util.ErrorPageFunc) (h Handler,
 	h.enableWebui = c.Webui.Enable
 	h.allowPropfindInfDepth = c.AllowPropfindInfDepth
 	h.enableContentTypeProbe = c.EnableContentTypeProbe
-	h.serveErrorPage = serveErrorPage
+	h.errorHandler = errorHandler
 
 	return
 }
@@ -118,13 +117,13 @@ func (h *Handler) handleGetHead(rsp http.ResponseWriter, req *http.Request, st *
 
 	f, err := os.OpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
-		// for webui
+		// for show error through webui
 		if os.IsNotExist(err) {
-			h.serveErrorPage(rsp, req, http.StatusNotFound, "Not found")
+			h.errorHandler.ServeError(rsp, req, internalerror.ErrInternalNotFound)
 		} else if os.IsPermission(err) {
-			h.serveErrorPage(rsp, req, http.StatusForbidden, "Forbidden")
+			h.errorHandler.ServeError(rsp, req, internalerror.ErrInternalForbidden)
 		} else {
-			errrsp.InternalServerError(h.serveErrorPage, rsp, req, err)
+			h.errorHandler.ServeError(rsp, req, internalerror.Warp(err))
 		}
 		return 0, nil
 	}

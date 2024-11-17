@@ -10,7 +10,7 @@
 <body>
 <main class="dialog column">
 	<h1>{%d status %}</h1>
-    <p>{%s msg %}</p>
+    <p data-t>{%s msg %}</p>
 	<a style="text-align: right" href="/" data-t>Return to root</a>
 </main>
 </body>

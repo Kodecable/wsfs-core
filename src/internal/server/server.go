@@ -12,7 +12,7 @@ import (
 	"sync"
 	"wsfs-core/buildinfo"
 	"wsfs-core/internal/server/config"
-	"wsfs-core/internal/server/errrsp"
+	internalerror "wsfs-core/internal/server/internalError"
 	"wsfs-core/internal/server/storage"
 	"wsfs-core/internal/server/webdav"
 	"wsfs-core/internal/server/webui"
@@ -23,6 +23,8 @@ import (
 )
 
 var cacheIdRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+var _ = (internalerror.ErrorHandler)((*Server)(nil))
 
 type Server struct {
 	httpServer http.Server
@@ -113,12 +115,12 @@ func NewServer(c *config.Server) (s *Server, err error) {
 		return
 	}
 
-	s.webdavHandler, err = webdav.NewHandler(&c.Webdav, s.serveError)
+	s.webdavHandler, err = webdav.NewHandler(&c.Webdav, s)
 	if err != nil {
 		return
 	}
 
-	s.wsfsHandler, err = wsfs.NewHandler(s.serveError, c)
+	s.wsfsHandler, err = wsfs.NewHandler(s, c)
 	if err != nil {
 		return
 	}
@@ -218,11 +220,26 @@ func (s *Server) Reload(c *config.Server) (*Server, error) {
 	return newServer, nil
 }
 
-func (s *Server) serveError(rsp http.ResponseWriter, req *http.Request, status int, msg string) {
+func (s *Server) ServeErrorPage(rsp http.ResponseWriter, req *http.Request, status int, msg string) {
 	if s.webuiHandler.Enable && (req.Method == "GET" || req.Method == "HEAD") {
-		s.webuiHandler.ServeError(rsp, req, status, msg)
+		s.webuiHandler.ServeErrorPage(rsp, req, status, msg)
 	} else {
 		rsp.WriteHeader(status)
+		rsp.Write([]byte(msg))
+	}
+}
+
+func (s *Server) ServeError(rsp http.ResponseWriter, req *http.Request, err error) {
+	if s.webuiHandler.Enable && (req.Method == "GET" || req.Method == "HEAD") {
+		s.webuiHandler.ServeError(rsp, req, err)
+	} else {
+		if errors.Is(err, internalerror.ErrInternalForbidden) {
+			s.ServeErrorPage(rsp, req, http.StatusNotFound, "Not Found")
+		} else if errors.Is(err, internalerror.ErrInternalNotFound) {
+			s.ServeErrorPage(rsp, req, http.StatusForbidden, "Forbidden")
+		} else {
+			s.ServeErrorPage(rsp, req, http.StatusInternalServerError, err.Error())
+		}
 	}
 }
 
@@ -255,10 +272,10 @@ func (s *Server) serveRecover(rsp *responseWriter, req *http.Request, err any) {
 		func() {
 			defer func() {
 				if err := recover(); err != nil {
-					log.Warn().Str("From", req.RemoteAddr).Any("Err", err).Msg("Write failed")
+					log.Warn().Str("From", req.RemoteAddr).Any("Err", err).Msg("Write response failed")
 				}
 			}()
-			errrsp.InternalServerError(s.serveError, rsp, req, err)
+			s.ServeError(rsp, req, internalerror.Warp(err))
 		}()
 	}
 }
@@ -289,7 +306,7 @@ func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (st *storag
 		s.writeAuthRsp(rsp)
 	default:
 		log.Error().Err(err).Msg("Auth error")
-		errrsp.InternalServerError(s.serveError, rsp, req, err)
+		s.ServeError(rsp, req, internalerror.Warp(err))
 	}
 	return
 }
@@ -311,7 +328,7 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 	rsp.Header().Set("Server", "WSFS/"+buildinfo.Version)
 
 	if !util.IsUrlValid(req.URL.Path) {
-		s.serveError(rsp, req, http.StatusBadRequest, "invalid URL path")
+		s.ServeErrorPage(rsp, req, http.StatusBadRequest, "invalid URL path")
 		return
 	}
 
