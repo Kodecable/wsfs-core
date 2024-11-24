@@ -25,33 +25,35 @@ func list(rpath string, storage *storage.Storage) (l ListArg, err error) {
 
 	f, err := os.Open(apath)
 	if err != nil {
-		log.Warn().Err(err).Str("Path", apath).Msg("open dir failed")
+		log.Warn().Err(err).Str("Path", apath).Msg("Open dir failed")
 		return ListArg{}, err
 	}
 	defer f.Close()
 
 	files, err := f.Readdir(-1)
 	if err != nil {
-		log.Warn().Err(err).Str("Path", apath).Msg("read dir failed")
+		log.Warn().Err(err).Str("Path", apath).Msg("Read dir failed")
 		return ListArg{}, err
 	}
 
 	for _, file := range files {
 		// follow symlink
-		truefi := file
+		realfile := file
 		if file.Mode().Type() == os.ModeSymlink {
-			truefi, err = os.Stat(apath + file.Name())
+			realfile, err = os.Stat(apath + file.Name())
 			if err != nil {
-				log.Warn().Err(err).Str("Path", apath+file.Name()).Msg("stat symlink failed")
-				truefi = file
+				log.Warn().Err(err).Str("Path", apath+file.Name()).Msg("Stat symlink failed")
+				// show symlink itself instead, keep everything ok
+				realfile = file
+				err = nil
 			}
 		}
 
 		l.Files = append(l.Files, templates.FileInfo{
 			Name:  file.Name(),
-			IsDir: truefi.IsDir(),
-			MTime: truefi.ModTime(),
-			Size:  truefi.Size(),
+			IsDir: realfile.IsDir(),
+			MTime: realfile.ModTime(),
+			Size:  realfile.Size(),
 		})
 	}
 

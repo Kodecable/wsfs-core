@@ -164,13 +164,15 @@ func walkFS(depth int, base, path string, info os.FileInfo, walkFn filepath.Walk
 	}
 
 	for _, fileInfo := range fileInfos {
-		if fileInfo.Mode() == fs.ModeSymlink {
-			if fileInfo, err = os.Stat(name + fileInfo.Name()); err != nil {
+		if fileInfo.Mode()&fs.ModeSymlink != 0 {
+			if realfileInfo, err := os.Stat(name + fileInfo.Name()); err != nil {
+				walkFn(path, realfileInfo, err)
+			} else {
 				walkFn(path, fileInfo, err)
-				continue
 			}
+			continue
 		}
-		if fileInfo.Mode() == fs.ModeDir {
+		if fileInfo.IsDir() {
 			walkFS(depth, base, path+fileInfo.Name(), fileInfo, walkFn)
 		} else {
 			walkFn(path, fileInfo, nil)

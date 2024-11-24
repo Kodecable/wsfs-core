@@ -333,7 +333,9 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 	templates.WritePropfindBegin(rsp)
 	walkErr := walkFS(depth, st.Path, req.URL.Path, fi, func(reqPath string, info os.FileInfo, err error) error {
 		if err != nil {
-			if os.IsPermission(err) {
+			if os.IsNotExist(err) {
+				templates.WritePropfindBADResponse(rsp, reqPath, "HTTP/1.1 404 Not Found")
+			} else if os.IsPermission(err) {
 				templates.WritePropfindBADResponse(rsp, reqPath, "HTTP/1.1 403 Forbidden")
 			} else {
 				templates.WritePropfindBADResponse(rsp, reqPath, "HTTP/1.1 500 Internal Server Error")

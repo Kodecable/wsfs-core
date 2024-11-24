@@ -27,7 +27,7 @@ function I18nElement(element) {
             "New folder": "新建文件夹",
             "Return to root": "回到根目录",
             "Not found": "资源不存在",
-            "Forbidden": "拒绝访问"
+            "Forbidden": "拒绝访问",
         },
     };
     for (const [key, value] of Object.entries(locales))
