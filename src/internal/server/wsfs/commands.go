@@ -68,23 +68,35 @@ func osErrCode(err error) uint8 {
 	}
 }
 
+// base ends with "/"
 func (s *session) restrictingSymlinkByFileInfo(base string, fi fs.FileInfo) (fs.FileInfo, error) {
-	target, err := os.Readlink(path.Join(base, fi.Name()))
+	target, err := os.Readlink(base + fi.Name())
 	if err != nil {
 		return fi, err
 	}
 
 	if target[0] != '/' {
-		target = path.Clean(path.Join(base, target))
+		target = path.Clean(base + target)
 	}
 
 	if strings.HasPrefix(target, s.storage.Path) {
 		return fi, nil
 	} else {
-		return os.Stat(target)
+		// We stat(base + fi.Name()) here ranther stat(target)
+		// Consider this situation:
+		//   /
+		//   ├─ A
+		//   │  └─ B (link to /C)
+		//   ├─ C
+		//   │  └─ D (link to ../E)
+		//   └─ E
+		// If base is B and fi is D, var target will point to /A/B/E which not exists,
+		// but this file is actually /E which do exists.
+		return os.Stat(base + fi.Name())
 	}
 }
 
+// base ends with "/"
 func (s *session) sendDirent(clientMark uint8, writeCh chan<- *util.Buffer, base string, dirents []fs.DirEntry, okCode uint8) {
 	rsp := bufPool.Get().(*util.Buffer)
 	rsp.Put(clientMark)
@@ -123,6 +135,7 @@ func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 	f, err := os.Open(apath)
 	if err != nil {
 		writeCh <- msg(clientMark, osErrCode(err), "open dir failed")
+		return
 	}
 	defer func() {
 		if f.Close() != nil {
@@ -199,4 +212,121 @@ BAD:
 	rsp.Put(osErrCode(err))
 	rsp.Put("syscall error")
 	writeCh <- rsp
+}
+
+func (s *session) treeADir(depth uint8, path string, hint string,
+	fillEntry func(base string, entry fs.DirEntry, hint string),
+	fillStatus func(status uint8)) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+
+	dirents, err := f.ReadDir(-1)
+	if err != nil {
+		f.Close()
+		return
+	}
+
+	fillStatus(wsfsprotocol.TREEDIR_STATUS_ENTER_DIR)
+	if len(dirents) == 0 {
+		fillStatus(wsfsprotocol.TREEDIR_STATUS_END_DIR)
+		return
+	}
+
+	for _, dirent := range dirents {
+		fillEntry(path, dirent, hint)
+		if dirent.IsDir() && depth > 0 {
+			s.treeADir(depth-1, path+dirent.Name()+"/", hint, fillEntry, fillStatus)
+		}
+	}
+	fillStatus(wsfsprotocol.TREEDIR_STATUS_END_DIR)
+
+	if f.Close() != nil {
+		log.Error().Err(err).Str("Path", path).Msg("close dir failed")
+	}
+}
+
+func (s *session) cmdTreeDir(clientMark uint8, writeCh chan<- *util.Buffer, path string, depth uint8, hint string) {
+	defer s.wg.Done()
+
+	if !util.IsUrlValid(path) {
+		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		return
+	}
+	apath := s.storage.Path + path
+
+	rsp := bufPool.Get().(*util.Buffer)
+	rsp.Put(clientMark)
+	rsp.Put(wsfsprotocol.ErrorPartialResponse)
+	sendRsp := func() {
+		writeCh <- rsp
+		rsp = bufPool.Get().(*util.Buffer)
+		rsp.Put(clientMark)
+		rsp.Put(wsfsprotocol.ErrorPartialResponse)
+	}
+
+	s.treeADir(depth, apath, hint,
+		func(base string, entry fs.DirEntry, hint string) {
+			fi, err := entry.Info()
+			if err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+				fi, err = s.restrictingSymlinkByFileInfo(base, fi)
+			}
+
+			var fileData []byte = nil
+			if err == nil &&
+				fi.Mode()&fs.ModeSymlink == 0 &&
+				entry.Name() == hint &&
+				2+1+int64(len(entry.Name()))+1+21+fi.Size() <= int64(maxFrameSize) {
+				fileData, err = os.ReadFile(base + entry.Name())
+				if err != nil {
+					fileData = nil
+					err = nil
+				}
+			}
+
+			if fileData != nil {
+				if rsp.Len()+1+len(entry.Name())+1+21+len(fileData) > maxFrameSize {
+					sendRsp()
+				}
+			} else if rsp.Len()+1+len(entry.Name())+1+21 > maxFrameSize {
+				sendRsp()
+			}
+
+			if fileData != nil {
+				rsp.Put(wsfsprotocol.TREEDIR_STATUS_OK_WITH_DATA)
+			} else {
+				rsp.Put(wsfsprotocol.TREEDIR_STATUS_OK)
+			}
+
+			rsp.Put(entry.Name())
+			if err != nil {
+				//log.Error().Err(err).Str("File", dirent.Name()).Str("Dir", base).Msg("get file info failed")
+				rsp.Put(uint64(0))
+				rsp.Put(int64(0))
+				rsp.Put(uint32(os.ModeIrregular))
+				rsp.Put(wsfsprotocol.OWNER_NN)
+			} else {
+				rsp.Put(uint64(fi.Size()))
+				rsp.Put(fi.ModTime().Unix())
+				rsp.Put(uint32(fi.Mode()))
+				rsp.Put(s.convOwner(fi))
+			}
+			if fileData != nil {
+				rsp.Put(fileData)
+			}
+		}, func(status uint8) {
+			if rsp.Len()+1 > maxFrameSize {
+				sendRsp()
+			}
+			rsp.Put(status)
+		})
+
+	if rsp.Len() != 2 {
+		rsp.ModifyByteAt(1, wsfsprotocol.ErrorOK)
+		writeCh <- rsp
+	} else {
+		rsp.Done()
+		bufPool.Put(rsp)
+	}
 }

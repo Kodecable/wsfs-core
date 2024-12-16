@@ -7,7 +7,7 @@ import (
 )
 
 func (h *Handler) setupUpgrader() {
-	h.upgrader.Subprotocols = []string{"WSFS/draft.1"}
+	h.upgrader.Subprotocols = []string{"WSFS/draft.2"}
 	h.upgrader.EnableCompression = false
 }
 
@@ -20,7 +20,7 @@ func (h *Handler) upgrade(rsp http.ResponseWriter, req *http.Request, resumeId s
 	if err != nil {
 		return nil, err
 	}
-	if conn.Subprotocol() != "WSFS/draft.1" {
+	if conn.Subprotocol() != "WSFS/draft.2" {
 		return nil, ErrBadSubprotocol
 	}
 	return conn, nil

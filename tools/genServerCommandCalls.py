@@ -24,6 +24,7 @@ commands = {
     "CopyFileRange": ["u32", "u32", "u64", "u64","u64"],
     "Rename": ["str", "str", "u32"],
     "SetAttrByFD" : ["u32", "u8", "u64", "i64", "u32", "u8"],
+    "TreeDir" : ["str", "u8", "str"],
 }
 
 typedecl = {

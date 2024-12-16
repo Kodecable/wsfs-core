@@ -61,7 +61,7 @@ func wsdial(urlStr string, requestHeader http.Header) (*websocket.Conn, *http.Re
 	}
 
 	dialer := websocket.Dialer{
-		Subprotocols:      []string{"WSFS/draft.1"},
+		Subprotocols:      []string{"WSFS/draft.2"},
 		EnableCompression: false,
 		NetDialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			if isSocket {

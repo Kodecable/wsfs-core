@@ -68,9 +68,11 @@ type DirItem struct {
 	MTime int64
 	Mode  uint32
 	Owner uint8
+	Child []DirItem
+	Data  []byte
 }
 
-func readItems(data *util.Buffer) (items []DirItem, ok bool) {
+func readList(data *util.Buffer, items *[]DirItem) (ok bool) {
 	ok = true
 	off := 2
 
@@ -94,15 +96,17 @@ func readItems(data *util.Buffer) (items []DirItem, ok bool) {
 		di.MTime = int64(data.ReadU64(off + 8))
 		di.Mode = data.ReadU32(off + 8 + 8)
 		di.Owner = data.ReadByteAt(off + 8 + 8 + 4)
-		off += 21
+		//di.Child = nil
+		//di.Data = nil
+		off += 21 // more 1 byte for loop
 
-		items = append(items, di)
+		*items = append(*items, di)
 	}
 
 	return
 }
 
-func (s *Session) CmdReadDir(path string) (itmes []DirItem, code uint8) {
+func (s *Session) CmdReadDir(path string) (list []DirItem, code uint8) {
 	clientMark := s.newClientMark()
 	s.writeRequest <- msg(clientMark, wsfsprotocol.CmdReadDir, path)
 
@@ -118,8 +122,7 @@ func (s *Session) CmdReadDir(path string) (itmes []DirItem, code uint8) {
 			return
 		}
 
-		readedItems, ok := readItems(rsp)
-		itmes = append(itmes, readedItems...)
+		ok := readList(rsp, &list)
 		rsp.Done()
 		bufPool.Put(rsp)
 		if !ok {
@@ -261,6 +264,15 @@ type FileInfo struct {
 	MTime int64
 	Mode  uint32
 	Owner uint8
+}
+
+func FileInfoFromDirItem(di *DirItem) FileInfo {
+	return FileInfo{
+		Size:  di.Size,
+		MTime: di.MTime,
+		Mode:  di.Mode,
+		Owner: di.Owner,
+	}
 }
 
 func (s *Session) CmdGetAttr(fpath string) (fi FileInfo, code uint8) {
@@ -486,5 +498,124 @@ func (s *Session) CmdSetAttrByFD(wfd uint32, flag uint8, fi FileInfo) (code uint
 	code = buf.ReadByteAt(1)
 	buf.Done()
 	bufPool.Put(buf)
+	return
+}
+
+func GetDirTreeItemAtDepth(tree *DirItem, depth *uint8) *DirItem {
+	for range *depth {
+		tree = &tree.Child[len(tree.Child)-1]
+	}
+	return tree
+}
+
+func readTree(data *util.Buffer, stack *[]*[]DirItem) (ok bool) {
+	ok = true
+	off := 1
+
+	workingOn := (*stack)[len(*stack)-1]
+	var tmp DirItem
+	for {
+		off += 1
+		if !data.Ensure(off) {
+			break
+		}
+		status := uint8(data.ReadByteAt(off))
+
+		switch status {
+		case wsfsprotocol.TREEDIR_STATUS_ENTER_DIR:
+			(*workingOn)[len(*workingOn)-1].Child = []DirItem{}
+			*stack = append(*stack, &((*workingOn)[len(*workingOn)-1].Child))
+			workingOn = (*stack)[len(*stack)-1]
+			continue
+		case wsfsprotocol.TREEDIR_STATUS_END_DIR:
+			*stack = (*stack)[:len(*stack)-1]
+			workingOn = (*stack)[len(*stack)-1]
+			continue
+		case wsfsprotocol.TREEDIR_STATUS_END_DIR_WITH_FAIL:
+			*stack = (*stack)[:len(*stack)-1]
+			(*workingOn) = nil
+			workingOn = (*stack)[len(*stack)-1]
+			continue
+		default:
+		}
+
+		off += 1
+		if ok = data.Ensure(off); !ok {
+			break
+		}
+		tmp.Name, ok = data.ReadString(off)
+		if !ok {
+			return
+		}
+		off += len(tmp.Name) + 1
+
+		ok = data.Ensure(off + 20)
+		if !ok {
+			return
+		}
+		tmp.Size = data.ReadU64(off)
+		tmp.MTime = int64(data.ReadU64(off + 8))
+		tmp.Mode = data.ReadU32(off + 8 + 8)
+		tmp.Owner = data.ReadByteAt(off + 8 + 8 + 4)
+		off += 20
+		tmp.Child = nil
+
+		if status == wsfsprotocol.TREEDIR_STATUS_OK_WITH_DATA {
+			ok = data.Ensure(off + int(tmp.Size))
+			if !ok {
+				return
+			}
+			tmp.Data = data.ReadDataAtLen(off, int(tmp.Size))
+			off += int(tmp.Size)
+		} else {
+			//tmp.Data = nil
+		}
+
+		*workingOn = append(*workingOn, tmp)
+	}
+
+	return
+}
+
+func (s *Session) CmdTreeDir(path string, depth uint8, hint string) (tree []DirItem, code uint8) {
+	clientMark := s.newClientMark()
+	s.writeRequest <- msg(clientMark, wsfsprotocol.CmdTreeDir, path, depth, hint)
+
+	var rsp *util.Buffer
+	tree = append(tree, DirItem{})
+	stack := []*[]DirItem{&tree}
+	for {
+		rsp = <-s.readRequests[clientMark]
+
+		code = rsp.ReadByteAt(1)
+		if code != wsfsprotocol.ErrorOK &&
+			code != wsfsprotocol.ErrorPartialResponse {
+			rsp.Done()
+			bufPool.Put(rsp)
+			return
+		}
+
+		ok := readTree(rsp, &stack)
+		rsp.Done()
+		bufPool.Put(rsp)
+		if !ok {
+			log.Error().Msg("Command response too short")
+			s.clientMarks[clientMark].Unlock()
+			return nil, wsfsprotocol.ErrorIO
+		}
+
+		if code == wsfsprotocol.ErrorPartialResponse {
+			continue
+		} else {
+			break
+		}
+	}
+
+	if len(tree) != 1 || tree[0].Child == nil {
+		code = wsfsprotocol.ErrorIO
+	}
+	tree = tree[0].Child
+
+	s.clientMarks[clientMark].Unlock()
 	return
 }

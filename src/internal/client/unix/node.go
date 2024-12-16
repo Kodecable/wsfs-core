@@ -20,8 +20,10 @@ import (
 type fsNode struct {
 	fusefs.Inode
 
-	fsdata       *fileSystem
-	readdirCache atomic.Pointer[dirCache]
+	fsdata    *fileSystem
+	dirCache  atomic.Pointer[dirCache]
+	dataCache atomic.Pointer[dataCache]
+	attrCache atomic.Pointer[attrCache]
 }
 
 func (n *fsNode) path() string {
@@ -131,7 +133,7 @@ var _ = (fusefs.NodeLookuper)((*fsNode)(nil))
 func (n *fsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
 	p := filepath.Join(n.path(), name)
 
-	item, timeoutDelta, ok := lookupDirCache(&n.readdirCache, name)
+	item, timeoutDelta, ok := lookupDirCache(&n.dirCache, name)
 	if ok {
 		//log.Debug().Str("Path", p).Msg("Lookup cached entry")
 		out.SetAttrTimeout(timeoutDelta)
@@ -151,6 +153,15 @@ func (n *fsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*
 	}
 
 	node := n.fsdata.NewNode()
+	if ok {
+		if item.Child != nil {
+			subDirCache(&(node.(*fsNode).dirCache), item.Child, &n.dirCache)
+		} else if item.Data != nil {
+			subDataCache(&(node.(*fsNode).dataCache), item.Data, &n.dirCache)
+			subAttrCache(&(node.(*fsNode).attrCache), session.FileInfoFromDirItem(&item), &n.dirCache)
+		}
+	}
+
 	ch := n.NewInode(ctx, node, idFromStat(&out.Attr))
 	return ch, fusefs.OK
 }
@@ -158,7 +169,7 @@ func (n *fsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*
 var _ = (fusefs.NodeMkdirer)((*fsNode)(nil))
 
 func (n *fsNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
-	wipeDirCache(&n.readdirCache)
+	wipeDirCache(&n.dirCache)
 	code := n.fsdata.session.CmdMkdir(filepath.Join(n.path(), name), mode)
 	if code != wsfsprotocol.ErrorOK {
 		return nil, errorCodeMap[code]
@@ -170,7 +181,7 @@ func (n *fsNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.
 var _ = (fusefs.NodeRmdirer)((*fsNode)(nil))
 
 func (n *fsNode) Rmdir(_ context.Context, name string) syscall.Errno {
-	wipeDirCache(&n.readdirCache)
+	wipeDirCache(&n.dirCache)
 	code := n.fsdata.session.CmdRmDir(filepath.Join(n.path(), name))
 	return errorCodeMap[code]
 }
@@ -178,7 +189,7 @@ func (n *fsNode) Rmdir(_ context.Context, name string) syscall.Errno {
 var _ = (fusefs.NodeUnlinker)((*fsNode)(nil))
 
 func (n *fsNode) Unlink(_ context.Context, name string) syscall.Errno {
-	wipeDirCache(&n.readdirCache)
+	wipeDirCache(&n.dirCache)
 	code := n.fsdata.session.CmdRemove(filepath.Join(n.path(), name))
 	return errorCodeMap[code]
 }
@@ -186,7 +197,7 @@ func (n *fsNode) Unlink(_ context.Context, name string) syscall.Errno {
 var _ = (fusefs.NodeRenamer)((*fsNode)(nil))
 
 func (n *fsNode) Rename(_ context.Context, name string, newParent fusefs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
-	wipeDirCache(&n.readdirCache)
+	wipeDirCache(&n.dirCache)
 	p1 := filepath.Join(n.path(), name)
 	p2 := filepath.Join("/"+newParent.EmbeddedInode().Path(nil), newName)
 	code := n.fsdata.session.CmdRename(p1, p2, flags)
@@ -196,7 +207,7 @@ func (n *fsNode) Rename(_ context.Context, name string, newParent fusefs.InodeEm
 var _ = (fusefs.NodeCreater)((*fsNode)(nil))
 
 func (n *fsNode) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (inode *fusefs.Inode, fh fusefs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	wipeDirCache(&n.readdirCache)
+	wipeDirCache(&n.dirCache)
 	p := filepath.Join(n.path(), name)
 	fd, code := n.fsdata.session.CmdOpen(p, flags|uint32(os.O_CREATE), mode)
 	if code != wsfsprotocol.ErrorOK {
@@ -215,7 +226,7 @@ func (n *fsNode) Create(ctx context.Context, name string, flags uint32, mode uin
 var _ = (fusefs.NodeSymlinker)((*fsNode)(nil))
 
 func (n *fsNode) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
-	wipeDirCache(&n.readdirCache)
+	wipeDirCache(&n.dirCache)
 	if !strings.HasPrefix(target, n.fsdata.mountpoint) {
 		return nil, syscall.EACCES
 	}
@@ -248,7 +259,14 @@ func (n *fsNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 var _ = (fusefs.NodeOpener)((*fsNode)(nil))
 
 func (n *fsNode) Open(_ context.Context, flags uint32) (fh fusefs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	if flags == uint32(os.O_RDONLY) {
+		if _, ok := getDataCache(&n.dataCache); ok {
+			//log.Debug().Str("Path", n.path()).Msg("Open cached")
+			return nil, 0, fusefs.OK
+		}
+	}
 	//log.Debug().Str("Path", n.path()).Msg("Open")
+
 	fd, code := n.fsdata.session.CmdOpen(n.path(), flags, 0o644)
 	return fd, 0, errorCodeMap[code]
 }
@@ -262,20 +280,30 @@ func (n *fsNode) Opendir(_ context.Context) syscall.Errno {
 var _ = (fusefs.NodeReaddirer)((*fsNode)(nil))
 
 func (n *fsNode) Readdir(_ context.Context) (fusefs.DirStream, syscall.Errno) {
-	items, ok := getDirCache(&n.readdirCache)
+	items, ok := getDirCache(&n.dirCache)
 	if ok {
 		// TODO: pass timeout delta to fuse
 		//log.Debug().Str("Path", n.path()).Msg("Read cached dir")
-		return &dirStream{items: items}, fusefs.OK
+		return &dirListStream{items: items}, fusefs.OK
+	}
+
+	path := n.path()
+	if path[len(path)-1] != '/' {
+		path = path + "/"
 	}
 
 	//log.Debug().Str("Path", n.path()).Msg("Read dir")
-	items, code := n.fsdata.session.CmdReadDir(n.path())
+
+	items, code := n.fsdata.session.CmdTreeDir(path, 1, ".directory")
 	if code != wsfsprotocol.ErrorOK {
-		return nil, errorCodeMap[code]
+		//log.Debug().Str("Path", n.path()).Msg("Treedir failed")
+		items, code = n.fsdata.session.CmdReadDir(path)
+		if code != wsfsprotocol.ErrorOK {
+			return nil, errorCodeMap[code]
+		}
 	}
-	saveDirCache(&n.readdirCache, items, n.fsdata.structTimeout)
-	return &dirStream{items: items}, fusefs.OK
+	saveDirCache(&n.dirCache, items, n.fsdata.structTimeout)
+	return &dirListStream{items: items}, fusefs.OK
 }
 
 var _ = (fusefs.NodeGetattrer)((*fsNode)(nil))
@@ -283,11 +311,18 @@ var _ = (fusefs.NodeGetattrer)((*fsNode)(nil))
 func (n *fsNode) Getattr(_ context.Context, _ fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	p := n.path()
 
+	fi, ok := getAttrCache(&n.attrCache)
+	if ok {
+		attrFromFileInfo(p, &out.Attr, &fi, &n.fsdata.suser)
+		return fusefs.OK
+	}
+
 	fi, code := n.fsdata.session.CmdGetAttr(p)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
 	}
 	attrFromFileInfo(p, &out.Attr, &fi, &n.fsdata.suser)
+	saveAttrCache(&n.attrCache, fi, n.fsdata.structTimeout)
 
 	return fusefs.OK
 }
@@ -295,6 +330,11 @@ func (n *fsNode) Getattr(_ context.Context, _ fusefs.FileHandle, out *fuse.AttrO
 var _ = (fusefs.NodeReader)((*fsNode)(nil))
 
 func (n *fsNode) Read(_ context.Context, f fusefs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+	if f == nil {
+		data, _ := getDataCache(&n.dataCache)
+		return fuse.ReadResultData(data[off:]), fusefs.OK
+	}
+
 	readed, code := n.fsdata.session.CmdReadAt(f.(uint32), uint64(off), dest)
 	if code != wsfsprotocol.ErrorOK {
 		return nil, errorCodeMap[code]
@@ -306,6 +346,12 @@ func (n *fsNode) Read(_ context.Context, f fusefs.FileHandle, dest []byte, off i
 var _ = (fusefs.NodeWriter)((*fsNode)(nil))
 
 func (n *fsNode) Write(_ context.Context, f fusefs.FileHandle, data []byte, off int64) (written uint32, errno syscall.Errno) {
+	if f == nil {
+		return 0, syscall.EINVAL
+	}
+	wipeDataCache(&n.dataCache)
+	wipeAttrCache(&n.attrCache)
+
 	count, code := n.fsdata.session.CmdWriteAt(f.(uint32), uint64(off), data)
 	if code != wsfsprotocol.ErrorOK {
 		return 0, errorCodeMap[code]
@@ -317,12 +363,18 @@ func (n *fsNode) Write(_ context.Context, f fusefs.FileHandle, data []byte, off 
 var _ = (fusefs.NodeFlusher)((*fsNode)(nil))
 
 func (n *fsNode) Flush(_ context.Context, _ fusefs.FileHandle) syscall.Errno {
+	wipeDataCache(&n.dataCache)
+	wipeAttrCache(&n.attrCache)
 	return fusefs.OK
 }
 
 var _ = (fusefs.NodeReleaser)((*fsNode)(nil))
 
 func (n *fsNode) Release(_ context.Context, f fusefs.FileHandle) syscall.Errno {
+	if f == nil {
+		return fusefs.OK
+	}
+
 	_ = n.fsdata.session.CmdClose(f.(uint32)) // ignore error
 	return fusefs.OK
 }
@@ -330,6 +382,12 @@ func (n *fsNode) Release(_ context.Context, f fusefs.FileHandle) syscall.Errno {
 var _ = (fusefs.NodeFsyncer)((*fsNode)(nil))
 
 func (n *fsNode) Fsync(_ context.Context, f fusefs.FileHandle, flags uint32) syscall.Errno {
+	if f == nil {
+		return fusefs.OK
+	}
+	wipeDataCache(&n.dataCache)
+	wipeAttrCache(&n.attrCache)
+
 	code := n.fsdata.session.CmdSync(f.(uint32))
 	return errorCodeMap[code]
 }
@@ -337,6 +395,10 @@ func (n *fsNode) Fsync(_ context.Context, f fusefs.FileHandle, flags uint32) sys
 var _ = (fusefs.NodeLseeker)((*fsNode)(nil))
 
 func (n *fsNode) Lseek(_ context.Context, f fusefs.FileHandle, Off uint64, whence uint32) (uint64, syscall.Errno) {
+	if f == nil {
+		return 0, fusefs.OK
+	}
+
 	off, code := n.fsdata.session.CmdSeek(f.(uint32), whence, int64(Off))
 	return off, errorCodeMap[code]
 }
@@ -344,9 +406,11 @@ func (n *fsNode) Lseek(_ context.Context, f fusefs.FileHandle, Off uint64, whenc
 var _ = (fusefs.NodeCopyFileRanger)((*fsNode)(nil))
 
 func (n *fsNode) CopyFileRange(_ context.Context, fhIn fusefs.FileHandle, offIn uint64, out *fusefs.Inode, fhOut fusefs.FileHandle, offOut uint64, len uint64, flags uint64) (uint32, syscall.Errno) {
-	if flags != 0 {
+	if flags != 0 || fhIn == nil || fhOut == nil {
 		return 0, syscall.ENOTSUP
 	}
+	wipeDataCache(&n.dataCache)
+	wipeAttrCache(&n.attrCache)
 	copyed, code := n.fsdata.session.CmdCopyFileRange(fhIn.(uint32), fhOut.(uint32), offIn, offOut, len)
 	return uint32(copyed), errorCodeMap[code]
 }

@@ -249,6 +249,10 @@ func (s *fileSystem) Releasedir(_ string, fh uint64) int {
 }
 
 func (s *fileSystem) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, _ int64, _ uint64) int {
+	if path[len(path)-1] != '/' {
+		path = path + "/"
+	}
+
 	items, code := s.session.CmdReadDir(path)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]

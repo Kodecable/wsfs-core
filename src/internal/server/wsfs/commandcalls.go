@@ -313,6 +313,23 @@ case wsfsprotocol.CmdSetAttrByFD:
         goto BadCmdFormat
     }
     s.cmdSetAttrByFD(clientMark, writeCh, v0, v1, v2, v3, v4, v5)
+case wsfsprotocol.CmdTreeDir:
+    var v0 string
+    err = util.CopyStrFromReader(r, &v0)
+    if err != nil {
+        goto BadCmdFormat
+    }
+    var v1 uint8
+    err = binary.Read(r, binary.LittleEndian, &v1)
+    if err != nil {
+        goto BadCmdFormat
+    }
+    var v2 string
+    err = util.CopyStrFromReader(r, &v2)
+    if err != nil {
+        goto BadCmdFormat
+    }
+    s.cmdTreeDir(clientMark, writeCh, v0, v1, v2)
 	default:
 		err = errors.New("unknwon command")
 		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "Unknwon command")

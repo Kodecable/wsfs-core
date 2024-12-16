@@ -137,7 +137,7 @@ func init() {
 	MountCmd.Flags().Int64VarP(&nobodyGid, "nobody-gid", "", -1, "Nobody gid in filesystem, lookup nobody gid when negtive (Unix only)")
 	MountCmd.Flags().StringVarP(&volumeLabel, "volume-label", "", "WSFS Storage", "Volume label (Windows only)")
 	MountCmd.Flags().BoolVarP(&directMount, "direct-mount", "", false, "Use mount syscall instead fusemount, root needed (Unix only)")
-	MountCmd.Flags().Int16VarP(&structTimeout, "struct-timeout", "", 1, "Fuse struct cache timeout in seconds, improves performance and inconsistency")
+	MountCmd.Flags().Int16VarP(&structTimeout, "struct-timeout", "", 180, "Fuse struct cache timeout in seconds, improves performance and inconsistency")
 	MountCmd.Flags().BoolVarP(&masqueradeAsNtfs, "masquerade-as-ntfs", "", false, "Allow Windows to run executable as administrator (Windows only)")
 	MountCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
 	MountCmd.Flags().VarP(

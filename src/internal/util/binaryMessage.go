@@ -90,6 +90,10 @@ func (b *Buffer) ReadData(off int) []byte {
 	return b.buf[off:b.len]
 }
 
+func (b *Buffer) ReadDataAtLen(off int, len int) []byte {
+	return b.buf[off : off+len]
+}
+
 func (b *Buffer) ReadString(off int) (str string, ok bool) {
 	var u byte
 	var sb = stringBuilderPool.Get().(*strings.Builder)
@@ -125,4 +129,12 @@ func (b *Buffer) ReadU32(off int) uint32 {
 
 func (b *Buffer) ReadU64(off int) uint64 {
 	return binary.LittleEndian.Uint64(b.buf[off:])
+}
+
+func (b *Buffer) Len() int {
+	return b.len
+}
+
+func (b *Buffer) ModifyByteAt(off int, data byte) {
+	b.buf[off] = data
 }

@@ -29,6 +29,7 @@ const (
 	CmdCopyFileRange uint8 = 19
 	CmdRename        uint8 = 20
 	CmdSetAttrByFD   uint8 = 21
+	CmdTreeDir       uint8 = 22
 )
 
 const (
@@ -82,4 +83,12 @@ const (
 	SETATTR_MTIME uint8 = 0b0010
 	SETATTR_MODE  uint8 = 0b0100
 	SETATTR_OWNER uint8 = 0b1000
+)
+
+const (
+	TREEDIR_STATUS_OK                uint8 = 0
+	TREEDIR_STATUS_OK_WITH_DATA      uint8 = 1
+	TREEDIR_STATUS_ENTER_DIR         uint8 = 2
+	TREEDIR_STATUS_END_DIR           uint8 = 3
+	TREEDIR_STATUS_END_DIR_WITH_FAIL uint8 = 4
 )

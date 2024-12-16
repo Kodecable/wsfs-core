@@ -46,7 +46,7 @@ func dial(url, username, password, resumeId string) (conn *websocket.Conn, rsp *
 	if err != nil {
 		return
 	}
-	if conn.Subprotocol() != "WSFS/draft.1" {
+	if conn.Subprotocol() != "WSFS/draft.2" {
 		log.Error().Str("Subprotocol", conn.Subprotocol()).Msg("Subprotocol mismatch")
 		err = errors.New("subprotocol mismatch")
 		return

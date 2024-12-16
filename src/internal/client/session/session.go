@@ -170,7 +170,8 @@ func (s *Session) writeLoop(conn *websocket.Conn, ctx context.Context, cancel co
 		select {
 		case buf := <-s.writeRequest:
 			//T := buf.Done()
-			//log.Debug().Bytes("data", T).Uint8("Cm", buf.ReadByteAt(0)).Uint8("Op", buf.ReadByteAt(1)).Msg("Send commnad")
+			//log.Debug().Uint8("M", buf.ReadByteAt(0)).Uint8("C", buf.ReadByteAt(1)).Msg("Send commnad")
+			//err = conn.WriteMessage(websocket.BinaryMessage, T)
 			err = conn.WriteMessage(websocket.BinaryMessage, buf.Done())
 			bufPool.Put(buf)
 			if err != nil {
