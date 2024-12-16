@@ -6,12 +6,12 @@ import (
 	"strconv"
 )
 
-var rangeExp = regexp.MustCompile(`bytes=(-?\d)(-\d)?`)
+var rangeExp = regexp.MustCompile(`bytes=(-?\d+)(-\d+)?`)
 
 // Parse X-Update-Range header.
 //
 // RETURN:
-//  1. if err is not nil: all aother return are invaild
+//  1. if err is not nil: start and end are invaild
 //  2. if end < 0: append
 //
 // REFERS:

@@ -147,24 +147,54 @@ function UploadFiles() {
     UploadFile(files, fullSize, 0, 0)
 }
 
-function UploadFile(files, fullSize, doneSize, i) {
+// onProgess(int uploaded)
+// onEnd(bool ok, string msg) msg should be ignored if ok is true
+function UploadFileChunk(file, chunkI, retryCount, onProgress, onEnd) {
+    const chunkSize = 64 * 1024 * 1024 // 64 MiB
+    const retryMax = 3
+    let last = file.size - chunkI * chunkSize < chunkSize
+
+    let xhr = new XMLHttpRequest();
+    xhr.open(chunkI == 0 ? "PUT" : "PATCH", window.location.href + file.name, true)
+    if (chunkI == 0)
+        xhr.setRequestHeader("Overwrite", "T")
+    else {
+        xhr.setRequestHeader("Content-Type", "application/x-sabredav-partialupdate")
+        xhr.setRequestHeader("X-Update-Range", `bytes=${chunkI * chunkSize}-`)
+    }
+    xhr.upload.onprogress = (e) => { onProgress(chunkI * chunkSize + e.loaded) }
+    xhr.onloadend = () => {
+        if (xhr.readyState != xhr.DONE
+            || xhr.status > 299
+            || xhr.status < 200) {
+            if (retryCount >= retryMax)
+                onEnd(false, xhr.status != 0 ? xhr.status : "connection")
+            else
+                UploadFileChunk(file, chunkI, retryCount + 1, onProgress, onEnd)
+        } else {
+            if (last)
+                onEnd(true, "")
+            else
+                UploadFileChunk(file, chunkI + 1, 0, onProgress, onEnd)
+        }
+    }
+    xhr.send(file.slice(chunkI * chunkSize, last ? file.size : (chunkI + 1) * chunkSize))
+}
+
+function UploadFile(files, fullSize, fullUploadedSize, i) {
     if (files.length == i) {
         CloseProgressDialog()
         JUnlock()
         return
     }
-    let xhr = new XMLHttpRequest();
-    xhr.open("PUT", window.location.href + files.item(i).name, true)
-    xhr.setRequestHeader("Overwrite", "T")
-    xhr.upload.onprogress = (e) => { UpdateProgressDialog(files.item(i).name, fullSize, doneSize + e.loaded) }
-    xhr.onloadend = () => {
-        if (xhr.readyState != xhr.DONE
-            || xhr.status > 299
-            || xhr.status < 200)
-            LogProgressDialog(`Upload failed(${xhr.status != 0 ? xhr.status : "internal"}):${files.item(i).name}`)
-        UploadFile(files, fullSize, doneSize + files.item(i).size, i + 1)
-    }
-    xhr.send(files.item(i))
+    UploadFileChunk(files.item(i), 0, 0,
+        (uploaded) => {
+            UpdateProgressDialog(files.item(i).name, fullSize, fullUploadedSize + uploaded)
+        }, (ok, msg) => {
+            if (!ok)
+                LogProgressDialog(`Upload failed(${msg}): ${files.item(i).name}`)
+            UploadFile(files, fullSize, fullUploadedSize + files.item(i).size, i + 1)
+        })
 }
 
 function NewFolder() {
@@ -179,7 +209,7 @@ function NewFolder() {
         if (xhr.readyState != xhr.DONE
             || xhr.status > 299
             || xhr.status < 200)
-            LogProgressDialog(`Create folder failed(${xhr.status != 0 ? xhr.status : "xhr"}):${files.item(i).name}`)
+            LogProgressDialog(`Create folder failed(${xhr.status != 0 ? xhr.status : "connection"}): ${files.item(i).name}`)
         CloseProgressDialog()
         JUnlock()
     }
@@ -237,4 +267,4 @@ function initWebui(reload) {
     Sort("name", 1)
 }
 
-window.addEventListener("load", () => {initWebui(false)})
+window.addEventListener("load", () => { initWebui(false) })
