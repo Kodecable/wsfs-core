@@ -158,7 +158,7 @@ func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 	msgSize := 2
 	for i, dirent := range dirents {
 		entSize := 0
-		entSize += len(dirent.Name())
+		entSize += len(dirent.Name()) + 1
 		entSize += 21
 		if msgSize+entSize > maxFrameSize {
 			if i == len(dirents)-1 {
