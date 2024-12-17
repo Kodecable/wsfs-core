@@ -3,6 +3,7 @@
 package client
 
 import (
+	"os"
 	"strconv"
 	"wsfs-core/buildinfo"
 	"wsfs-core/internal/client/session"
@@ -13,7 +14,9 @@ import (
 )
 
 func fuseMount(mountpoint string, session *session.Session, opt MountOption) error {
-	fs := windows.NewFS(session, mountpoint)
+	exitCode := 0
+
+	fs := windows.NewFS(session, mountpoint, func() { os.Exit(exitCode) })
 	host := fuse.NewFileSystemHost(fs)
 
 	// winfsp-fuse opts
@@ -44,6 +47,7 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 		err := session.Wait()
 		if err != nil {
 			log.Error().Err(err).Msg("Session exit with error")
+			exitCode = 1
 		}
 		host.Unmount()
 	}()

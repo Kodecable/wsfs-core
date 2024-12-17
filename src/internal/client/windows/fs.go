@@ -79,12 +79,14 @@ type fileSystem struct {
 
 	session    *session.Session
 	mountpoint string
+	onDestroy  func()
 }
 
-func NewFS(session *session.Session, mountpoint string) *fileSystem {
+func NewFS(session *session.Session, mountpoint string, onDestroy func()) *fileSystem {
 	return &fileSystem{
 		session:    session,
 		mountpoint: mountpoint,
+		onDestroy:  onDestroy,
 	}
 }
 
@@ -267,4 +269,9 @@ func (s *fileSystem) Readdir(path string, fill func(name string, stat *fuse.Stat
 	}
 
 	return ok
+
+}
+
+func (s *fileSystem) Destroy() {
+	s.onDestroy()
 }
