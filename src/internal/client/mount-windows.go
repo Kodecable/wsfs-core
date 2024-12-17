@@ -52,6 +52,8 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 		host.Unmount()
 	}()
 
+	host.SetCapCaseInsensitive(false)
+	host.SetCapReaddirPlus(true)
 	host.Mount(mountpoint, opts)
 	return nil
 }

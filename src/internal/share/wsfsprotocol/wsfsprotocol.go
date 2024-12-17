@@ -51,7 +51,16 @@ const (
 	ErrorTooLoong        uint8 = 15
 )
 
-// OpenFlag defined same as os package
+const (
+	O_RDONLY    uint32 = 0x0
+	O_WRONLY    uint32 = 0x1
+	O_RDWR      uint32 = 0x2
+	O_TRUNC     uint32 = 0x200
+	O_EXCL      uint32 = 0x80
+	O_CREAT     uint32 = 0x40
+	O_DIRECTORY uint32 = 0x10000
+	O_APPEND    uint32 = 0x400
+)
 
 const (
 	FALLOC_FL_FALLOCATE      uint32 = 0x00

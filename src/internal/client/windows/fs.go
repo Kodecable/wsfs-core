@@ -17,6 +17,7 @@ const (
 	fsBlockSize     = 4096
 	fsFileNameLen   = 255
 	defaultFileMode = 0o644
+	defaultDirMode  = 0o755
 )
 
 func fileMode(mode uint32) (r uint32) {
@@ -74,6 +75,32 @@ func statFromDirItem(stat *fuse.Stat_t, di *session.DirItem) {
 	})
 }
 
+// O_DIRECTORY is missing because win has no equivalent const
+func wsfsOpenFlagFromWinOpenFlag(winflag int) (flag uint32) {
+	//if winflag&fuse.O_RDONLY != 0 {
+	//	flag |= wsfsprotocol.O_RDONLY
+	//}
+	if winflag&fuse.O_WRONLY != 0 {
+		flag |= wsfsprotocol.O_WRONLY
+	}
+	if winflag&fuse.O_RDWR != 0 {
+		flag |= wsfsprotocol.O_RDWR
+	}
+	if winflag&fuse.O_TRUNC != 0 {
+		flag |= wsfsprotocol.O_TRUNC
+	}
+	if winflag&fuse.O_EXCL != 0 {
+		flag |= wsfsprotocol.O_EXCL
+	}
+	if winflag&fuse.O_CREAT != 0 {
+		flag |= wsfsprotocol.O_CREAT
+	}
+	if winflag&fuse.O_APPEND != 0 {
+		flag |= wsfsprotocol.O_APPEND
+	}
+	return
+}
+
 type fileSystem struct {
 	fuse.FileSystemBase
 
@@ -107,12 +134,14 @@ func (s *fileSystem) Statfs(path string, stat *fuse.Statfs_t) int {
 	return ok
 }
 
-func (s *fileSystem) Open(path string, flags int) (errc int, fh uint64) {
-	fd, code := s.session.CmdOpen(path, uint32(flags), defaultFileMode)
+func (s *fileSystem) Open(path string, winflag int) (errc int, fh uint64) {
+	fd, code := s.session.CmdOpen(path, wsfsOpenFlagFromWinOpenFlag(winflag), defaultFileMode)
+	//log.Warn().Str("Path", path).Int("Flag", winflag).Uint32("Fd", fd).Msg("Open")
 	return errorCodeMap[code], uint64(fd)
 }
 
 func (s *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
+	//log.Warn().Str("Path", path).Uint64("fh", fh).Msg("Getattr")
 	fi, code := s.session.CmdGetAttr(path)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
@@ -123,21 +152,25 @@ func (s *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc in
 }
 
 func (s *fileSystem) Mkdir(path string, mode uint32) int {
-	code := s.session.CmdMkdir(path, mode)
+	//log.Warn().Str("Path", path).Uint32("mode", mode).Msg("Mkdir")
+	code := s.session.CmdMkdir(path, defaultDirMode)
 	return errorCodeMap[code]
 }
 
 func (s *fileSystem) Unlink(path string) int {
+	//log.Warn().Str("Path", path).Msg("Unlink")
 	code := s.session.CmdRemove(path)
 	return errorCodeMap[code]
 }
 
 func (s *fileSystem) Rmdir(path string) int {
+	//log.Warn().Str("Path", path).Msg("Rmdir")
 	code := s.session.CmdRmDir(path)
 	return errorCodeMap[code]
 }
 
 func (s *fileSystem) Symlink(target string, newpath string) int {
+	//log.Warn().Str("Target", target).Str("Path", newpath).Msg("Symlink")
 	if !strings.HasPrefix(target, s.mountpoint) {
 		return -fuse.EACCES
 	}
@@ -148,6 +181,7 @@ func (s *fileSystem) Symlink(target string, newpath string) int {
 }
 
 func (s *fileSystem) Readlink(path string) (int, string) {
+	//log.Warn().Str("Path", path).Msg("Readlink")
 	path, code := s.session.CmdReadLink(path)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code], ""
@@ -156,6 +190,7 @@ func (s *fileSystem) Readlink(path string) (int, string) {
 }
 
 func (s *fileSystem) Rename(oldpath string, newpath string) int {
+	//log.Warn().Str("OldPath", oldpath).Str("NewPath", newpath).Msg("Rename")
 	code := s.session.CmdRename(oldpath, newpath, 0)
 	return errorCodeMap[code]
 }
@@ -191,11 +226,13 @@ func (s *fs) Access(path string, mask uint32) int {
 }*/
 
 func (s *fileSystem) Create(path string, flags int, mode uint32) (int, uint64) {
-	fd, code := s.session.CmdOpen(path, uint32(flags|os.O_CREATE), mode)
+	fd, code := s.session.CmdOpen(path, wsfsOpenFlagFromWinOpenFlag(flags), defaultFileMode)
+	//log.Warn().Str("Path", path).Int("Flags", flags).Uint32("Mode", mode).Uint32("Fd", fd).Msg("Create")
 	return errorCodeMap[code], uint64(fd)
 }
 
 func (s *fileSystem) Truncate(path string, size int64, fh uint64) int {
+	//log.Error().Str("Path", path).Int64("Size", size).Uint64("Fd", fh).Msg("Truncate")
 	var code uint8
 	if ^uint64(0) == fh {
 		code = s.session.CmdSetAttr(path,
@@ -211,6 +248,7 @@ func (s *fileSystem) Truncate(path string, size int64, fh uint64) int {
 
 func (s *fileSystem) Read(path string, buff []byte, ofst int64, fh uint64) int {
 	readed, code := s.session.CmdReadAt(uint32(fh), uint64(ofst), buff)
+	//log.Error().Str("Path", path).Int("Want", len(buff)).Int64("Ofst", ofst).Uint64("Readed", readed).Uint64("Fd", fh).Msg("Read")
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
 	}
@@ -222,6 +260,7 @@ func (s *fileSystem) Write(path string, buff []byte, ofst int64, fh uint64) int 
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
 	}
+	//log.Error().Str("Path", path).Int64("ofst", ofst).Int("Want", len(buff)).Uint64("Writed", count).Uint64("Fd", fh).Msg("Write")
 	return int(count)
 }
 
@@ -230,15 +269,18 @@ func (*fileSystem) Flush(_ string, _ uint64) int {
 }
 
 func (s *fileSystem) Release(_ string, fh uint64) int {
+	//log.Warn().Uint64("Fd", fh).Msg("Release")
 	code := s.session.CmdClose(uint32(fh))
 	return errorCodeMap[code]
 }
 
 func (s *fileSystem) Fsync(_ string, _ bool, fh uint64) int {
+	//log.Warn().Uint64("Fd", fh).Msg("Fsync")
 	code := s.session.CmdSync(uint32(fh))
 	return errorCodeMap[code]
 }
 
+/*
 func (s *fileSystem) Opendir(path string) (int, uint64) {
 	const O_DIRECTORY = 0x10000
 	fd, code := s.session.CmdOpen(path, uint32(os.O_RDONLY|O_DIRECTORY), 0)
@@ -249,10 +291,17 @@ func (s *fileSystem) Releasedir(_ string, fh uint64) int {
 	code := s.session.CmdClose(uint32(fh))
 	return errorCodeMap[code]
 }
+*/
 
 func (s *fileSystem) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, _ int64, _ uint64) int {
+	//log.Warn().Str("Path", path).Msg("Readdir")
 	if path[len(path)-1] != '/' {
 		path = path + "/"
+	}
+
+	fi, code := s.session.CmdGetAttr(path)
+	if code != wsfsprotocol.ErrorOK {
+		return errorCodeMap[code]
 	}
 
 	items, code := s.session.CmdReadDir(path)
@@ -260,10 +309,12 @@ func (s *fileSystem) Readdir(path string, fill func(name string, stat *fuse.Stat
 		return errorCodeMap[code]
 	}
 
-	fill(".", nil, 0)
+	stat := fuse.Stat_t{}
+	statFromFileInfo(&stat, &fi)
+	fill(".", &stat, 0)
 	fill("..", nil, 0)
 	for _, item := range items {
-		stat := fuse.Stat_t{}
+		stat = fuse.Stat_t{}
 		statFromDirItem(&stat, &item)
 		fill(item.Name, &stat, 0)
 	}
