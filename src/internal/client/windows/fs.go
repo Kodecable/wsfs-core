@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/share/wsfsprotocol"
 
@@ -13,7 +14,7 @@ import (
 )
 
 const (
-	ok              = 0
+	fuseOK          = 0
 	fsBlockSize     = 4096
 	fsFileNameLen   = 255
 	defaultFileMode = 0o644
@@ -104,16 +105,28 @@ func wsfsOpenFlagFromWinOpenFlag(winflag int) (flag uint32) {
 type fileSystem struct {
 	fuse.FileSystemBase
 
+	cache      fsCache
 	session    *session.Session
 	mountpoint string
 	onDestroy  func()
 }
 
-func NewFS(session *session.Session, mountpoint string, onDestroy func()) *fileSystem {
-	return &fileSystem{
+func NewFS(session *session.Session, mountpoint string, timeout time.Duration, onDestroy func()) *fileSystem {
+	s := &fileSystem{
 		session:    session,
 		mountpoint: mountpoint,
 		onDestroy:  onDestroy,
+		cache: fsCache{
+			timeout: timeout,
+		},
+	}
+	go s.cache.Run()
+	return s
+}
+
+func (s *fileSystem) delParentCache(path string) {
+	if ppath := filepath.Dir(path); ppath != path {
+		s.cache.Del(ppath)
 	}
 }
 
@@ -131,40 +144,70 @@ func (s *fileSystem) Statfs(path string, stat *fuse.Statfs_t) int {
 	stat.Namemax = fsFileNameLen
 	stat.Files = 0
 	stat.Ffree = 0
-	return ok
+	return fuseOK
 }
 
 func (s *fileSystem) Open(path string, winflag int) (errc int, fh uint64) {
+	if winflag&fuse.O_WRONLY != 0 || winflag&fuse.O_RDWR != 0 {
+		s.delParentCache(path)
+		s.cache.Del(path)
+	}
+
 	fd, code := s.session.CmdOpen(path, wsfsOpenFlagFromWinOpenFlag(winflag), defaultFileMode)
 	//log.Warn().Str("Path", path).Int("Flag", winflag).Uint32("Fd", fd).Msg("Open")
 	return errorCodeMap[code], uint64(fd)
 }
 
 func (s *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
+	if ppath := filepath.Dir(path); ppath != path {
+		cache, ok := s.cache.Get(ppath)
+		if ok && cache.items != nil {
+			name := filepath.Base(path)
+			for _, item := range cache.items {
+				if item.Name == name {
+					statFromDirItem(stat, &item)
+					return
+				}
+			}
+			return -fuse.ENOENT
+		}
+	}
+
+	if cache, ok := s.cache.Get(path); ok {
+		statFromFileInfo(stat, &cache.attr)
+		return
+	}
+
 	//log.Warn().Str("Path", path).Uint64("fh", fh).Msg("Getattr")
 	fi, code := s.session.CmdGetAttr(path)
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code]
 	}
+	s.cache.Set(path, cachedData{attr: fi})
 
 	statFromFileInfo(stat, &fi)
-	return ok
+	return fuseOK
 }
 
 func (s *fileSystem) Mkdir(path string, mode uint32) int {
 	//log.Warn().Str("Path", path).Uint32("mode", mode).Msg("Mkdir")
+	s.delParentCache(path)
 	code := s.session.CmdMkdir(path, defaultDirMode)
 	return errorCodeMap[code]
 }
 
 func (s *fileSystem) Unlink(path string) int {
 	//log.Warn().Str("Path", path).Msg("Unlink")
+	s.delParentCache(path)
+	s.cache.Del(path)
 	code := s.session.CmdRemove(path)
 	return errorCodeMap[code]
 }
 
 func (s *fileSystem) Rmdir(path string) int {
 	//log.Warn().Str("Path", path).Msg("Rmdir")
+	s.delParentCache(path)
+	s.cache.Del(path)
 	code := s.session.CmdRmDir(path)
 	return errorCodeMap[code]
 }
@@ -176,6 +219,11 @@ func (s *fileSystem) Symlink(target string, newpath string) int {
 	}
 	target = strings.TrimPrefix(target, s.mountpoint)
 
+	s.delParentCache(target)
+	s.cache.Del(target)
+	s.delParentCache(newpath)
+	s.cache.Del(newpath)
+
 	code := s.session.CmdSymLink(target, newpath)
 	return errorCodeMap[code]
 }
@@ -186,11 +234,17 @@ func (s *fileSystem) Readlink(path string) (int, string) {
 	if code != wsfsprotocol.ErrorOK {
 		return errorCodeMap[code], ""
 	}
-	return ok, filepath.Join(s.mountpoint, path)
+	return fuseOK, filepath.Join(s.mountpoint, path)
 }
 
 func (s *fileSystem) Rename(oldpath string, newpath string) int {
 	//log.Warn().Str("OldPath", oldpath).Str("NewPath", newpath).Msg("Rename")
+
+	s.delParentCache(oldpath)
+	s.cache.Del(oldpath)
+	s.delParentCache(newpath)
+	s.cache.Del(newpath)
+
 	code := s.session.CmdRename(oldpath, newpath, 0)
 	return errorCodeMap[code]
 }
@@ -226,12 +280,18 @@ func (s *fs) Access(path string, mask uint32) int {
 }*/
 
 func (s *fileSystem) Create(path string, flags int, mode uint32) (int, uint64) {
+	s.delParentCache(path)
+	s.cache.Del(path)
+
 	fd, code := s.session.CmdOpen(path, wsfsOpenFlagFromWinOpenFlag(flags), defaultFileMode)
 	//log.Warn().Str("Path", path).Int("Flags", flags).Uint32("Mode", mode).Uint32("Fd", fd).Msg("Create")
 	return errorCodeMap[code], uint64(fd)
 }
 
 func (s *fileSystem) Truncate(path string, size int64, fh uint64) int {
+	s.delParentCache(path)
+	s.cache.Del(path)
+
 	//log.Error().Str("Path", path).Int64("Size", size).Uint64("Fd", fh).Msg("Truncate")
 	var code uint8
 	if ^uint64(0) == fh {
@@ -265,10 +325,13 @@ func (s *fileSystem) Write(path string, buff []byte, ofst int64, fh uint64) int 
 }
 
 func (*fileSystem) Flush(_ string, _ uint64) int {
-	return ok
+	return fuseOK
 }
 
-func (s *fileSystem) Release(_ string, fh uint64) int {
+func (s *fileSystem) Release(path string, fh uint64) int {
+	s.delParentCache(path)
+	s.cache.Del(path)
+
 	//log.Warn().Uint64("Fd", fh).Msg("Release")
 	code := s.session.CmdClose(uint32(fh))
 	return errorCodeMap[code]
@@ -294,19 +357,31 @@ func (s *fileSystem) Releasedir(_ string, fh uint64) int {
 */
 
 func (s *fileSystem) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, _ int64, _ uint64) int {
-	//log.Warn().Str("Path", path).Msg("Readdir")
 	if path[len(path)-1] != '/' {
 		path = path + "/"
 	}
 
-	fi, code := s.session.CmdGetAttr(path)
-	if code != wsfsprotocol.ErrorOK {
-		return errorCodeMap[code]
-	}
+	var fi session.FileInfo
+	var items []session.DirItem
+	var code uint8
 
-	items, code := s.session.CmdReadDir(path)
-	if code != wsfsprotocol.ErrorOK {
-		return errorCodeMap[code]
+	cache, ok := s.cache.Get(path)
+	if ok && cache.items != nil {
+		fi = cache.attr
+		items = cache.items
+	} else {
+		//log.Warn().Str("Path", path).Msg("Readdir")
+		fi, code = s.session.CmdGetAttr(path)
+		if code != wsfsprotocol.ErrorOK {
+			return errorCodeMap[code]
+		}
+
+		items, code = s.session.CmdReadDir(path)
+		if code != wsfsprotocol.ErrorOK {
+			return errorCodeMap[code]
+		}
+
+		s.cache.Set(path, cachedData{attr: fi, items: items})
 	}
 
 	stat := fuse.Stat_t{}
@@ -319,8 +394,7 @@ func (s *fileSystem) Readdir(path string, fill func(name string, stat *fuse.Stat
 		fill(item.Name, &stat, 0)
 	}
 
-	return ok
-
+	return fuseOK
 }
 
 func (s *fileSystem) Destroy() {

@@ -16,7 +16,7 @@ import (
 func fuseMount(mountpoint string, session *session.Session, opt MountOption) error {
 	exitCode := 0
 
-	fs := windows.NewFS(session, mountpoint, func() { os.Exit(exitCode) })
+	fs := windows.NewFS(session, mountpoint, opt.EntryTimeout, func() { os.Exit(exitCode) })
 	host := fuse.NewFileSystemHost(fs)
 
 	// winfsp-fuse opts
