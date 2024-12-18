@@ -167,7 +167,7 @@ func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 				s.sendDirent(clientMark, writeCh, apath, dirents[lastIndex:i], wsfsprotocol.ErrorPartialResponse)
 			}
 			lastIndex = i
-			msgSize = 2
+			msgSize = 2 + entSize
 		} else {
 			msgSize += entSize
 		}
