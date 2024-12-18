@@ -150,7 +150,7 @@ func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 	}
 
 	if len(dirents) == 0 {
-		s.sendDirent(clientMark, writeCh, path, dirents, wsfsprotocol.ErrorOK)
+		s.sendDirent(clientMark, writeCh, apath, dirents, wsfsprotocol.ErrorOK)
 		return
 	}
 
@@ -162,9 +162,9 @@ func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 		entSize += 21
 		if msgSize+entSize > maxFrameSize {
 			if i == len(dirents)-1 {
-				s.sendDirent(clientMark, writeCh, path, dirents[lastIndex:i], wsfsprotocol.ErrorOK)
+				s.sendDirent(clientMark, writeCh, apath, dirents[lastIndex:i], wsfsprotocol.ErrorOK)
 			} else {
-				s.sendDirent(clientMark, writeCh, path, dirents[lastIndex:i], wsfsprotocol.ErrorPartialResponse)
+				s.sendDirent(clientMark, writeCh, apath, dirents[lastIndex:i], wsfsprotocol.ErrorPartialResponse)
 			}
 			lastIndex = i
 			msgSize = 2
@@ -173,7 +173,7 @@ func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 		}
 	}
 	if msgSize != 2 {
-		s.sendDirent(clientMark, writeCh, path, dirents[lastIndex:], wsfsprotocol.ErrorOK)
+		s.sendDirent(clientMark, writeCh, apath, dirents[lastIndex:], wsfsprotocol.ErrorOK)
 	}
 }
 
