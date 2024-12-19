@@ -166,7 +166,7 @@ func (s *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc in
 			for _, item := range cache.items {
 				if item.Name == name {
 					statFromDirItem(stat, &item)
-					return
+					return fuseOK
 				}
 			}
 			return -fuse.ENOENT
@@ -175,7 +175,7 @@ func (s *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc in
 
 	if cache, ok := s.cache.Get(path); ok {
 		statFromFileInfo(stat, &cache.attr)
-		return
+		return fuseOK
 	}
 
 	//log.Warn().Str("Path", path).Uint64("fh", fh).Msg("Getattr")

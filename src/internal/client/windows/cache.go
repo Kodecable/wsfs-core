@@ -9,7 +9,6 @@ import (
 type cachedData struct {
 	items []session.DirItem
 	attr  session.FileInfo
-	data  []byte
 }
 
 type cacheRecord struct {
