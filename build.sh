@@ -20,13 +20,17 @@ help() {
     echo "   -a ARCH    Target Arch"
     echo "              'all', 'arm', 'arm64', '386', 'amd64' (default 'all')"
     echo "   -m MODE    'release' or 'debug'"
-    echo "   -v VERSION Short commit ID (if available) or 'unknown' when not set"
+    echo "   -v VERSION Version string; if not set, use tag or commit id"
     echo ""
     echo "Configed BuildName: '$BuildName'"
 }
 
 if command -v "git" >/dev/null 2>&1 && [ -d ".git" ]; then
-    BuildVersion="commit.$(git rev-parse --short --verify HEAD 2>/dev/null)" || BuildVersion="unknown"
+    if BuildVersion="$(git describe --abbrev=0 --tags --exact-match --match "v[0-9]*" HEAD 2>&1)"; then
+        BuildVersion="${BuildVersion:1}"
+    else
+        BuildVersion="commit.$(git rev-parse --short --verify HEAD 2>/dev/null)" || BuildVersion="unknown"
+    fi
     if [ "$BuildVersion" != "unknown" ] && [ ! -z "$(git status --porcelain=v1)" ]; then
        BuildVersion="$BuildVersion+"
     fi
