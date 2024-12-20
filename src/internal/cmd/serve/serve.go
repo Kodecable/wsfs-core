@@ -23,7 +23,7 @@ var (
 
 var ServeCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Serve a Websocket Filesystem",
+	Short: "Start a Websocket Filesystem server",
 	Args:  cobra.NoArgs,
 	Run: func(_ *cobra.Command, _ []string) {
 		util.SetupZerolog(noLogTime, logLevel)
@@ -66,7 +66,7 @@ var ServeCmd = &cobra.Command{
 
 func init() {
 	if buildinfo.IsDebug() {
-		logLevel = zerolog.DebugLevel
+		logLevel = zerolog.DebugLevel // default debug level in debug mode
 	}
 
 	ServeCmd.Flags().StringVarP(&configPath, "config", "c", iternalDefaultConfigPath, "Path to config file")

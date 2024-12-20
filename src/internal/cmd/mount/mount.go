@@ -32,11 +32,14 @@ var (
 )
 
 var MountCmd = &cobra.Command{
-	Use:   "mount ENDPOINT MOUNTPOINT",
+	Use:   "mount EndPoint MountPoint",
 	Short: "Mount a Websocket Filesystem",
-	Args:  cobra.ExactArgs(2),
-	Run: func(_ *cobra.Command, args []string) {
-		setUids()
+	Example: `  wsfs mount wsfs://localhost:20001/?wsfs /path/to/mountpoint
+  wsfs mount wsfss+unix://hostname.sent.to.server/path/to/socket.sock/./?wsfs /path/to/mountpoint
+  wsfs mount windows.mountponint.should.be?wsfs "P:"`,
+	Args: cobra.ExactArgs(2),
+	Run: func(c *cobra.Command, args []string) {
+		setUids(c)
 		util.SetupZerolog(noLogTime, logLevel)
 
 		urlArg := args[0]
@@ -100,41 +103,42 @@ var MountCmd = &cobra.Command{
 	},
 }
 
-func setUids() {
-	if uid >= 0 && gid >= 0 &&
-		nobodyUid >= 0 && nobodyGid >= 0 {
-		return
-	}
+func setUids(c *cobra.Command) {
+	if (!c.Flags().Changed("uid")) ||
+		(!c.Flags().Changed("git")) ||
+		(!c.Flags().Changed("nobody-uid")) ||
+		(!c.Flags().Changed("nobody-gid")) {
+		defaultIds, err := util.GetDefaultIds()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Unable to determine default (nobody) u/gids")
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 
-	defaultIds, err := util.GetDefaultIds()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to determine default (nobody) u/gids")
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	if uid < 0 {
-		uid = int64(defaultIds.CurrentUser)
-	}
-	if gid < 0 {
-		gid = int64(defaultIds.UserGroup)
-	}
-	if nobodyUid < 0 {
-		nobodyUid = int64(defaultIds.NobodyUser)
-	}
-	if nobodyGid < 0 {
-		nobodyGid = int64(defaultIds.NobodyGroup)
+		if !c.Flags().Changed("uid") {
+			uid = int64(defaultIds.CurrentUser)
+		}
+		if !c.Flags().Changed("gid") {
+			gid = int64(defaultIds.UserGroup)
+		}
+		if !c.Flags().Changed("nobody-uid") {
+			nobodyUid = int64(defaultIds.NobodyUser)
+		}
+		if !c.Flags().Changed("nobody-gid") {
+			nobodyGid = int64(defaultIds.NobodyGroup)
+		}
 	}
 }
 
 func init() {
 	if buildinfo.IsDebug() {
-		logLevel = zerolog.DebugLevel
+		logLevel = zerolog.DebugLevel // default debug level in debug mode
 	}
-	MountCmd.Flags().Int64VarP(&uid, "uid", "", -1, "Uid in filesystem, use process uid when negtive (Unix only)")
-	MountCmd.Flags().Int64VarP(&gid, "gid", "", -1, "Gid in filesystem, use process gid when negtive (Unix only)")
-	MountCmd.Flags().Int64VarP(&nobodyUid, "nobody-uid", "", -1, "Nobody uid in filesystem, lookup nobody uid when negtive (Unix only)")
-	MountCmd.Flags().Int64VarP(&nobodyGid, "nobody-gid", "", -1, "Nobody gid in filesystem, lookup nobody gid when negtive (Unix only)")
+
+	MountCmd.Flags().Int64VarP(&uid, "uid", "", 0, "Uid in filesystem (Unix only)")
+	MountCmd.Flags().Int64VarP(&gid, "gid", "", 0, "Gid in filesystem (Unix only)")
+	MountCmd.Flags().Int64VarP(&nobodyUid, "nobody-uid", "", 0, "Nobody uid in filesystem (Unix only)")
+	MountCmd.Flags().Int64VarP(&nobodyGid, "nobody-gid", "", 0, "Nobody gid in filesystem (Unix only)")
 	MountCmd.Flags().StringVarP(&volumeLabel, "volume-label", "", "WSFS Storage", "Volume label (Windows only)")
 	MountCmd.Flags().BoolVarP(&directMount, "direct-mount", "", false, "Use mount syscall instead fusemount, root needed (Unix only)")
 	MountCmd.Flags().Int16VarP(&structTimeout, "struct-timeout", "", 180, "Fuse struct cache timeout in seconds, improves performance and inconsistency")

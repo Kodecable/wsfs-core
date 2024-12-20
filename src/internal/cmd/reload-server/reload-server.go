@@ -44,10 +44,10 @@ var ReloadConfigCmd = &cobra.Command{
 	Use:   "reload-server",
 	Short: "Tell a server reload config",
 	Args:  cobra.NoArgs,
-	Run: func(_ *cobra.Command, _ []string) {
+	Run: func(c *cobra.Command, _ []string) {
 		var err error
 
-		if serverPid <= 0 {
+		if !c.Flags().Changed("pid") {
 			serverPid, err = findProcess()
 
 			if err != nil {
@@ -76,5 +76,5 @@ var ReloadConfigCmd = &cobra.Command{
 }
 
 func init() {
-	ReloadConfigCmd.Flags().Int32VarP(&serverPid, "pid", "p", 0, "Server pid (try find when 0 or negtive)")
+	ReloadConfigCmd.Flags().Int32VarP(&serverPid, "pid", "p", 0, "Server pid")
 }
