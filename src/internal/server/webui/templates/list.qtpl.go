@@ -101,7 +101,11 @@ func StreamList(qw422016 *qt422016.Writer, cacheId string, paths []string, files
 	qw422016.N().S(`
 </head>
 
-<body>
+<body data-cacheid="`)
+//line internal/server/webui/templates/list.qtpl:32
+	qw422016.N().S(cacheId)
+//line internal/server/webui/templates/list.qtpl:32
+	qw422016.N().S(`">
     <main class="page column">
         <div class="path">`)
 //line internal/server/webui/templates/list.qtpl:35

@@ -29,7 +29,7 @@ type FileInfo struct {
     {% if customCSS %}<link rel="stylesheet" type="text/css" href="/custom/custom.css?webui-assets={%s= cacheId %}">{% endif %}
 </head>
 
-<body>
+<body data-cacheid="{%s= cacheId %}">
     <main class="page column">
         <div class="path">{% stripspace %}
             {% for i, path := range paths %}

@@ -29,7 +29,9 @@ function GracefullyLoad(url, pushState = true) {
     xhr.onloadend = function () {
         if (xhr.readyState != xhr.DONE
             || xhr.status != 200
-            || !Exists(xhr.responseXML)) {
+            || !Exists(xhr.responseXML)
+            || (document.getElementsByTagName("body")[0].dataset.cacheid !=
+                xhr.responseXML.getElementsByTagName("body")[0].dataset.cacheid)) {
             location.href = url
             return
         }
