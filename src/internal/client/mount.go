@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	sessionRecoveryRetryMaxCount = 10
+	sessionRecoveryRetryMaxCount = 30
 	sessionRecoveryRetrySeconds  = 5
 )
 
