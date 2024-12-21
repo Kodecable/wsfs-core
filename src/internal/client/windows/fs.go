@@ -41,7 +41,7 @@ func fileMode(mode uint32) (r uint32) {
 	} else if mode&(uint32(os.ModeDevice)|
 		uint32(os.ModeNamedPipe)|
 		uint32(os.ModeSocket)) != 0 {
-		return r & ^uint32(0o777)
+		return fuse.S_IFREG | 0o000
 	} else {
 		r |= fuse.S_IFREG
 	}
