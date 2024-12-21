@@ -7,10 +7,9 @@ type TLS struct {
 }
 
 type Webui struct {
-	Enable bool
-	//CustomResourcesPath string
-	//CustomTemplatesPath string
-	ShowDirSize bool
+	Enable          bool
+	ShowDirSize     bool
+	CustomResources string
 }
 
 type Webdav struct {

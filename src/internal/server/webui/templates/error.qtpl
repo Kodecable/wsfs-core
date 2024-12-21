@@ -1,11 +1,13 @@
-{% func Error(cacheId string, status int, msg string) %}<!DOCTYPE html>
-<html lang="zh-cmn-Hans">
+{% func Error(cacheId string, status int, msg string, customCSS bool, customJS bool) %}<!DOCTYPE html>
+<html lang="en">
 <head>
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta name="viewport" content="width=device-width">
     <title>{%d status %} - WSFS WebUI</title>
+    {% if customJS %}<script src="/custom/custom.js?webui-assets={%s= cacheId %}"></script>{% endif %}
     <link rel="shortcut icon" href="/img/favicon.ico?webui-assets={%s= cacheId %}">
     <link rel="stylesheet" type="text/css" href="/css/main.css?webui-assets={%s= cacheId %}">
+    {% if customCSS %}<link rel="stylesheet" type="text/css" href="/custom/custom.css?webui-assets={%s= cacheId %}">{% endif %}
 </head>
 <body>
 <main class="dialog column">

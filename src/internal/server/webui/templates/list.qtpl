@@ -14,8 +14,8 @@ type FileInfo struct {
 }
 %}
 
-{% func List(cacheId string, paths []string, files []FileInfo, showDirSize bool) %}<!DOCTYPE html>
-<html>
+{% func List(cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool) %}<!DOCTYPE html>
+<html lang="en">
 
 <head>
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
@@ -23,8 +23,10 @@ type FileInfo struct {
     <title>{% if len(paths) != 1 %}{%s paths[len(paths)-1] %} - {% endif %}WSFS WebUI</title>
     <link rel="shortcut icon" href="/img/favicon.ico?webui-assets={%s= cacheId %}">
     <script src="/js/list.js?webui-assets={%s= cacheId %}"></script>
+    {% if customJS %}<script src="/custom/custom.js?webui-assets={%s= cacheId %}"></script>{% endif %}
     <link rel="stylesheet" type="text/css" href="/css/main.css?webui-assets={%s= cacheId %}">
     <link rel="stylesheet" type="text/css" href="/css/list.css?webui-assets={%s= cacheId %}">
+    {% if customCSS %}<link rel="stylesheet" type="text/css" href="/custom/custom.css?webui-assets={%s= cacheId %}">{% endif %}
 </head>
 
 <body>

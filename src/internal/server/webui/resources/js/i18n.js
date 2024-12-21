@@ -33,6 +33,7 @@ function I18nElement(element) {
     for (const [key, value] of Object.entries(locales))
         if (window.navigator.language.toLowerCase().includes(key)) {
             GLocale = value
+            document.documentElement.lang = key;
             document.querySelectorAll('[data-t]').forEach((element) => {
                 I18nElement(element)
                 element.removeAttribute("data-t")

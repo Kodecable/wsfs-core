@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"wsfs-core/internal/server/config"
 	internalerror "wsfs-core/internal/server/internalError"
@@ -16,10 +17,12 @@ import (
 var builtinResources embed.FS
 
 type Handler struct {
-	Enable              bool
-	customResourcesPath string
-	cacheId             string
-	showDirSize         bool
+	Enable          bool
+	customResources string
+	cacheId         string
+	showDirSize     bool
+	customCSS       bool
+	customJS        bool
 }
 
 func NewHandler(c *config.Webui, cacheId string) (h Handler, err error) {
@@ -27,9 +30,18 @@ func NewHandler(c *config.Webui, cacheId string) (h Handler, err error) {
 	if !h.Enable {
 		return
 	}
-	//h.customResourcesPath = c.CustomResourcesPath
 	h.cacheId = cacheId
 	h.showDirSize = c.ShowDirSize
+
+	h.customResources = c.CustomResources
+	if h.customResources != "" {
+		if _, err := os.Stat(path.Join(h.customResources, "custom.css")); err == nil {
+			h.customCSS = true
+		}
+		if _, err := os.Stat(path.Join(h.customResources, "custom.js")); err == nil {
+			h.customJS = true
+		}
+	}
 
 	return
 }
@@ -57,7 +69,7 @@ func (w *Handler) ServeList(rsp http.ResponseWriter, req *http.Request, st *stor
 	}
 
 	rsp.WriteHeader(http.StatusOK)
-	templates.WriteList(rsp, w.cacheId, arg.Paths, arg.Files, w.showDirSize)
+	templates.WriteList(rsp, w.cacheId, arg.Paths, arg.Files, w.showDirSize, w.customCSS, w.customJS)
 }
 
 func (w *Handler) ServeAssets(rsp http.ResponseWriter, req *http.Request) {
@@ -66,22 +78,24 @@ func (w *Handler) ServeAssets(rsp http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if _, err := os.Stat(w.customResourcesPath + req.URL.Path); err == nil {
-		http.ServeFile(rsp, req, w.customResourcesPath+req.URL.Path)
-	} else {
-		if strings.HasPrefix(req.URL.Path, "/js/") ||
-			strings.HasPrefix(req.URL.Path, "/css/") ||
-			strings.HasPrefix(req.URL.Path, "/img/") {
-			http.ServeFileFS(rsp, req, builtinResources, "resources"+req.URL.Path)
-		} else {
-			w.ServeError(rsp, req, internalerror.ErrInternalNotFound)
-		}
+	if strings.HasPrefix(req.URL.Path, "/js/") ||
+		strings.HasPrefix(req.URL.Path, "/css/") ||
+		strings.HasPrefix(req.URL.Path, "/img/") {
+		http.ServeFileFS(rsp, req, builtinResources, "resources"+req.URL.Path)
+		return
 	}
+
+	if strings.HasPrefix(req.URL.Path, "/custom/") {
+		http.ServeFile(rsp, req, path.Join(w.customResources, req.URL.Path[7:]))
+		return
+	}
+
+	w.ServeError(rsp, req, internalerror.ErrInternalNotFound)
 }
 
 func (w *Handler) ServeErrorPage(rsp http.ResponseWriter, _ *http.Request, status int, msg string) {
 	rsp.WriteHeader(status)
-	templates.WriteError(rsp, w.cacheId, status, msg)
+	templates.WriteError(rsp, w.cacheId, status, msg, w.customCSS, w.customJS)
 }
 
 func (w *Handler) ServeError(rsp http.ResponseWriter, req *http.Request, err error) {
