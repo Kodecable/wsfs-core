@@ -115,7 +115,7 @@ build(){
     esac
     
     EXENAME="../build/$BuildName-$1-$2"
-    if [ "$1" = "windows" ]; then
+    if [ "$1" == "windows" ]; then
         EXENAME="$EXENAME.exe"
     fi
     if [ "$BuildMode" == "release" ]; then
@@ -144,6 +144,7 @@ buildAllArch(){
             ;;
         *)
             echo "You need to specify a specific arch for this os"
+            exit 1
             ;;
     esac
 }
@@ -167,6 +168,11 @@ while getopts "o:a:m:v:hc" o; do
             ;;
     esac
 done
+
+if [ "$BuildMode" != "release" ] && [ "$BuildMode" != "release" ]; then
+    echo "Unknown BuildMode: $BuildMode"
+    exit 1
+fi
 
 do_hooks
 trap clean_hooks EXIT
