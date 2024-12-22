@@ -1,19 +1,34 @@
 [Listener]
+# "tcp" or "unix"
 Network = "tcp"
+# tcp: address
+# unix: unix socket path
 Address = ":20001"
 
 [TLS]
 Enable = false
+# Please reload server after change or renew
 #CertFile = "/path/to/cert"
 #KeyFile = "/path/to/key"
 
 [Webdav]
 Enable = true
-EnableContentTypeProbe = true
-AllowPropfindInfDepth = true
+# If disable, wsfs will set "application/octet-stream" as HTTP Header
+# "Content-Type". In this way, most browser will no try display file but just
+# donwload it .
+#EnableContentTypeProbe = true
+# For debug currently, not recommand use in production.
+#AllowPropfindInfDepth = false
 
 [Webdav.Webui]
 Enable = true
+# If enable, webui will show filesystem reported dir size
+#ShowDirSize = false
+# Place /path/to/custom/custom.js or/and /path/to/custom/custom.css and 
+# uncomment this to custom webui. Note that you can access file
+# /path/to/custom/FILENAME by url /custom/FILENAME?webui-assets. If changed,
+# please reload server.
+#CustomResources = "/path/to/custom"
 
 [Anonymous]
 Enable = false

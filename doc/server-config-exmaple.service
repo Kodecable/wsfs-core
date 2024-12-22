@@ -1,0 +1,15 @@
+# Place to /etc/systemd/system/wsfs.service
+[Unit]
+Description=Websocket Filesystem Server
+After=network-online.target
+
+[Service]
+Type=simple
+# It's recommand to new a user run wsfs
+User=storager
+#ExecStart=/opt/wsfs/bin/wsfs serve --config /etc/wsfs/server.toml --no-log-time
+ExecStart=/usr/bin/wsfs serve --config /etc/wsfs/server.toml --no-log-time
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
