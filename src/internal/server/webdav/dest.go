@@ -22,7 +22,7 @@ func getPathAndDest(st *storage.Storage, req *http.Request) (path string, dest s
 		return
 	}
 
-	if desturl.Host != "" && desturl.Host != req.URL.Host {
+	if desturl.Host != "" && req.Host != "" && desturl.Host != req.Host {
 		err = errDestinationHostDifferent
 		return
 	}
