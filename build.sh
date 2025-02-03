@@ -168,7 +168,7 @@ while getopts "o:a:m:v:hc" o; do
     esac
 done
 
-if [ "$BuildMode" != "release" ] && [ "$BuildMode" != "release" ]; then
+if [ "$BuildMode" != "release" ] && [ "$BuildMode" != "debug" ]; then
     echo "Unknown BuildMode: $BuildMode"
     exit 1
 fi
