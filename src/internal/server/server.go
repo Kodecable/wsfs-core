@@ -37,8 +37,7 @@ type Server struct {
 
 	users map[string]User
 
-	enableAnonymous bool
-	anonymous       *storage.Storage
+	anonymous *storage.Storage
 
 	// is this server was reloading or had reloaded
 	reloadLock sync.Mutex
@@ -74,12 +73,12 @@ func NewServer(c *config.Server) (s *Server, err error) {
 	users := map[string]User{}
 	for _, us := range c.Users {
 		if _, ok := users[us.Name]; ok {
-			err = fmt.Errorf("user name '%s' repeated", us.Name)
+			err = fmt.Errorf("user '%s' repeated", us.Name)
 			return
 		}
 
 		if us.Name == "" {
-			err = fmt.Errorf("user name can not be empty")
+			err = fmt.Errorf("username can not be empty")
 			return
 		}
 
@@ -101,8 +100,11 @@ func NewServer(c *config.Server) (s *Server, err error) {
 			err = fmt.Errorf("anonymous user referenced a storage that does not exist")
 			return
 		}
-		s.enableAnonymous = true
 		s.anonymous = storages[c.Anonymous.Storage]
+
+		if _, ok := s.users[anonymousUsername]; ok {
+			log.Warn().Msg("anonymousUsername used; it will not be considered anonymous")
+		}
 	}
 
 	if c.Webdav.Webui.Enable && !c.Webdav.Enable {
@@ -291,18 +293,18 @@ func (s *Server) writeMethodNotAllow(rsp http.ResponseWriter, allow string) {
 }
 
 func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (st *storage.Storage) {
-	user, err := HttpBasciAuth(s.users, req)
+	user, err := httpBasciAuth(s.users, req)
 	switch err {
 	case nil:
 		st = user.Storage
-	case ErrBadHttpAuthHeader:
+	case ErrAuthHeaderNotExists, ErrAnonymous:
 		// if webui-login in query, make sure login
-		if s.enableAnonymous && !req.URL.Query().Has("webui-login") {
+		if s.anonymous != nil && !req.URL.Query().Has("webui-login") {
 			st = s.anonymous
 		} else {
 			s.writeAuthRsp(rsp)
 		}
-	case ErrUserNotExists, ErrHashMismatch:
+	case ErrBadHttpAuthHeader, ErrUserNotExists, ErrHashMismatch:
 		s.writeAuthRsp(rsp)
 	default:
 		log.Error().Err(err).Msg("Auth error")
