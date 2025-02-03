@@ -5,10 +5,11 @@ After=network-online.target
 
 [Service]
 Type=simple
-# It's recommand to new a user run wsfs
+# It's recommand to create a user run wsfs
 User=storager
 #ExecStart=/opt/wsfs/bin/wsfs serve --config /etc/wsfs/server.toml --no-log-time
 ExecStart=/usr/bin/wsfs serve --config /etc/wsfs/server.toml --no-log-time
+ExecReload=/usr/bin/wsfs reload-server -p $MAINPID
 Restart=on-failure
 
 [Install]
