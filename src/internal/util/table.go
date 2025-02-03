@@ -80,7 +80,11 @@ func (t *Table) Print(w io.Writer) {
 	if t.headers != nil {
 		fmt.Fprintf(w, "%-*s", t.LeftPadding, "")
 		for j, header := range t.headers {
-			fmt.Fprintf(w, "%-*s%-*s", maxWidths[j], header, t.CellPadding, "")
+			if j != len(t.headers)-1 {
+				fmt.Fprintf(w, "%-*s%-*s", maxWidths[j], header, t.CellPadding, "")
+			} else {
+				fmt.Fprintf(w, "%s", header)
+			}
 		}
 		fmt.Fprintf(w, "\n")
 	}
@@ -88,9 +92,10 @@ func (t *Table) Print(w io.Writer) {
 	for _, row := range t.rows {
 		fmt.Fprintf(w, "%-*s", t.LeftPadding, "")
 		for j, data := range row {
-			fmt.Fprintf(w, "%-*s", maxWidths[j], data)
-			if j != len(data)-1 {
-				fmt.Fprintf(w, "%-*s", t.CellPadding, "")
+			if j != len(row)-1 {
+				fmt.Fprintf(w, "%-*s%-*s", maxWidths[j], data, t.CellPadding, "")
+			} else {
+				fmt.Fprintf(w, "%s", data)
 			}
 		}
 		fmt.Fprintf(w, "\n")
