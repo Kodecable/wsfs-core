@@ -21,8 +21,6 @@ var (
 )
 
 const (
-	sessionIdMinLength        = 13
-	sessionIdAlphabet         = "Lb1VKhJAxiFuNezc2fvPMns7TakWrCqmUDj4R5twBpH9oQyZXdEg863SGY"
 	sessionInactiveScanPeriod = 3 * time.Minute
 	sessionInactiveMaxCount   = 5
 )
@@ -48,10 +46,7 @@ type Handler struct {
 func NewHandler(errorHandler internalerror.ErrorHandler, c *config.Server) (h Handler, err error) {
 	h.setupUpgrader()
 	h.errorHandler = errorHandler
-	h.ider, err = sqids.New(sqids.Options{
-		MinLength: sessionIdMinLength,
-		Alphabet:  sessionIdAlphabet,
-	})
+	h.ider, err = setupIder()
 	h.suser.Uid = uint32(c.Uid)
 	h.suser.Gid = uint32(c.Gid)
 	h.suser.OtherUid = uint32(c.OtherUid)
