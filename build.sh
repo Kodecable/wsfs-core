@@ -139,7 +139,6 @@ buildAllArch(){
             build windows 386
             build windows amd64
             build windows amd64v3
-            build windows arm
             build windows arm64
             ;;
         *)
