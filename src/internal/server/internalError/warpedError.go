@@ -2,7 +2,7 @@ package internalerror
 
 import (
 	"fmt"
-	"wsfs-core/buildinfo"
+	"wsfs-core/version"
 )
 
 // WarpedError be used in some http response.
@@ -12,7 +12,7 @@ type WarpedError struct {
 }
 
 func (w *WarpedError) Error() string {
-	if buildinfo.IsDebug() {
+	if version.IsDebug() {
 		return w.origin.Error()
 	} else {
 		return "System Busy"

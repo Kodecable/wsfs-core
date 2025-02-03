@@ -8,10 +8,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"wsfs-core/buildinfo"
 	"wsfs-core/internal/server"
 	"wsfs-core/internal/server/config"
 	"wsfs-core/internal/util"
+	"wsfs-core/version"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
@@ -186,7 +186,7 @@ var QuickServeCmd = &cobra.Command{
 }
 
 func init() {
-	if buildinfo.IsDebug() {
+	if version.IsDebug() {
 		logLevel = zerolog.DebugLevel // default debug level in debug mode
 	}
 

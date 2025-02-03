@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"wsfs-core/buildinfo"
 	"wsfs-core/internal/server/config"
 	internalerror "wsfs-core/internal/server/internalError"
 	"wsfs-core/internal/server/storage"
@@ -18,6 +17,7 @@ import (
 	"wsfs-core/internal/server/webui"
 	"wsfs-core/internal/server/wsfs"
 	"wsfs-core/internal/util"
+	"wsfs-core/version"
 
 	"github.com/rs/zerolog/log"
 )
@@ -327,7 +327,7 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 			log.Info().Str("Path", req.RequestURI).Str("From", req.RemoteAddr).Int("Code", rsp.status).Msg(req.Method)
 		}
 	}()
-	rsp.Header().Set("Server", "WSFS/"+buildinfo.Version)
+	rsp.Header().Set("Server", "WSFS/"+version.Version)
 
 	if !util.IsUrlValid(req.URL.Path) {
 		s.ServeErrorPage(rsp, req, http.StatusBadRequest, "invalid URL path")

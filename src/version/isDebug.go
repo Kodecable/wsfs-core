@@ -1,4 +1,4 @@
-package buildinfo
+package version
 
 import "strings"
 

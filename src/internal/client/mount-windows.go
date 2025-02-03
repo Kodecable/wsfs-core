@@ -5,9 +5,9 @@ package client
 import (
 	"os"
 	"strconv"
-	"wsfs-core/buildinfo"
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/client/windows"
+	"wsfs-core/version"
 
 	"github.com/rs/zerolog/log"
 	"github.com/winfsp/cgofuse/fuse"
@@ -23,7 +23,7 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 	// https://github.com/winfsp/winfsp/blob/2bf9a6c16e3bba46be6ec4ade6d7c70a262d27da/src/dll/fuse/fuse.c#L628
 	opts := []string{"-o", "uid=-1,gid=-1", "-o", "dothidden"}
 
-	if buildinfo.IsDebug() {
+	if version.IsDebug() {
 		opts = append(opts, "-d")
 	}
 

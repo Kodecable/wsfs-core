@@ -8,9 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"wsfs-core/buildinfo"
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/client/unix"
+	"wsfs-core/version"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -35,7 +35,7 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 		NullPermissions: true, // Leave file permissions on "000" files as-is
 		MountOptions: fuse.MountOptions{
 			AllowOther:        false,
-			Debug:             buildinfo.IsDebug(),
+			Debug:             version.IsDebug(),
 			DirectMount:       !opt.UseFusemount,
 			DirectMountStrict: !opt.UseFusemount,
 			FsName:            opt.FuseFsName, // First column in "df -T"
