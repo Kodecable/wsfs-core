@@ -1,17 +1,19 @@
 module wsfs-core
 
-go 1.22.1
+go 1.23.0
+
+toolchain go1.24.0
 
 require (
-	github.com/spf13/cobra v1.8.1
+	github.com/spf13/cobra v1.9.1
 	github.com/valyala/quicktemplate v1.8.0
 	github.com/winfsp/cgofuse v1.6.0
-	golang.org/x/sys v0.29.0
+	golang.org/x/sys v0.30.0
 )
 
 require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/lufia/plan9stats v0.0.0-20240909124753-873cd0166683 // indirect
+	github.com/lufia/plan9stats v0.0.0-20250224150550-a661cff19cfb // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
@@ -33,6 +35,6 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/sqids/sqids-go v0.4.1
 	github.com/thediveo/enumflag v0.10.1
-	golang.org/x/crypto v0.32.0
-	golang.org/x/term v0.28.0
+	golang.org/x/crypto v0.35.0
+	golang.org/x/term v0.29.0
 )
