@@ -15,13 +15,8 @@ type ListArg struct {
 }
 
 func list(rpath string, storage *storage.Storage) (l ListArg, err error) {
-	parts := strings.Split(rpath, "/")
-	size := len(parts) - 1
-	for i := 0; i < size; i++ {
-		l.Paths = append(l.Paths, parts[i])
-	}
-
 	apath := storage.Path + rpath
+	l.Paths = strings.Split(rpath[:len(rpath)-1], "/")
 
 	f, err := os.Open(apath)
 	if err != nil {
@@ -43,7 +38,7 @@ func list(rpath string, storage *storage.Storage) (l ListArg, err error) {
 			realfile, err = os.Stat(apath + file.Name())
 			if err != nil {
 				log.Warn().Err(err).Str("Path", apath+file.Name()).Msg("Stat symlink failed")
-				// show symlink itself instead, keep everything ok
+				// show symlink itself instead
 				realfile = file
 				err = nil
 			}
