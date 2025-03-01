@@ -74,7 +74,7 @@ func StreamError(qw422016 *qt422016.Writer, cacheId string, status int, msg stri
 </head>
 <body>
 <main class="dialog column">
-	<h1>`)
+	<h1><span class="icon errorIcon"></span>`)
 //line error.qtpl:15
 	qw422016.N().D(status)
 //line error.qtpl:15
@@ -84,40 +84,42 @@ func StreamError(qw422016 *qt422016.Writer, cacheId string, status int, msg stri
 	qw422016.E().S(msg)
 //line error.qtpl:16
 	qw422016.N().S(`</p>
-	<a style="text-align: right" href="/" data-t>Return to root</a>
+    <div class="rrow">
+        <button type="button" onclick="location.href='/'"><span class="icon backIcon"></span><div data-t>Return to root</div></button>
+    </div>
 </main>
 </body>
 <script src="/js/i18n.js?webui-assets=`)
-//line error.qtpl:20
+//line error.qtpl:22
 	qw422016.N().S(cacheId)
-//line error.qtpl:20
+//line error.qtpl:22
 	qw422016.N().S(`"></script>
 </html>`)
-//line error.qtpl:21
+//line error.qtpl:23
 }
 
-//line error.qtpl:21
+//line error.qtpl:23
 func WriteError(qq422016 qtio422016.Writer, cacheId string, status int, msg string, customCSS bool, customJS bool) {
-//line error.qtpl:21
+//line error.qtpl:23
 	qw422016 := qt422016.AcquireWriter(qq422016)
-//line error.qtpl:21
+//line error.qtpl:23
 	StreamError(qw422016, cacheId, status, msg, customCSS, customJS)
-//line error.qtpl:21
+//line error.qtpl:23
 	qt422016.ReleaseWriter(qw422016)
-//line error.qtpl:21
+//line error.qtpl:23
 }
 
-//line error.qtpl:21
+//line error.qtpl:23
 func Error(cacheId string, status int, msg string, customCSS bool, customJS bool) string {
-//line error.qtpl:21
+//line error.qtpl:23
 	qb422016 := qt422016.AcquireByteBuffer()
-//line error.qtpl:21
+//line error.qtpl:23
 	WriteError(qb422016, cacheId, status, msg, customCSS, customJS)
-//line error.qtpl:21
+//line error.qtpl:23
 	qs422016 := string(qb422016.B)
-//line error.qtpl:21
+//line error.qtpl:23
 	qt422016.ReleaseByteBuffer(qb422016)
-//line error.qtpl:21
+//line error.qtpl:23
 	return qs422016
-//line error.qtpl:21
+//line error.qtpl:23
 }

@@ -12,9 +12,11 @@
 </head>
 <body>
 <main class="dialog column">
-	<h1>{%d status %}</h1>
+	<h1><span class="icon errorIcon"></span>{%d status %}</h1>
     <p data-t>{%s msg %}</p>
-	<a style="text-align: right" href="/" data-t>Return to root</a>
+    <div class="rrow">
+        <button type="button" onclick="location.href='/'"><span class="icon backIcon"></span><div data-t>Return to root</div></button>
+    </div>
 </main>
 </body>
 <script src="/js/i18n.js?webui-assets={%s= cacheId %}"></script>
