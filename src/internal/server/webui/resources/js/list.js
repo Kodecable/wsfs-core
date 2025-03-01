@@ -30,8 +30,7 @@ function GracefullyLoad(url, pushState = true) {
         if (xhr.readyState != xhr.DONE
             || xhr.status != 200
             || !Exists(xhr.responseXML)
-            || (document.getElementsByTagName("body")[0].dataset.cacheid !=
-                xhr.responseXML.getElementsByTagName("body")[0].dataset.cacheid)) {
+            || (GCacheId != xhr.responseXML.getElementsByTagName("body")[0].dataset.cacheid)) {
             location.href = url
             return
         }
