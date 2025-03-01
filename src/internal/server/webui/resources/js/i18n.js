@@ -14,7 +14,11 @@ function I18nElement(element) {
 
 {
     const locales = {
-        "zh": {
+        // There are locale texts
+        // Key should be a BCP47 lang tag
+        // Keys with the same "language" part should be placed next to each other
+        // The first key of keys with the same "language" part will be a fallback
+        "zh-Hans": {
             "Name": "名称",
             "Size": "大小",
             "Modification Time": "修改时间",
@@ -30,14 +34,22 @@ function I18nElement(element) {
             "Forbidden": "拒绝访问",
         },
     };
-    for (const [key, value] of Object.entries(locales))
-        if (window.navigator.language.toLowerCase().includes(key)) {
-            GLocale = value
-            document.documentElement.lang = key;
-            document.querySelectorAll('[data-t]').forEach((element) => {
-                I18nElement(element)
-                element.removeAttribute("data-t")
-            })
-            break
-        }
+    const borwserLang = window.navigator.language.toLowerCase();
+    let lang = "";
+    for (const [key, value] of Object.entries(locales)) {
+        if (borwserLang.includes(key.split("-")[0].toLowerCase())) {
+            GLocale = value;
+            lang = key;
+            if (borwserLang == key.toLowerCase())
+                break;
+        } else if (lang.length != 0)
+            break;
+    }
+    if (lang.length != 0) {
+        document.documentElement.lang = lang;
+        document.querySelectorAll('[data-t]').forEach((element) => {
+            I18nElement(element)
+            element.removeAttribute("data-t")
+        });
+    }
 }
