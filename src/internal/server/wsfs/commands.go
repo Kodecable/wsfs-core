@@ -215,8 +215,8 @@ BAD:
 }
 
 func (s *session) treeADir(depth uint8, path string, hint string,
-	fillEntry func(base string, entry fs.DirEntry, hint string),
-	fillStatus func(status uint8)) {
+	writeEntry func(base string, entry fs.DirEntry, hint string),
+	writeIndicator func(status uint8)) {
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -228,19 +228,19 @@ func (s *session) treeADir(depth uint8, path string, hint string,
 		return
 	}
 
-	fillStatus(wsfsprotocol.TREEDIR_STATUS_ENTER_DIR)
+	writeIndicator(wsfsprotocol.TREEDIR_INDICATOR_ENTER_DIR)
 	if len(dirents) == 0 {
-		fillStatus(wsfsprotocol.TREEDIR_STATUS_END_DIR)
+		writeIndicator(wsfsprotocol.TREEDIR_INDICATOR_END_DIR)
 		return
 	}
 
 	for _, dirent := range dirents {
-		fillEntry(path, dirent, hint)
+		writeEntry(path, dirent, hint)
 		if dirent.IsDir() && depth > 0 {
-			s.treeADir(depth-1, path+dirent.Name()+"/", hint, fillEntry, fillStatus)
+			s.treeADir(depth-1, path+dirent.Name()+"/", hint, writeEntry, writeIndicator)
 		}
 	}
-	fillStatus(wsfsprotocol.TREEDIR_STATUS_END_DIR)
+	writeIndicator(wsfsprotocol.TREEDIR_INDICATOR_END_DIR)
 
 	if f.Close() != nil {
 		log.Error().Err(err).Str("Path", path).Msg("close dir failed")
@@ -294,9 +294,9 @@ func (s *session) cmdTreeDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 			}
 
 			if fileData != nil {
-				rsp.Put(wsfsprotocol.TREEDIR_STATUS_OK_WITH_DATA)
+				rsp.Put(wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA)
 			} else {
-				rsp.Put(wsfsprotocol.TREEDIR_STATUS_OK)
+				rsp.Put(wsfsprotocol.TREEDIR_INDICATOR_FILE)
 			}
 
 			rsp.Put(entry.Name())

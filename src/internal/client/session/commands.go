@@ -512,29 +512,29 @@ func readTree(data *util.Buffer, stack *[]*[]DirItem) (ok bool) {
 	ok = true
 	off := 1
 
-	workingOn := (*stack)[len(*stack)-1]
+	current := (*stack)[len(*stack)-1]
 	var tmp DirItem
 	for {
 		off += 1
 		if !data.Ensure(off) {
 			break
 		}
-		status := uint8(data.ReadByteAt(off))
+		indicator := uint8(data.ReadByteAt(off))
 
-		switch status {
-		case wsfsprotocol.TREEDIR_STATUS_ENTER_DIR:
-			(*workingOn)[len(*workingOn)-1].Child = []DirItem{}
-			*stack = append(*stack, &((*workingOn)[len(*workingOn)-1].Child))
-			workingOn = (*stack)[len(*stack)-1]
+		switch indicator {
+		case wsfsprotocol.TREEDIR_INDICATOR_ENTER_DIR:
+			(*current)[len(*current)-1].Child = []DirItem{}
+			*stack = append(*stack, &((*current)[len(*current)-1].Child))
+			current = (*stack)[len(*stack)-1]
 			continue
-		case wsfsprotocol.TREEDIR_STATUS_END_DIR:
+		case wsfsprotocol.TREEDIR_INDICATOR_END_DIR:
 			*stack = (*stack)[:len(*stack)-1]
-			workingOn = (*stack)[len(*stack)-1]
+			current = (*stack)[len(*stack)-1]
 			continue
-		case wsfsprotocol.TREEDIR_STATUS_END_DIR_WITH_FAIL:
+		case wsfsprotocol.TREEDIR_INDICATOR_END_DIR_WITH_FAIL:
 			*stack = (*stack)[:len(*stack)-1]
-			(*workingOn) = nil
-			workingOn = (*stack)[len(*stack)-1]
+			(*current) = nil
+			current = (*stack)[len(*stack)-1]
 			continue
 		default:
 		}
@@ -560,7 +560,7 @@ func readTree(data *util.Buffer, stack *[]*[]DirItem) (ok bool) {
 		off += 20
 		tmp.Child = nil
 
-		if status == wsfsprotocol.TREEDIR_STATUS_OK_WITH_DATA {
+		if indicator == wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA {
 			ok = data.Ensure(off + int(tmp.Size))
 			if !ok {
 				return
@@ -571,7 +571,7 @@ func readTree(data *util.Buffer, stack *[]*[]DirItem) (ok bool) {
 			//tmp.Data = nil
 		}
 
-		*workingOn = append(*workingOn, tmp)
+		*current = append(*current, tmp)
 	}
 
 	return
@@ -583,7 +583,7 @@ func (s *Session) CmdTreeDir(path string, depth uint8, hint string) (tree []DirI
 
 	var rsp *util.Buffer
 	tree = append(tree, DirItem{})
-	stack := []*[]DirItem{&tree}
+	stack := []*[]DirItem{&tree} // stack store where sub tree should return to
 	for {
 		rsp = <-s.readRequests[clientMark]
 
