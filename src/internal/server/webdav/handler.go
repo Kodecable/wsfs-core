@@ -331,6 +331,7 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 	}
 	if depth == infiniteDepth && !h.allowPropfindInfDepth {
 		preconditionErrorReponse(rsp, preconditionPropfindFiniteDepth, req.URL.Path, http.StatusForbidden)
+		return
 	}
 
 	rsp.WriteHeader(http.StatusMultiStatus)
@@ -369,5 +370,6 @@ func preconditionErrorBody(precondition, href string) string {
 	return `<?xml version="1.0" encoding="utf-8" ?>
 <D:error xmlns:D="DAV:">
 	<D:` + precondition + `><D:href>` + href + `</D:href></D:` + precondition + `>
-</D:error>`
+</D:error>
+`
 }
