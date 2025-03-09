@@ -332,6 +332,7 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 	rsp.WriteHeader(http.StatusMultiStatus)
 	templates.WritePropfindBegin(rsp)
 	walkErr := walkFS(depth, st.Path, req.URL.Path, fi, func(reqPath string, info os.FileInfo, err error) error {
+		//log.Debug().Str("obj", reqPath).Msg("walk fn")
 		if err != nil {
 			if os.IsNotExist(err) {
 				templates.WritePropfindBADResponse(rsp, reqPath, "HTTP/1.1 404 Not Found")

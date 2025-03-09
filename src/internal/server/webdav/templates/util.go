@@ -6,16 +6,7 @@ import (
 )
 
 func fileDisplayName(name string) string {
-	//if name == "" || name[0] != '/' {
-	//	name = "/" + name
-	//}
-	//name = path.Clean(name)
-
-	if name == "/" {
-		// Hide the real name of a possibly prefixed root directory.
-		return ""
-	}
-	return name
+	return filepath.Base(name)
 }
 
 func fileContentType(name string) string {

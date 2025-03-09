@@ -7,6 +7,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/rs/zerolog/log"
 )
 
 // moveFiles moves files and/or directories from src to dst.
@@ -135,47 +137,43 @@ func copyFiles(src, dst string, overwrite bool, depth int, recursion int) (statu
 // Allowed values for depth are 0, 1 or infiniteDepth. For each visited node,
 // walkFS calls walkFn. If there is an error, walkFS calls walkFn with error.
 // For each node, walkFn will be called only once.
-
-func walkFS(depth int, base, path string, info os.FileInfo, walkFn filepath.WalkFunc) error {
+func walkFS(depth int, base, path_ string, info os.FileInfo, walkFn filepath.WalkFunc) error {
 	// This implementation is based on Walk's code in the standard path/filepath package.
-	name := base + path
+	if err := walkFn(path_, info, nil); err != nil {
+		return err
+	}
+
 	if depth == 0 {
 		return nil
 	}
-	if depth == 1 {
-		depth = 0
-	}
 
+	fullpath := path.Join(base, path_)
 	// Read directory names.
-	f, err := os.OpenFile(name, os.O_RDONLY, 0)
+	f, err := os.OpenFile(fullpath, os.O_RDONLY, 0)
 	if err != nil {
-		walkFn(path, info, err)
+		walkFn(path_, info, err)
 		return err
 	}
 	fileInfos, err := f.Readdir(0)
 	f.Close()
 	if err != nil {
-		walkFn(path, info, err)
+		walkFn(path_, info, err)
 		return err
 	}
 
-	if err = walkFn(path, info, nil); err != nil {
-		return err
-	}
-
-	for _, fileInfo := range fileInfos {
-		if fileInfo.Mode()&fs.ModeSymlink != 0 {
-			if realfileInfo, err := os.Stat(name + fileInfo.Name()); err != nil {
-				walkFn(path, realfileInfo, err)
+	for _, fi := range fileInfos {
+		passfi := fi
+		if fi.Mode()&fs.ModeSymlink != 0 {
+			if realfi, err := os.Stat(path.Join(fullpath, fi.Name())); err == nil {
+				passfi = realfi
 			} else {
-				walkFn(path, fileInfo, err)
+				log.Warn().Err(err).Str("Path", path.Join(fullpath, fi.Name())).Msg("follow symlink failed")
 			}
-			continue
 		}
-		if fileInfo.IsDir() {
-			walkFS(depth, base, path+fileInfo.Name(), fileInfo, walkFn)
+		if fi.IsDir() {
+			walkFS(depth-1, base, path.Join(path_, fi.Name()), passfi, walkFn)
 		} else {
-			walkFn(path, fileInfo, nil)
+			walkFn(path.Join(path_, fi.Name()), passfi, nil)
 		}
 	}
 
