@@ -33,5 +33,9 @@ func getPathAndDest(st *storage.Storage, req *http.Request) (path string, dest s
 	}
 
 	dest = st.Path + desturl.Path
+	if path == dest {
+		err = errDestinationEqualsSource
+		return
+	}
 	return
 }

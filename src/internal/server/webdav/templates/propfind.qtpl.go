@@ -91,7 +91,7 @@ func PropfindEnd() string {
 }
 
 //line propfind.qtpl:18
-func StreamPropfindOKResponse(qw422016 *qt422016.Writer, name string, fi os.FileInfo, enableContentTypeProbe bool) {
+func StreamPropfindItemOKResponse(qw422016 *qt422016.Writer, name string, fi os.FileInfo, enableContentTypeProbe bool) {
 //line propfind.qtpl:18
 	qw422016.N().S(`<D:response><D:href>`)
 //line propfind.qtpl:20
@@ -144,22 +144,22 @@ func StreamPropfindOKResponse(qw422016 *qt422016.Writer, name string, fi os.File
 }
 
 //line propfind.qtpl:45
-func WritePropfindOKResponse(qq422016 qtio422016.Writer, name string, fi os.FileInfo, enableContentTypeProbe bool) {
+func WritePropfindItemOKResponse(qq422016 qtio422016.Writer, name string, fi os.FileInfo, enableContentTypeProbe bool) {
 //line propfind.qtpl:45
 	qw422016 := qt422016.AcquireWriter(qq422016)
 //line propfind.qtpl:45
-	StreamPropfindOKResponse(qw422016, name, fi, enableContentTypeProbe)
+	StreamPropfindItemOKResponse(qw422016, name, fi, enableContentTypeProbe)
 //line propfind.qtpl:45
 	qt422016.ReleaseWriter(qw422016)
 //line propfind.qtpl:45
 }
 
 //line propfind.qtpl:45
-func PropfindOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool) string {
+func PropfindItemOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool) string {
 //line propfind.qtpl:45
 	qb422016 := qt422016.AcquireByteBuffer()
 //line propfind.qtpl:45
-	WritePropfindOKResponse(qb422016, name, fi, enableContentTypeProbe)
+	WritePropfindItemOKResponse(qb422016, name, fi, enableContentTypeProbe)
 //line propfind.qtpl:45
 	qs422016 := string(qb422016.B)
 //line propfind.qtpl:45
@@ -170,7 +170,7 @@ func PropfindOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool
 }
 
 //line propfind.qtpl:47
-func StreamPropfindBADResponse(qw422016 *qt422016.Writer, name string, str string) {
+func StreamPropfindItemBadResponse(qw422016 *qt422016.Writer, name string, str string) {
 //line propfind.qtpl:47
 	qw422016.N().S(`<D:response><D:href>`)
 //line propfind.qtpl:49
@@ -185,22 +185,22 @@ func StreamPropfindBADResponse(qw422016 *qt422016.Writer, name string, str strin
 }
 
 //line propfind.qtpl:54
-func WritePropfindBADResponse(qq422016 qtio422016.Writer, name string, str string) {
+func WritePropfindItemBadResponse(qq422016 qtio422016.Writer, name string, str string) {
 //line propfind.qtpl:54
 	qw422016 := qt422016.AcquireWriter(qq422016)
 //line propfind.qtpl:54
-	StreamPropfindBADResponse(qw422016, name, str)
+	StreamPropfindItemBadResponse(qw422016, name, str)
 //line propfind.qtpl:54
 	qt422016.ReleaseWriter(qw422016)
 //line propfind.qtpl:54
 }
 
 //line propfind.qtpl:54
-func PropfindBADResponse(name string, str string) string {
+func PropfindItemBadResponse(name string, str string) string {
 //line propfind.qtpl:54
 	qb422016 := qt422016.AcquireByteBuffer()
 //line propfind.qtpl:54
-	WritePropfindBADResponse(qb422016, name, str)
+	WritePropfindItemBadResponse(qb422016, name, str)
 //line propfind.qtpl:54
 	qs422016 := string(qb422016.B)
 //line propfind.qtpl:54

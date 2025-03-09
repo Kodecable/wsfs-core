@@ -22,7 +22,11 @@ var (
 	errRecursionTooDeep         = errors.New("webdav: recursion too deep")
 )
 
-const recursionMax = 256
+const (
+	recursionMax = 256
+
+	preconditionPropfindFiniteDepth = "propfind-finite-depth"
+)
 
 type Handler struct {
 	Enable                 bool
@@ -266,7 +270,7 @@ func (h *Handler) handleCopyMove(_ http.ResponseWriter, req *http.Request, st *s
 	switch err {
 	case nil:
 		// pass
-	case errNoDestinationHeader, errInvalidDestination:
+	case errNoDestinationHeader, errInvalidDestination, errDestinationEqualsSource:
 		return http.StatusBadRequest, nil
 	case errDestinationHostDifferent:
 		// Copy to another host? It may be abused. We currently do not support this.
@@ -326,7 +330,7 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 		}
 	}
 	if depth == infiniteDepth && !h.allowPropfindInfDepth {
-		depth = 1
+		preconditionErrorReponse(rsp, preconditionPropfindFiniteDepth, req.URL.Path, http.StatusForbidden)
 	}
 
 	rsp.WriteHeader(http.StatusMultiStatus)
@@ -335,16 +339,16 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 		//log.Debug().Str("obj", reqPath).Msg("walk fn")
 		if err != nil {
 			if os.IsNotExist(err) {
-				templates.WritePropfindBADResponse(rsp, reqPath, "HTTP/1.1 404 Not Found")
+				templates.WritePropfindItemBadResponse(rsp, reqPath, "HTTP/1.1 404 Not Found")
 			} else if os.IsPermission(err) {
-				templates.WritePropfindBADResponse(rsp, reqPath, "HTTP/1.1 403 Forbidden")
+				templates.WritePropfindItemBadResponse(rsp, reqPath, "HTTP/1.1 403 Forbidden")
 			} else {
-				templates.WritePropfindBADResponse(rsp, reqPath, "HTTP/1.1 500 Internal Server Error")
+				templates.WritePropfindItemBadResponse(rsp, reqPath, "HTTP/1.1 500 Internal Server Error")
 				log.Warn().Err(err).Str("Path", reqPath).Msg("Walk error")
 			}
 			return nil
 		}
-		templates.WritePropfindOKResponse(rsp, reqPath, info, h.enableContentTypeProbe)
+		templates.WritePropfindItemOKResponse(rsp, reqPath, info, h.enableContentTypeProbe)
 		return nil
 	})
 	templates.WritePropfindEnd(rsp)
@@ -353,4 +357,17 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 		return http.StatusInternalServerError, walkErr
 	}
 	return 0, nil
+}
+
+func preconditionErrorReponse(rsp http.ResponseWriter, precondition, href string, code int) {
+	rsp.Header().Set("Content-Type", "application/xml; charset=\"utf-8\"")
+	rsp.WriteHeader(code)
+	rsp.Write([]byte(preconditionErrorBody(precondition, href)))
+}
+
+func preconditionErrorBody(precondition, href string) string {
+	return `<?xml version="1.0" encoding="utf-8" ?>
+<D:error xmlns:D="DAV:">
+	<D:` + precondition + `><D:href>` + href + `</D:href></D:` + precondition + `>
+</D:error>`
 }

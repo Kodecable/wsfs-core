@@ -15,7 +15,7 @@
 </D:multistatus>
 {% endfunc %}
 
-{% func PropfindOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool) %}
+{% func PropfindItemOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool) %}
 <D:response>
     <D:href>{%s= (&url.URL{Path: name}).EscapedPath() %}</D:href>
     {% comment %}
@@ -44,7 +44,7 @@
 </D:response>
 {% endfunc %}
 
-{% func PropfindBADResponse(name string, str string) %}
+{% func PropfindItemBadResponse(name string, str string) %}
 <D:response>
     <D:href>{%u name %}</D:href>
     <D:propstat>
