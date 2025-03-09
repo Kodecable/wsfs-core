@@ -261,6 +261,7 @@ function initWebui(reload) {
             GTableHeaderElements[field].addEventListener("click", function () { Sort(field) })
             GTableHeaderElements[field].style = "cursor: pointer"
         }
+        document.getElementById("FileInputer").addEventListener("cancel", () => {JUnlock()})
     }
     GItemsElement = document.getElementById("files").getElementsByTagName("tbody")[0];
     document.getElementById("files").getElementsByTagName("tbody")[0].addEventListener("click", ElementAGracefullyLoad)
