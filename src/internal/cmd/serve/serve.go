@@ -10,6 +10,7 @@ import (
 	"wsfs-core/version"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/enumflag"
 )
@@ -40,9 +41,14 @@ var ServeCmd = &cobra.Command{
 			return serverConfig.ReDecode(&config)
 		}
 
-		util.SetupSignalHandler(func() {
-			hub.IssueReload()
-		}, func() {}, func() {}) // TODO: gracefully shutdown
+		util.SetupSignalHandlers(util.SignalHandlers{
+			Sighup:  hub.IssueReload,
+			Sigint:  hub.IssueShutdown,
+			Sigterm: hub.IssueShutdown,
+			OnHandlerPanic: func(obj any) {
+				log.Error().Any("Error", obj).Msg("Panic during signal handling")
+			},
+		})
 
 		err = hub.Run(config)
 
