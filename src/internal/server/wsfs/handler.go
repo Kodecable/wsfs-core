@@ -43,9 +43,12 @@ type Handler struct {
 	Stop context.CancelFunc
 }
 
-func NewHandler(errorHandler internalerror.ErrorHandler, c *config.Server) (h Handler, err error) {
+func NewHandler(errorHandler internalerror.ErrorHandler, c config.WSFS) (h *Handler, err error) {
+	h = &Handler{
+		errorHandler: errorHandler,
+	}
+
 	h.setupUpgrader()
-	h.errorHandler = errorHandler
 	h.ider, err = setupIder()
 	h.suser.Uid = uint32(c.Uid)
 	h.suser.Gid = uint32(c.Gid)

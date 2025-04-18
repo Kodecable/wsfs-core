@@ -29,23 +29,19 @@ const (
 )
 
 type Handler struct {
-	Enable                 bool
 	enableWebui            bool
 	allowPropfindInfDepth  bool
 	enableContentTypeProbe bool
 	errorHandler           internalerror.ErrorHandler
 }
 
-func NewHandler(c *config.Webdav, errorHandler internalerror.ErrorHandler) (h Handler, err error) {
-	h.Enable = c.Enable
-	if !h.Enable {
-		return
+func NewHandler(c config.Webdav, errorHandler internalerror.ErrorHandler) (h *Handler, err error) {
+	h = &Handler{
+		enableWebui:            c.Webui.Enable,
+		allowPropfindInfDepth:  c.AllowPropfindInfDepth,
+		enableContentTypeProbe: c.EnableContentTypeProbe,
+		errorHandler:           errorHandler,
 	}
-	h.enableWebui = c.Webui.Enable
-	h.allowPropfindInfDepth = c.AllowPropfindInfDepth
-	h.enableContentTypeProbe = c.EnableContentTypeProbe
-	h.errorHandler = errorHandler
-
 	return
 }
 

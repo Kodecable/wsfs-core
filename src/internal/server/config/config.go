@@ -19,23 +19,28 @@ type Webdav struct {
 	Webui                  Webui
 }
 
+type WSFS struct {
+	Enable   bool
+	Uid      int64
+	Gid      int64
+	OtherUid int64
+	OtherGid int64
+}
+
 type Listener struct {
 	Address string
 	Network string
+	TLS     TLS
 }
 
 type Server struct {
 	filePath  string // internal, path to this config file
 	Listener  Listener
-	TLS       TLS
 	Webdav    Webdav
+	WSFS      WSFS
+	Storages  []Storage
 	Anonymous AnonymousUser
 	Users     []User
-	Storages  []Storage
-	Uid       int64
-	Gid       int64
-	OtherUid  int64
-	OtherGid  int64
 }
 
 type User struct {

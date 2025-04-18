@@ -5,11 +5,11 @@ var Default = Server{
 	Listener: Listener{
 		Address: ":20001",
 		Network: "tcp",
-	},
-	TLS: TLS{
-		Enable:   false,
-		CertFile: "/srv/ssl/cert",
-		KeyFile:  "/srv/ssl/key",
+		TLS: TLS{
+			Enable:   false,
+			CertFile: "/srv/ssl/cert",
+			KeyFile:  "/srv/ssl/key",
+		},
 	},
 	Webdav: Webdav{
 		Enable:                 true,
@@ -20,13 +20,16 @@ var Default = Server{
 			ShowDirSize: false,
 		},
 	},
+	WSFS: WSFS{
+		Enable:   true,
+		Uid:      -1,
+		Gid:      -1,
+		OtherUid: -1,
+		OtherGid: -1,
+	},
 	Anonymous: AnonymousUser{
 		Enable: false,
 	},
 	Users:    []User{},
 	Storages: []Storage{},
-	Uid:      -1,
-	Gid:      -1,
-	OtherUid: -1,
-	OtherGid: -1,
 }

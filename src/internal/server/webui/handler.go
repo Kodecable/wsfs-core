@@ -17,7 +17,6 @@ import (
 var builtinResources embed.FS
 
 type Handler struct {
-	Enable          bool
 	customResources string
 	cacheId         string
 	showDirSize     bool
@@ -25,15 +24,13 @@ type Handler struct {
 	customJS        bool
 }
 
-func NewHandler(c *config.Webui, cacheId string) (h Handler, err error) {
-	h.Enable = c.Enable
-	if !h.Enable {
-		return
+func NewHandler(c config.Webui, cacheId string) (h *Handler, err error) {
+	h = &Handler{
+		cacheId:         cacheId,
+		showDirSize:     c.ShowDirSize,
+		customResources: c.CustomResources,
 	}
-	h.cacheId = cacheId
-	h.showDirSize = c.ShowDirSize
 
-	h.customResources = c.CustomResources
 	if h.customResources != "" {
 		if _, err := os.Stat(path.Join(h.customResources, "custom.css")); err == nil {
 			h.customCSS = true
@@ -47,11 +44,6 @@ func NewHandler(c *config.Webui, cacheId string) (h Handler, err error) {
 }
 
 func (w *Handler) ServeList(rsp http.ResponseWriter, req *http.Request, st *storage.Storage) {
-	if !w.Enable {
-		rsp.WriteHeader(http.StatusNotImplemented)
-		return
-	}
-
 	rsp.Header().Set("Content-Type", "text/html")
 	rsp.Header().Set("Accept-Ranges", "none")
 
@@ -73,11 +65,6 @@ func (w *Handler) ServeList(rsp http.ResponseWriter, req *http.Request, st *stor
 }
 
 func (w *Handler) ServeAssets(rsp http.ResponseWriter, req *http.Request) {
-	if !w.Enable {
-		rsp.WriteHeader(http.StatusNotImplemented)
-		return
-	}
-
 	if strings.HasPrefix(req.URL.Path, "/js/") ||
 		strings.HasPrefix(req.URL.Path, "/css/") ||
 		strings.HasPrefix(req.URL.Path, "/img/") {

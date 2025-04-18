@@ -2,14 +2,12 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"wsfs-core/internal/server/config"
 	internalerror "wsfs-core/internal/server/internalError"
 	"wsfs-core/internal/server/storage"
@@ -31,25 +29,19 @@ type Server struct {
 	errorChan  chan error
 	cacheId    string
 
-	webuiHandler  webui.Handler
-	webdavHandler webdav.Handler
-	wsfsHandler   wsfs.Handler
+	webuiHandler  *webui.Handler
+	webdavHandler *webdav.Handler
+	wsfsHandler   *wsfs.Handler
 
 	users map[string]User
 
 	anonymous *storage.Storage
-
-	// is this server was reloading or had reloaded
-	reloadLock sync.Mutex
-	// is this server was new by reload
-	reloaded bool
 }
 
-func NewServer(c *config.Server) (s *Server, err error) {
+func NewServer(c config.Server) (s *Server, err error) {
 	s = &Server{
 		httpServer: http.Server{},
 		errorChan:  make(chan error),
-		reloaded:   false,
 		cacheId:    util.RandomString(8, cacheIdRunes),
 	}
 
@@ -112,118 +104,74 @@ func NewServer(c *config.Server) (s *Server, err error) {
 		return
 	}
 
-	s.webuiHandler, err = webui.NewHandler(&c.Webdav.Webui, s.cacheId)
-	if err != nil {
-		return
+	if c.Webdav.Enable {
+		s.webdavHandler, err = webdav.NewHandler(c.Webdav, s)
+		if err != nil {
+			return
+		}
 	}
 
-	s.webdavHandler, err = webdav.NewHandler(&c.Webdav, s)
-	if err != nil {
-		return
+	if c.Webdav.Webui.Enable {
+		s.webuiHandler, err = webui.NewHandler(c.Webdav.Webui, s.cacheId)
+		if err != nil {
+			return
+		}
 	}
 
-	s.wsfsHandler, err = wsfs.NewHandler(s, c)
-	if err != nil {
-		return
+	if c.WSFS.Enable {
+		s.wsfsHandler, err = wsfs.NewHandler(s, c.WSFS)
+		if err != nil {
+			return
+		}
+		go s.wsfsHandler.CollecteInactivedSession()
 	}
-	go s.wsfsHandler.CollecteInactivedSession()
 
 	return
 }
 
-func (s *Server) Run(listenerConfig config.Listener, tlsConfig config.TLS) error {
-	var httpServerTlsConfig *tls.Config
-
-	if listenerConfig.Network == "unix" {
-		fi, err := os.Stat(listenerConfig.Address)
-		if err == nil {
-			if fi.Mode()&os.ModeSocket != 0 {
-				err := os.Remove(listenerConfig.Address)
-				if err != nil {
-					log.Warn().Err(err).Msg("Unable to remove old sock file")
-				}
-			} else {
-				log.Warn().Err(err).Msg("Sock file exists and not a unix socket")
-			}
-		} else if !os.IsNotExist(err) {
-			log.Warn().Err(err).Msg("Unable to check sock file status")
-		}
-	}
-
-	listener, err := net.Listen(listenerConfig.Network, listenerConfig.Address)
+func (s *Server) Run(c config.Listener) error {
+	listener, tlsConfig, err := listen(c)
 	if err != nil {
-		goto end
+		return err
 	}
 
-	defer func() {
-		if listenerConfig.Network == "unix" {
-			err := os.Remove(listenerConfig.Address)
-			if err != nil {
-				log.Error().Err(err).Msg("Unable to remove sock file")
-			}
-		}
-	}()
+	defer cleanListen(c)
 
 	s.httpServer = http.Server{
 		Handler: s,
 	}
 
-	log.Warn().Str("Net", listenerConfig.Network).Str("Addr", listenerConfig.Address).Msg("Listening")
-	if tlsConfig.Enable {
-		httpServerTlsConfig, err = readTLSKeyPair(tlsConfig)
-		if err != nil {
-			s.httpServer.TLSConfig = httpServerTlsConfig
-			err = s.httpServer.ServeTLS(listener, "", "")
-		}
+	log.Warn().Str("Net", c.Network).Str("Addr", c.Address).Msg("Listening")
+	if c.TLS.Enable {
+		s.httpServer.TLSConfig = tlsConfig
+		err = s.httpServer.ServeTLS(listener, "", "")
 	} else {
 		err = s.httpServer.Serve(listener)
 	}
-end:
-	if s.reloaded {
-		if s.reloadLock.TryLock() {
-			s.errorChan <- err
-			return nil
-		} else {
-			if err != http.ErrServerClosed {
-				log.Error().Err(err).Msg("Old server exit with error")
-			}
-			return nil
-		}
-	} else {
-		if s.reloadLock.TryLock() {
-			return err
-		} else {
-			return <-s.errorChan
-		}
-	}
+
+	return err
 }
 
-func (s *Server) Reload(c *config.Server) (*Server, error) {
-	if !s.reloadLock.TryLock() {
-		return nil, errors.New("Server is reloading")
-	}
+// Async shutdown
+func (s *Server) Shutdown(callback func(error)) {
+	done := make(chan any)
 
-	newServer, err := NewServer(c)
-	if err != nil {
-		return nil, err
-	}
-	newServer.reloaded = true
-	newServer.errorChan = s.errorChan
+	go func() {
+		s.wsfsHandler.Stop()
+		s.httpServer.RegisterOnShutdown(func() {
+			close(done)
+		})
+		err := s.httpServer.Shutdown(context.Background())
+		if callback != nil {
+			callback(err)
+		}
+	}()
 
-	s.wsfsHandler.Stop()
-	err = s.httpServer.Shutdown(context.Background())
-	if err != nil {
-		s.errorChan <- err
-		close(s.errorChan)
-		return nil, err
-	}
-
-	go newServer.Run(c.Listener, c.TLS)
-	return newServer, nil
+	<-done
 }
 
 func (s *Server) ServeErrorPage(rsp http.ResponseWriter, req *http.Request, status int, msg string) {
-	if s.webuiHandler.Enable && (req.Method == "GET" || req.Method == "HEAD") {
+	if s.webuiHandler != nil && (req.Method == "GET" || req.Method == "HEAD") {
 		s.webuiHandler.ServeErrorPage(rsp, req, status, msg)
 	} else {
 		rsp.WriteHeader(status)
@@ -232,7 +180,7 @@ func (s *Server) ServeErrorPage(rsp http.ResponseWriter, req *http.Request, stat
 }
 
 func (s *Server) ServeError(rsp http.ResponseWriter, req *http.Request, err error) {
-	if s.webuiHandler.Enable && (req.Method == "GET" || req.Method == "HEAD") {
+	if s.webuiHandler != nil && (req.Method == "GET" || req.Method == "HEAD") {
 		s.webuiHandler.ServeError(rsp, req, err)
 	} else {
 		if errors.Is(err, internalerror.ErrInternalForbidden) {
@@ -350,12 +298,22 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 	}
 
 	if querys.Has("wsfs") {
-		s.wsfsHandler.ServeHTTP(rsp, req, st)
+		if s.wsfsHandler != nil {
+			s.wsfsHandler.ServeHTTP(rsp, req, st)
+		} else {
+			s.writeMethodNotAllow(rsp, "")
+		}
 	} else {
-		if strings.HasSuffix(req.URL.Path, "/") && (req.Method == "GET" || req.Method == "HEAD") {
+		if s.webuiHandler != nil &&
+			strings.HasSuffix(req.URL.Path, "/") &&
+			(req.Method == "GET" || req.Method == "HEAD") {
 			s.webuiHandler.ServeList(rsp, req, st)
 		} else {
-			s.webdavHandler.ServeHTTP(rsp, req, st)
+			if s.webdavHandler != nil {
+				s.webdavHandler.ServeHTTP(rsp, req, st)
+			} else {
+				s.writeMethodNotAllow(rsp, "")
+			}
 		}
 	}
 }

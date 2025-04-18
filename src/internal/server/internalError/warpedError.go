@@ -27,6 +27,6 @@ func Warp(obj any) error {
 	if err, ok := obj.(error); ok {
 		return &WarpedError{err}
 	} else {
-		return &WarpedError{fmt.Errorf("wsfs-core.interlnalError: Unknown error, print as: %s", fmt.Sprint(obj))}
+		return &WarpedError{fmt.Errorf("wsfs-core.interlnalError: Unknown error: %v", obj)}
 	}
 }

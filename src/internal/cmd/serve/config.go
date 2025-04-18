@@ -28,7 +28,7 @@ func findConfigFile() string {
 	return iternalDefaultConfigPath
 }
 
-func findAndDecodeConfig() *serverConfig.Server {
+func findAndDecodeConfig() serverConfig.Server {
 	config := serverConfig.Default
 
 	if configPath == iternalDefaultConfigPath {
@@ -48,12 +48,12 @@ func findAndDecodeConfig() *serverConfig.Server {
 	}
 
 	setUids(&config)
-	return &config
+	return config
 }
 
 func setUids(c *serverConfig.Server) {
-	if c.Uid >= 0 && c.Gid >= 0 &&
-		c.OtherUid >= 0 && c.OtherGid >= 0 {
+	if c.WSFS.Uid >= 0 && c.WSFS.Gid >= 0 &&
+		c.WSFS.OtherUid >= 0 && c.WSFS.OtherGid >= 0 {
 		return
 	}
 
@@ -64,16 +64,16 @@ func setUids(c *serverConfig.Server) {
 		os.Exit(1)
 	}
 
-	if c.Uid < 0 {
-		c.Uid = int64(defaultIds.CurrentUser)
+	if c.WSFS.Uid < 0 {
+		c.WSFS.Uid = int64(defaultIds.CurrentUser)
 	}
-	if c.Gid < 0 {
-		c.Gid = int64(defaultIds.UserGroup)
+	if c.WSFS.Gid < 0 {
+		c.WSFS.Gid = int64(defaultIds.UserGroup)
 	}
-	if c.OtherUid < 0 {
-		c.OtherUid = int64(defaultIds.NobodyUser)
+	if c.WSFS.OtherUid < 0 {
+		c.WSFS.OtherUid = int64(defaultIds.NobodyUser)
 	}
-	if c.OtherGid < 0 {
-		c.OtherGid = int64(defaultIds.NobodyGroup)
+	if c.WSFS.OtherGid < 0 {
+		c.WSFS.OtherGid = int64(defaultIds.NobodyGroup)
 	}
 }

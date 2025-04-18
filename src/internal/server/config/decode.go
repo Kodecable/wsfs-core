@@ -19,10 +19,11 @@ func Decode(config *Server, path string) error {
 	return err
 }
 
-func ReDecode(config *Server, old *Server) error {
+func ReDecode(old *Server) (new Server, err error) {
 	if old.filePath == Default.filePath {
-		return ErrReDecodeDefaultConfig
+		err = ErrReDecodeDefaultConfig
+		return
 	}
 
-	return Decode(config, old.filePath)
+	return new, Decode(&new, old.filePath)
 }

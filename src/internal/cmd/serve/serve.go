@@ -10,7 +10,6 @@ import (
 	"wsfs-core/version"
 
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/enumflag"
 )
@@ -30,31 +29,22 @@ var ServeCmd = &cobra.Command{
 
 		config := findAndDecodeConfig()
 
-		server, err := server.NewServer(config)
+		hub, err := server.NewHub()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Init server failed")
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
 
+		hub.GetConfig = func() (serverConfig.Server, error) {
+			return serverConfig.ReDecode(&config)
+		}
+
 		util.SetupSignalHandler(func() {
-			newConfig := serverConfig.Default
-			err := serverConfig.ReDecode(&newConfig, config)
-			if err != nil {
-				log.Err(err).Msg("Reload canceled")
-				return
-			}
-
-			newServer, err := server.Reload(&newConfig)
-			if err != nil {
-				log.Err(err).Msg("Reload canceled")
-				return
-			}
-
-			server = newServer
+			hub.IssueReload()
 		}, func() {}, func() {}) // TODO: gracefully shutdown
 
-		err = server.Run(config.Listener, config.TLS)
+		err = hub.Run(config)
 
 		if err != nil && err != http.ErrServerClosed {
 			fmt.Fprintln(os.Stderr, "Server stoped for error")

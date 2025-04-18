@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"wsfs-core/internal/server"
-	"wsfs-core/internal/server/config"
+	serverConfig "wsfs-core/internal/server/config"
 	"wsfs-core/internal/util"
 	"wsfs-core/version"
 
@@ -38,7 +38,7 @@ func exitWithError(code int, msg string, err error) {
 
 const storageId = "main"
 
-func configStorage(serverConfig *config.Server, c *cobra.Command) {
+func configStorage(config *serverConfig.Server, c *cobra.Command) {
 	if !c.Flags().Changed("storage") {
 		fmt.Fprintln(os.Stdout, "Warning: use working directory as storage")
 		workingDir, err := os.Getwd()
@@ -50,11 +50,11 @@ func configStorage(serverConfig *config.Server, c *cobra.Command) {
 		storage = workingDir
 	}
 
-	serverConfig.Storages = append(serverConfig.Storages, config.Storage{Id: storageId, Path: storage})
-	serverConfig.Anonymous.Storage = storageId
+	config.Storages = append(config.Storages, serverConfig.Storage{Id: storageId, Path: storage})
+	config.Anonymous.Storage = storageId
 }
 
-func configIDs(serverConfig *config.Server, c *cobra.Command) {
+func configIDs(config *serverConfig.Server, c *cobra.Command) {
 	if (!c.Flags().Changed("uid")) ||
 		(!c.Flags().Changed("gid")) ||
 		(!c.Flags().Changed("other-uid")) ||
@@ -80,17 +80,17 @@ func configIDs(serverConfig *config.Server, c *cobra.Command) {
 		}
 	}
 
-	serverConfig.Uid = int64(uid)
-	serverConfig.Gid = int64(gid)
-	serverConfig.OtherUid = int64(otherUid)
-	serverConfig.Gid = int64(otherGid)
+	config.WSFS.Uid = int64(uid)
+	config.WSFS.Gid = int64(gid)
+	config.WSFS.OtherUid = int64(otherUid)
+	config.WSFS.Gid = int64(otherGid)
 }
 
-func parseArg(serverConfig *config.Server, args string) {
+func parseArg(config *serverConfig.Server, args string) {
 	arg := strings.TrimSpace(args)
 
 	if _, err := strconv.ParseUint(arg, 10, 16); err == nil {
-		serverConfig.Listener.Address = ":" + arg
+		config.Listener.Address = ":" + arg
 	} else {
 		if ok, _ := regexp.MatchString(`.*:?\/\/`, arg); !ok {
 			arg = "//" + arg
@@ -103,9 +103,9 @@ func parseArg(serverConfig *config.Server, args string) {
 
 		switch strings.ToLower(parsedUrl.Scheme) {
 		case "http", "wsfs", "tcp", "":
-			serverConfig.Listener.Network = "tcp"
+			config.Listener.Network = "tcp"
 		case "unix":
-			serverConfig.Listener.Network = "unix"
+			config.Listener.Network = "unix"
 		default:
 			fmt.Fprintln(os.Stderr, "Unsupported listen network: '"+parsedUrl.Scheme+"'")
 			os.Exit(2)
@@ -121,11 +121,11 @@ func parseArg(serverConfig *config.Server, args string) {
 			if hash, err = bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost); err != nil {
 				exitWithError(2, "Uable to generate password hash", err)
 			}
-			serverConfig.Users = append(serverConfig.Users, config.User{Name: username, SecretHash: string(hash), Storage: storageId})
+			config.Users = append(config.Users, serverConfig.User{Name: username, SecretHash: string(hash), Storage: storageId})
 		}
 
 		if parsedUrl.Scheme == "unix" {
-			serverConfig.Listener.Address = parsedUrl.Path
+			config.Listener.Address = parsedUrl.Path
 		} else {
 			hostname := parsedUrl.Hostname()
 			if strings.Contains(hostname, ":") {
@@ -137,7 +137,7 @@ func parseArg(serverConfig *config.Server, args string) {
 			} else {
 				hostname += ":20001"
 			}
-			serverConfig.Listener.Address = hostname
+			config.Listener.Address = hostname
 		}
 	}
 }
@@ -154,28 +154,28 @@ var QuickServeCmd = &cobra.Command{
 	Run: func(c *cobra.Command, args []string) {
 		util.SetupZerolog(false, logLevel)
 
-		serverConfig := config.Default
+		config := serverConfig.Default
 
-		configStorage(&serverConfig, c)
-		configIDs(&serverConfig, c)
+		configStorage(&config, c)
+		configIDs(&config, c)
 
 		if len(args) != 0 {
-			parseArg(&serverConfig, args[0])
+			parseArg(&config, args[0])
 		}
 
-		if len(serverConfig.Users) == 0 {
+		if len(config.Users) == 0 {
 			fmt.Fprintln(os.Stdout, "Warning: anonymous mode")
-			serverConfig.Anonymous.Enable = true
+			config.Anonymous.Enable = true
 		}
 
-		server, err := server.NewServer(&serverConfig)
+		hub, err := server.NewHub()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Init server failed")
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
 
-		err = server.Run(serverConfig.Listener, serverConfig.TLS)
+		err = hub.Run(config)
 
 		if err != nil && err != http.ErrServerClosed {
 			fmt.Fprintln(os.Stderr, "Server stoped for error")
