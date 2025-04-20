@@ -1,5 +1,4 @@
 {% import (
-    "net/url"
     "net/http"
     "os"
 ) %}
@@ -17,7 +16,7 @@
 
 {% func PropfindItemOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool) %}
 <D:response>
-    <D:href>{%s= (&url.URL{Path: name}).EscapedPath() %}</D:href>
+    <D:href>{%s= escapeWebdavHref(name) %}</D:href>
     {% comment %}
         Quicktemplate did provided %u to escape URL. But it will escape '/' to '%2F'.
         This way used by golang/x/webdav won't.
@@ -46,7 +45,7 @@
 
 {% func PropfindItemBadResponse(name string, str string) %}
 <D:response>
-    <D:href>{%u name %}</D:href>
+    <D:href>{%s= escapeWebdavHref(name) %}</D:href>
     <D:propstat>
         <D:status>{%s str %}</D:status>
     </D:propstat>
