@@ -152,7 +152,7 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 	}
 	sucessed = true
 
-	log.Info().Str("From", conn.RemoteAddr().String()).Uint64("Id", id).Msg("Session running")
+	log.Info().Str("From", req.RemoteAddr).Str("User", user.Name).Uint64("Id", id).Msg("Session running")
 	session.takeConn(conn)
 }
 

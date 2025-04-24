@@ -35,13 +35,16 @@ type Server struct {
 
 	users     storage.Users
 	anonymous *storage.User
+
+	realIpHeader string
 }
 
 func NewServer(c config.Server) (s *Server, err error) {
 	s = &Server{
-		httpServer: http.Server{},
-		errorChan:  make(chan error),
-		cacheId:    util.RandomString(8, cacheIdRunes),
+		httpServer:   http.Server{},
+		errorChan:    make(chan error),
+		cacheId:      util.RandomString(8, cacheIdRunes),
+		realIpHeader: c.RealIpHeader,
 	}
 
 	s.users, s.anonymous, err = storage.NewUsers(c, anonymousUsername)
@@ -218,9 +221,19 @@ func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (user *stor
 	return
 }
 
+func rewriteRemoteAddr(req *http.Request, realIpHeader string) {
+	if realIpHeader == "" {
+		return
+	}
+
+	if addr := req.Header.Get(realIpHeader); addr != "" {
+		addr, _, _ = strings.Cut(addr, ",")
+		req.RemoteAddr = strings.TrimSpace(addr)
+	}
+}
+
 func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 	rsp := newResponseWriter(rsp_)
-
 	defer func() {
 		if err := recover(); err != nil {
 			s.serveRecover(rsp, req, err)
@@ -232,6 +245,8 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 			log.Info().Str("Path", req.RequestURI).Str("From", req.RemoteAddr).Int("Code", rsp.status).Msg(req.Method)
 		}
 	}()
+
+	rewriteRemoteAddr(req, s.realIpHeader)
 	rsp.Header().Set("Server", "WSFS/"+version.Version)
 
 	if !util.IsUrlValid(req.URL.Path) {

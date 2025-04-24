@@ -34,13 +34,14 @@ type Listener struct {
 }
 
 type Server struct {
-	filePath  string // internal, path to this config file
-	Listener  Listener
-	Webdav    Webdav
-	WSFS      WSFS
-	Storages  []Storage
-	Anonymous AnonymousUser
-	Users     []User
+	filePath     string // internal, path to this config file
+	Listener     Listener
+	Webdav       Webdav
+	WSFS         WSFS
+	Storages     []Storage
+	Anonymous    AnonymousUser
+	Users        []User
+	RealIpHeader string
 }
 
 type User struct {
