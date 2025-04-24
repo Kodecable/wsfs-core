@@ -90,12 +90,23 @@ func (h *Handler) CollecteInactivedSession() {
 	}
 }
 
-func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, st *storage.Storage) {
+func (h *Handler) TryServerHTTP(rsp http.ResponseWriter, req *http.Request, user *storage.User, forced bool) (handled bool) {
 	if !websocket.IsWebSocketUpgrade(req) {
-		h.errorHandler.ServeErrorPage(rsp, req, http.StatusBadRequest, "This is WSFS endpoint")
-		return
+		if forced {
+			h.errorHandler.ServeErrorMessage(rsp, req, http.StatusBadRequest, "Bad WSFS handshake: Not a upgrade request")
+			return true
+		}
+		return false
 	}
+	if user.ReadOnly {
+		h.errorHandler.ServeErrorMessage(rsp, req, http.StatusForbidden, "Bad WSFS handshake: Access Denied")
+		return true
+	}
+	h.ServeHTTP(rsp, req, user)
+	return true
+}
 
+func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *storage.User) {
 	var id uint64
 	var idstr = ""
 	if resumeHeader := req.Header.Get("X-Wsfs-Resume"); resumeHeader != "" {
@@ -107,7 +118,7 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, st *stor
 		}
 	} else {
 		var err error
-		id = h.newSession(st)
+		id = h.newSession(user.Storage)
 		if idstr, err = h.ider.Encode([]uint64{id}); err != nil {
 			log.Error().Err(err).Msg("Ider encode failed")
 			h.delSession(id)

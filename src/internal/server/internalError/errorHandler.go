@@ -13,5 +13,6 @@ var (
 
 type ErrorHandler interface {
 	ServeError(http.ResponseWriter, *http.Request, error)
+	ServeErrorMessage(http.ResponseWriter, *http.Request, int, string)
 	ServeErrorPage(http.ResponseWriter, *http.Request, int, string)
 }

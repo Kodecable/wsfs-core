@@ -33,9 +33,8 @@ type Server struct {
 	webdavHandler *webdav.Handler
 	wsfsHandler   *wsfs.Handler
 
-	users map[string]User
-
-	anonymous *storage.Storage
+	users     storage.Users
+	anonymous *storage.User
 }
 
 func NewServer(c config.Server) (s *Server, err error) {
@@ -45,58 +44,9 @@ func NewServer(c config.Server) (s *Server, err error) {
 		cacheId:    util.RandomString(8, cacheIdRunes),
 	}
 
-	storages := map[string]*storage.Storage{}
-	for _, st := range c.Storages {
-		if _, ok := storages[st.Id]; ok {
-			if st.Id == "" {
-				err = fmt.Errorf("default storage repeated")
-			} else {
-				err = fmt.Errorf("storage id '%s' repeated", st.Id)
-			}
-			return
-		}
-
-		storages[st.Id], err = storage.NewStorage(&st)
-		if err != nil {
-			return
-		}
-	}
-
-	users := map[string]User{}
-	for _, us := range c.Users {
-		if _, ok := users[us.Name]; ok {
-			err = fmt.Errorf("user '%s' repeated", us.Name)
-			return
-		}
-
-		if us.Name == "" {
-			err = fmt.Errorf("username can not be empty")
-			return
-		}
-
-		if _, ok := storages[us.Storage]; !ok {
-			err = fmt.Errorf("user '%s' referenced a storage that does not exist", us.Name)
-			return
-		}
-
-		users[us.Name] = User{
-			Name:     us.Name,
-			Password: us.SecretHash,
-			Storage:  storages[us.Storage],
-		}
-	}
-	s.users = users
-
-	if c.Anonymous.Enable {
-		if _, ok := storages[c.Anonymous.Storage]; !ok {
-			err = fmt.Errorf("anonymous user referenced a storage that does not exist")
-			return
-		}
-		s.anonymous = storages[c.Anonymous.Storage]
-
-		if _, ok := s.users[anonymousUsername]; ok {
-			log.Warn().Msg("anonymousUsername used; it will not be considered anonymous")
-		}
+	s.users, s.anonymous, err = storage.NewUsers(c, anonymousUsername)
+	if err != nil {
+		return
 	}
 
 	if c.Webdav.Webui.Enable && !c.Webdav.Enable {
@@ -193,6 +143,12 @@ func (s *Server) ServeError(rsp http.ResponseWriter, req *http.Request, err erro
 	}
 }
 
+func (s *Server) ServeErrorMessage(rsp http.ResponseWriter, req *http.Request, status int, msg string) {
+	rsp.Header().Set("Content-Type", "text/plain")
+	rsp.WriteHeader(status)
+	rsp.Write([]byte(msg))
+}
+
 // Modified from gin's RecoveryFunc.
 // Original copyright: Copyright 2014 Manu Martinez-Almeida. All rights reserved.
 // Original license: MIT (https://raw.githubusercontent.com/gin-gonic/gin/master/LICENSE)
@@ -240,22 +196,23 @@ func (s *Server) writeMethodNotAllow(rsp http.ResponseWriter, allow string) {
 	rsp.WriteHeader(http.StatusMethodNotAllowed)
 }
 
-func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (st *storage.Storage) {
-	user, err := httpBasciAuth(s.users, req)
+func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (user *storage.User) {
+	var err error
+
+	user, err = httpBasciAuth(s.users, req)
 	switch err {
 	case nil:
-		st = user.Storage
+		break
 	case ErrAuthHeaderNotExists, ErrAnonymous:
-		// if webui-login in query, make sure login
-		if s.anonymous != nil && !req.URL.Query().Has("webui-login") {
-			st = s.anonymous
-		} else {
-			s.writeAuthRsp(rsp)
+		if s.anonymous != nil && !req.URL.Query().Has("must-login") {
+			user = s.anonymous
+			break
 		}
+		fallthrough
 	case ErrBadHttpAuthHeader, ErrUserNotExists, ErrHashMismatch:
 		s.writeAuthRsp(rsp)
 	default:
-		log.Error().Err(err).Msg("Auth error")
+		log.Error().Err(err).Msg("Uable to auth user")
 		s.ServeError(rsp, req, internalerror.Warp(err))
 	}
 	return
@@ -292,28 +249,29 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	st := s.tryAuth(rsp, req)
-	if st == nil {
+	user := s.tryAuth(rsp, req)
+	if user == nil {
 		return
 	}
 
-	if querys.Has("wsfs") {
-		if s.wsfsHandler != nil {
-			s.wsfsHandler.ServeHTTP(rsp, req, st)
+	if s.wsfsHandler != nil {
+		if s.wsfsHandler.TryServerHTTP(rsp, req, user, querys.Has("wsfs")) {
+			return
+		}
+	} else if querys.Has("wsfs") {
+		s.writeMethodNotAllow(rsp, "")
+		return
+	}
+	if s.webuiHandler != nil &&
+		strings.HasSuffix(req.URL.Path, "/") &&
+		(req.Method == "GET" || req.Method == "HEAD") {
+		s.webuiHandler.ServeList(rsp, req, user)
+	} else {
+		if s.webdavHandler != nil {
+			s.webdavHandler.ServeHTTP(rsp, req, user)
 		} else {
 			s.writeMethodNotAllow(rsp, "")
 		}
-	} else {
-		if s.webuiHandler != nil &&
-			strings.HasSuffix(req.URL.Path, "/") &&
-			(req.Method == "GET" || req.Method == "HEAD") {
-			s.webuiHandler.ServeList(rsp, req, st)
-		} else {
-			if s.webdavHandler != nil {
-				s.webdavHandler.ServeHTTP(rsp, req, st)
-			} else {
-				s.writeMethodNotAllow(rsp, "")
-			}
-		}
 	}
+
 }

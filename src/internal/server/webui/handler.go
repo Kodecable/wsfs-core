@@ -43,11 +43,11 @@ func NewHandler(c config.Webui, cacheId string) (h *Handler, err error) {
 	return
 }
 
-func (w *Handler) ServeList(rsp http.ResponseWriter, req *http.Request, st *storage.Storage) {
+func (w *Handler) ServeList(rsp http.ResponseWriter, req *http.Request, user *storage.User) {
 	rsp.Header().Set("Content-Type", "text/html")
 	rsp.Header().Set("Accept-Ranges", "none")
 
-	arg, err := list(req.URL.Path, st)
+	arg, err := list(req.URL.Path, user.Storage)
 	if err != nil {
 		if os.IsNotExist(err) {
 			err = internalerror.ErrInternalNotFound
@@ -61,7 +61,7 @@ func (w *Handler) ServeList(rsp http.ResponseWriter, req *http.Request, st *stor
 	}
 
 	rsp.WriteHeader(http.StatusOK)
-	templates.WriteList(rsp, w.cacheId, arg.Paths, arg.Files, w.showDirSize, w.customCSS, w.customJS)
+	templates.WriteList(rsp, w.cacheId, arg.Paths, arg.Files, w.showDirSize, w.customCSS, w.customJS, user.ReadOnly)
 }
 
 func (w *Handler) ServeAssets(rsp http.ResponseWriter, req *http.Request) {

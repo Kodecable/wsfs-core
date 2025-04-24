@@ -14,14 +14,14 @@ type FileInfo struct {
 }
 %}
 
-{% func List(cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool) %}<!DOCTYPE html>
+{% func List(cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool, ReadOnly bool) %}<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta name="viewport" content="width=device-width">
     <title>{% if len(paths) != 1 %}{%s paths[len(paths)-1] %} - {% endif %}WSFS WebUI</title>
-    <script type="text/javascript">const GCacheId="{%s= cacheId %}";</script>
+    <script type="text/javascript">const GCacheId="{%s= cacheId %}";const GReadOnly={% if ReadOnly %}true{% else %}false{% endif %}</script>
     <link rel="shortcut icon" href="/img/favicon.ico?webui-assets={%s= cacheId %}">
     <script src="/js/list.js?webui-assets={%s= cacheId %}"></script>
     {% if customJS %}<script src="/custom/custom.js?webui-assets={%s= cacheId %}"></script>{% endif %}
@@ -38,14 +38,6 @@ type FileInfo struct {
             {% endfor %}
             {% endstripspace %}
         </div>
-        <div class="row">
-		    <button type="button" onclick="OpenFileInputer()">
-			    <span class="icon uploadFileIcon"></span><div data-t>Upload</div>
-		    </button>
-		    <button type="button" onclick="NewFolder()">
-			    <span class="icon newFolderIcon"></span><div data-t>New folder</div>
-		    </button>
-	    </div>
         <table id="files">
             <thead>
             <th id="nameHeader" data-t>Name</th>
@@ -70,7 +62,6 @@ type FileInfo struct {
             </tbody>
         </table>
     </main>
-    <input type='file' id='FileInputer' style='opacity:0' onchange='UploadFiles()' multiple />
 </body>
 <script src="/js/i18n.js?webui-assets={%s= cacheId %}"></script>
 

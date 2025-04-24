@@ -23,7 +23,7 @@ function I18nElement(element) {
             "Size": "大小",
             "Modification Time": "修改时间",
             "Error(s) occurred": "发生错误",
-            "New folder name": "新文件夹名：",
+            "New folder name:": "新文件夹名：",
             "Creating": "创建中",
             "Uploading": "上传中",
             "More than 1 day": "超过 1 天",

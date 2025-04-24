@@ -5,7 +5,9 @@ package client
 import (
 	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 	"wsfs-core/internal/client/session"
 
@@ -86,10 +88,32 @@ func reDialFunc(url, username, password, resumeId string) func() (*websocket.Con
 	}
 }
 
+func logDialError(rsp *http.Response, err error) {
+	if errors.Is(err, websocket.ErrBadHandshake) &&
+		rsp != nil {
+		if rsp.StatusCode == http.StatusUnauthorized {
+			log.Error().Err(err).Msg("Bad WSFS handshake: Authorize failed")
+			return
+		}
+		if rsp.Header.Get("Content-Type") == "text/plain" {
+			msg, err_ := io.ReadAll(io.LimitReader(rsp.Body, 64))
+			if err_ == nil {
+				msg := string(msg)
+				msg = strings.TrimSpace(msg)
+				msg = strings.TrimPrefix(msg, "Bad WSFS handshake: ")
+				msg = strings.TrimSpace(msg)
+				log.Error().Str("Message", msg).Msg("Bad WSFS handshake")
+				return
+			}
+		}
+	}
+	log.Error().Err(err).Msg("Uable to connect to server")
+}
+
 func Mount(mountpoint string, url string, username, password string, opt MountOption) error {
 	conn, rsp, err := dial(url, username, password, "")
 	if err != nil {
-		log.Error().Err(err).Msg("Uable to connect to server")
+		logDialError(rsp, err)
 		return err
 	}
 

@@ -28,7 +28,8 @@ var Default = Server{
 		OtherGid: -1,
 	},
 	Anonymous: AnonymousUser{
-		Enable: false,
+		Enable:   false,
+		ReadOnly: true,
 	},
 	Users:    []User{},
 	Storages: []Storage{},

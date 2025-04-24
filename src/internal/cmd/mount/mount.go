@@ -34,9 +34,9 @@ var (
 var MountCmd = &cobra.Command{
 	Use:   "mount EndPoint MountPoint",
 	Short: "Mount a Websocket Filesystem",
-	Example: `  wsfs mount wsfs://localhost:20001/?wsfs /path/to/mountpoint
-  wsfs mount wsfss+unix://hostname.sent.to.server/path/to/socket.sock/./?wsfs /path/to/mountpoint
-  wsfs mount windows.mountponint.should.be?wsfs "P:"`,
+	Example: `  wsfs mount wsfs://username:password@localhost:20001/ /path/to/mountpoint
+  wsfs mount wsfss+unix://host.name/path/to/socket.sock/./server/path/?wsfs /path/to/mountpoint
+  wsfs mount windows.mountponint.like "P:"`,
 	Args: cobra.ExactArgs(2),
 	Run: func(c *cobra.Command, args []string) {
 		setUids(c)

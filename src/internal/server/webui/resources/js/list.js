@@ -10,7 +10,7 @@ var GProgressAvgSpeed = 0
 function JLock() { GLock += 1; if (GLock == 1) { return false } else { GLock -= 1; return true } }
 function JUnlock() { GLock -= 1 }
 function Exists(o) { return (typeof (o) != 'undefined' && o != null) }
-//function GetValue(id) { return document.getElementById(id).value }
+function $(s) { return document.querySelector(s) }
 
 function UnhumanizeSize(text) {
     const powers = { 'k': 1, 'm': 2, 'g': 3, 't': 4, 'p': 5, 'e': 6, 'z': 7, 'y': 8 }
@@ -30,16 +30,16 @@ function GracefullyLoad(url, pushState = true) {
         if (xhr.readyState != xhr.DONE
             || xhr.status != 200
             || !Exists(xhr.responseXML)
-            || (GCacheId != xhr.responseXML.getElementsByTagName("body")[0].dataset.cacheid)) {
+            || (GCacheId != xhr.responseXML.querySelector("body").dataset.cacheid)) {
             location.href = url
             return
         }
         if (pushState)
             history.pushState({}, "", url);
-        document.getElementsByClassName("path")[0].remove()
-        document.getElementsByTagName("main")[0].children[0].before(xhr.responseXML.getElementsByClassName("path")[0])
-        document.getElementById("files").getElementsByTagName("tbody")[0].remove()
-        document.getElementById("files").getElementsByTagName("thead")[0].after(xhr.responseXML.getElementById("files").getElementsByTagName("tbody")[0])
+        $(".path").remove()
+        $("main").children[0].before(xhr.responseXML.querySelector(".path"))
+        $("#files>tbody").remove()
+        $("#files>thead").after(xhr.responseXML.querySelector("#files>tbody"))
         initWebui(true)
     }
     xhr.send()
@@ -58,7 +58,7 @@ function ElementAGracefullyLoad(event) {
 }
 
 function OpenProgressDialog(title) {
-    document.getElementsByTagName("main")[0].innerHTML += `<div id="PopupDialogBackground"><div id="ProgressDialog" class="dialog column"><div class="row"><h1 id="ProgrssTitle">${title}</h1><h1 id="ProgressDesc"></h1></div><div id="Progress"><div id="ProgressValue"></div></div><div class="row row-separation"><p id="ProgressPercent">0%</p><p id="ProgressETA"></p></div></div></div>`
+    $("main").insertAdjacentHTML("beforeend", `<div id="PopupDialogBackground"><div id="ProgressDialog" class="dialog column"><div class="row"><h1 id="ProgrssTitle">${title}</h1><h1 id="ProgressDesc"></h1></div><div id="Progress"><div id="ProgressValue"></div></div><div class="row row-separation"><p id="ProgressPercent">0%</p><p id="ProgressETA"></p></div></div></div>`)
 }
 
 function FormatSeconds(v) {
@@ -99,37 +99,37 @@ function StableSpeed(newspeed) {
 
 function UpdateProgressDialog(desc, totalValue, value) {
     let now = performance.now()
-    document.getElementById("ProgressDesc").innerHTML = desc
-    document.getElementById("ProgressValue").style.width = (value / totalValue * 100).toString() + "%"
-    document.getElementById("ProgressPercent").innerHTML = Math.floor(value / totalValue * 100).toString() + "%"
+    $("#ProgressDesc").innerHTML = desc
+    $("#ProgressValue").style.width = (value / totalValue * 100).toString() + "%"
+    $("#ProgressPercent").innerHTML = Math.floor(value / totalValue * 100).toString() + "%"
     if (GProgressLastUpdateValue != 0 && value != totalValue) {
         let speed = (value - GProgressLastUpdateValue) / (now - GProgressLastUpdateTime)
         speed = StableSpeed(speed)
-        document.getElementById("ProgressETA").innerHTML = FormatSeconds((totalValue - value) / speed / 1000)
+        $("#ProgressETA").innerHTML = FormatSeconds((totalValue - value) / speed / 1000)
     }
     GProgressLastUpdateValue = value
     GProgressLastUpdateTime = now
 }
 
 function LogProgressDialog(str) {
-    let logger = document.getElementById("ProgressLogger")
+    let logger = $("#ProgressLogger")
     if (!Exists(logger)) {
-        document.getElementById("ProgressDialog").innerHTML += '<p id="ProgressLogger" style="color: red"></p>'
-        logger = document.getElementById("ProgressLogger")
+        $("#ProgressDialog").innerHTML += '<p id="ProgressLogger" style="color: red"></p>'
+        logger = $("#ProgressLogger")
     }
     logger.innerHTML += str + "\n"
 }
 
 function CloseProgressDialog() {
-    document.getElementById("ProgressDesc").remove()
-    document.getElementById("Progress").remove()
-    document.getElementById("ProgressPercent").parentElement.remove()
-    if (Exists(document.getElementById("ProgressLogger"))) {
-        document.getElementById("ProgrssTitle").innerHTML = I18nText("Error(s) occurred")
+    $("#ProgressDesc").remove()
+    $("#Progress").remove()
+    $("#ProgressPercent").parentElement.remove()
+    if (Exists($("#ProgressLogger"))) {
+        $("#ProgrssTitle").innerHTML = I18nText("Error(s) occurred")
         return
     }
     GracefullyLoad(".", false)
-    document.getElementById("PopupDialogBackground").remove()
+    $("#PopupDialogBackground").remove()
 }
 
 function OpenFileInputer() {
@@ -256,16 +256,27 @@ function Sort(field, factor) {
 
 function initWebui(reload) {
     if (!reload) {
+        if(!GReadOnly) {
+            $("main>.path").insertAdjacentHTML("afterend", `<div class="row">
+		    <button type="button" onclick="OpenFileInputer()">
+			    <span class="icon uploadFileIcon"></span><div>${I18nText("Upload")}</div>
+		    </button>
+		    <button type="button" onclick="NewFolder()">
+			    <span class="icon newFolderIcon"></span><div>${I18nText("New folder")}</div>
+		    </button>
+	        </div>`)
+            $("main").insertAdjacentHTML("afterend", "<input type='file' id='FileInputer' style='opacity:0' onchange='UploadFiles()' multiple />")
+            $("#FileInputer").addEventListener("cancel", () => { JUnlock() })
+        }
         for (const field of ["name", "size", "time"]) {
             GTableHeaderElements[field] = document.getElementById(`${field}Header`)
-            GTableHeaderElements[field].addEventListener("click", function () { Sort(field) })
+            GTableHeaderElements[field].addEventListener("click", () => { Sort(field) })
             GTableHeaderElements[field].style = "cursor: pointer"
         }
-        document.getElementById("FileInputer").addEventListener("cancel", () => {JUnlock()})
     }
-    GItemsElement = document.getElementById("files").getElementsByTagName("tbody")[0];
-    document.getElementById("files").getElementsByTagName("tbody")[0].addEventListener("click", ElementAGracefullyLoad)
-    document.getElementsByClassName("path")[0].addEventListener("click", ElementAGracefullyLoad)
+    GItemsElement = $("#files>tbody")
+    GItemsElement.addEventListener("click", ElementAGracefullyLoad)
+    $(".path").addEventListener("click", ElementAGracefullyLoad)
     Sort("name", 1)
 }
 

@@ -46,15 +46,18 @@ type Server struct {
 type User struct {
 	Name       string
 	SecretHash string
+	ReadOnly   bool
 	Storage    string
 }
 
 type AnonymousUser struct {
-	Enable  bool
-	Storage string
+	Enable   bool
+	ReadOnly bool
+	Storage  string
 }
 
 type Storage struct {
-	Id   string
-	Path string
+	Id       string
+	Path     string
+	ReadOnly bool
 }

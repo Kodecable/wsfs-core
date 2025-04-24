@@ -34,7 +34,7 @@ type FileInfo struct {
 }
 
 //line list.qtpl:17
-func StreamList(qw422016 *qt422016.Writer, cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool) {
+func StreamList(qw422016 *qt422016.Writer, cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool, ReadOnly bool) {
 //line list.qtpl:17
 	qw422016.N().S(`<!DOCTYPE html>
 <html lang="en">
@@ -57,7 +57,19 @@ func StreamList(qw422016 *qt422016.Writer, cacheId string, paths []string, files
 //line list.qtpl:24
 	qw422016.N().S(cacheId)
 //line list.qtpl:24
-	qw422016.N().S(`";</script>
+	qw422016.N().S(`";const GReadOnly=`)
+//line list.qtpl:24
+	if ReadOnly {
+//line list.qtpl:24
+		qw422016.N().S(`true`)
+//line list.qtpl:24
+	} else {
+//line list.qtpl:24
+		qw422016.N().S(`false`)
+//line list.qtpl:24
+	}
+//line list.qtpl:24
+	qw422016.N().S(`</script>
     <link rel="shortcut icon" href="/img/favicon.ico?webui-assets=`)
 //line list.qtpl:25
 	qw422016.N().S(cacheId)
@@ -130,110 +142,101 @@ func StreamList(qw422016 *qt422016.Writer, cacheId string, paths []string, files
 //line list.qtpl:39
 	qw422016.N().S(`
         </div>
-        <div class="row">
-		    <button type="button" onclick="OpenFileInputer()">
-			    <span class="icon uploadFileIcon"></span><div data-t>Upload</div>
-		    </button>
-		    <button type="button" onclick="NewFolder()">
-			    <span class="icon newFolderIcon"></span><div data-t>New folder</div>
-		    </button>
-	    </div>
         <table id="files">
             <thead>
             <th id="nameHeader" data-t>Name</th>
             <th id="sizeHeader" data-t>Size</th>
             <th id="timeHeader" data-t>Modification Time</th>`)
-//line list.qtpl:53
+//line list.qtpl:45
 	qw422016.N().S(`</thead><tbody>`)
-//line list.qtpl:56
+//line list.qtpl:48
 	for _, file := range files {
-//line list.qtpl:57
+//line list.qtpl:49
 		qw422016.N().S(`
 `)
-//line list.qtpl:57
+//line list.qtpl:49
 		qw422016.N().S(`            `)
-//line list.qtpl:57
+//line list.qtpl:49
 		qw422016.N().S(`<tr`)
-//line list.qtpl:58
+//line list.qtpl:50
 		if file.IsDir {
-//line list.qtpl:58
+//line list.qtpl:50
 			qw422016.N().S(` `)
-//line list.qtpl:58
+//line list.qtpl:50
 			qw422016.N().S(`class="dirItem"`)
-//line list.qtpl:58
+//line list.qtpl:50
 		}
-//line list.qtpl:58
+//line list.qtpl:50
 		qw422016.N().S(`><td><div><a href="`)
-//line list.qtpl:59
+//line list.qtpl:51
 		qw422016.N().S((&url.URL{Path: file.Name}).EscapedPath())
-//line list.qtpl:59
+//line list.qtpl:51
 		if file.IsDir {
-//line list.qtpl:59
+//line list.qtpl:51
 			qw422016.N().S(`/`)
-//line list.qtpl:59
+//line list.qtpl:51
 		}
-//line list.qtpl:59
+//line list.qtpl:51
 		qw422016.N().S(`">`)
-//line list.qtpl:59
+//line list.qtpl:51
 		qw422016.E().S(file.Name)
-//line list.qtpl:59
+//line list.qtpl:51
 		qw422016.N().S(`</a></div></td>`)
-//line list.qtpl:64
+//line list.qtpl:56
 		qw422016.N().S(`<td>`)
-//line list.qtpl:65
+//line list.qtpl:57
 		if !file.IsDir || showDirSize {
-//line list.qtpl:65
+//line list.qtpl:57
 			qw422016.N().S(humanize.IBytes(uint64(file.Size)))
-//line list.qtpl:65
+//line list.qtpl:57
 		}
-//line list.qtpl:65
+//line list.qtpl:57
 		qw422016.N().S(`</td><td>`)
-//line list.qtpl:66
+//line list.qtpl:58
 		qw422016.N().S(file.MTime.Format("2006-01-02 15:04:05"))
-//line list.qtpl:66
+//line list.qtpl:58
 		qw422016.N().S(`</td></tr>`)
-//line list.qtpl:68
+//line list.qtpl:60
 	}
-//line list.qtpl:69
+//line list.qtpl:61
 	qw422016.N().S(`
             </tbody>
         </table>
     </main>
-    <input type='file' id='FileInputer' style='opacity:0' onchange='UploadFiles()' multiple />
 </body>
 <script src="/js/i18n.js?webui-assets=`)
-//line list.qtpl:75
+//line list.qtpl:66
 	qw422016.N().S(cacheId)
-//line list.qtpl:75
+//line list.qtpl:66
 	qw422016.N().S(`"></script>
 
 </html>
 `)
-//line list.qtpl:78
+//line list.qtpl:69
 }
 
-//line list.qtpl:78
-func WriteList(qq422016 qtio422016.Writer, cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool) {
-//line list.qtpl:78
+//line list.qtpl:69
+func WriteList(qq422016 qtio422016.Writer, cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool, ReadOnly bool) {
+//line list.qtpl:69
 	qw422016 := qt422016.AcquireWriter(qq422016)
-//line list.qtpl:78
-	StreamList(qw422016, cacheId, paths, files, showDirSize, customCSS, customJS)
-//line list.qtpl:78
+//line list.qtpl:69
+	StreamList(qw422016, cacheId, paths, files, showDirSize, customCSS, customJS, ReadOnly)
+//line list.qtpl:69
 	qt422016.ReleaseWriter(qw422016)
-//line list.qtpl:78
+//line list.qtpl:69
 }
 
-//line list.qtpl:78
-func List(cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool) string {
-//line list.qtpl:78
+//line list.qtpl:69
+func List(cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool, ReadOnly bool) string {
+//line list.qtpl:69
 	qb422016 := qt422016.AcquireByteBuffer()
-//line list.qtpl:78
-	WriteList(qb422016, cacheId, paths, files, showDirSize, customCSS, customJS)
-//line list.qtpl:78
+//line list.qtpl:69
+	WriteList(qb422016, cacheId, paths, files, showDirSize, customCSS, customJS, ReadOnly)
+//line list.qtpl:69
 	qs422016 := string(qb422016.B)
-//line list.qtpl:78
+//line list.qtpl:69
 	qt422016.ReleaseByteBuffer(qb422016)
-//line list.qtpl:78
+//line list.qtpl:69
 	return qs422016
-//line list.qtpl:78
+//line list.qtpl:69
 }

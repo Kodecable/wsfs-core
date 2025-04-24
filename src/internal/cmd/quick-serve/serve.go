@@ -19,7 +19,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var cacheIdRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*")
+var randomPasswordRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*")
 
 var (
 	uid      uint32
@@ -115,7 +115,7 @@ func parseArg(config *serverConfig.Server, args string) {
 			var password string
 			var hash []byte
 			if password, _ = parsedUrl.User.Password(); password == "" {
-				password = util.RandomString(10, cacheIdRunes)
+				password = util.RandomString(10, randomPasswordRunes)
 				fmt.Fprintln(os.Stdout, "Password for user '"+username+"' is '"+password+"'")
 			}
 			if hash, err = bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost); err != nil {

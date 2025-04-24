@@ -21,14 +21,8 @@ var (
 	ErrAnonymous           = errors.New("anonymous user")
 )
 
-type User struct {
-	Name     string
-	Password string
-	Storage  *storage.Storage
-}
-
-func (u *User) CheckPassword(password string) (err error) {
-	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
+func checkPassword(user *storage.User, password []byte) (err error) {
+	err = bcrypt.CompareHashAndPassword(user.Password, password)
 
 	if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 		return ErrHashMismatch
@@ -36,8 +30,8 @@ func (u *User) CheckPassword(password string) (err error) {
 	return err
 }
 
-func authUser(users map[string]User, username, password string) (*User, error) {
-	var user User
+func authUser(users map[string]*storage.User, username, password string) (*storage.User, error) {
+	var user *storage.User
 	var ok bool
 
 	if user, ok = users[username]; !ok {
@@ -48,10 +42,10 @@ func authUser(users map[string]User, username, password string) (*User, error) {
 		return nil, ErrUserNotExists
 	}
 
-	return &user, user.CheckPassword(password)
+	return user, checkPassword(user, []byte(password))
 }
 
-func httpBasciAuth(users map[string]User, req *http.Request) (*User, error) {
+func httpBasciAuth(users map[string]*storage.User, req *http.Request) (*storage.User, error) {
 	if req.Header.Get("Authorization") == "" {
 		return nil, ErrAuthHeaderNotExists
 	}

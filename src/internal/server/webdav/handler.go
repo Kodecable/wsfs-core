@@ -45,29 +45,42 @@ func NewHandler(c config.Webdav, errorHandler internalerror.ErrorHandler) (h *Ha
 	return
 }
 
-func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, st *storage.Storage) {
+func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *storage.User) {
 	status := http.StatusNotImplemented
-	var err error = nil
+	var err error
 
-	switch req.Method {
-	case "OPTIONS":
-		status, err = h.handleOptions(rsp, req, st)
-	case "GET", "HEAD":
-		status, err = h.handleGetHead(rsp, req, st)
-	case "DELETE":
-		status, err = h.handleDelete(rsp, req, st)
-	case "PUT":
-		status, err = h.handlePut(rsp, req, st)
-	case "PATCH":
-		status, err = h.handlePatch(rsp, req, st)
-	case "MKCOL":
-		status, err = h.handleMkcol(rsp, req, st)
-	case "COPY", "MOVE":
-		status, err = h.handleCopyMove(rsp, req, st)
-	case "PROPFIND":
-		status, err = h.handlePropfind(rsp, req, st)
-	case "PROPPATCH":
-		status, err = h.handlePropfind(rsp, req, st)
+	if user.ReadOnly {
+		switch req.Method {
+		case "OPTIONS":
+			status, err = h.handleOptions(rsp, req, user)
+		case "GET", "HEAD":
+			status, err = h.handleGetHead(rsp, req, user.Storage)
+		case "PROPFIND":
+			status, err = h.handlePropfind(rsp, req, user.Storage)
+		case "PROPPATCH", "COPY", "MOVE", "MKCOL", "PATCH", "PUT", "DELETE":
+			status = http.StatusForbidden
+		}
+	} else {
+		switch req.Method {
+		case "OPTIONS":
+			status, err = h.handleOptions(rsp, req, user)
+		case "GET", "HEAD":
+			status, err = h.handleGetHead(rsp, req, user.Storage)
+		case "DELETE":
+			status, err = h.handleDelete(rsp, req, user.Storage)
+		case "PUT":
+			status, err = h.handlePut(rsp, req, user.Storage)
+		case "PATCH":
+			status, err = h.handlePatch(rsp, req, user.Storage)
+		case "MKCOL":
+			status, err = h.handleMkcol(rsp, req, user.Storage)
+		case "COPY", "MOVE":
+			status, err = h.handleCopyMove(rsp, req, user.Storage)
+		case "PROPFIND":
+			status, err = h.handlePropfind(rsp, req, user.Storage)
+		case "PROPPATCH":
+			status, err = h.handlePropfind(rsp, req, user.Storage)
+		}
 	}
 
 	if err != nil {
@@ -82,21 +95,31 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, st *stor
 	}
 }
 
-func (h *Handler) handleOptions(rsp http.ResponseWriter, req *http.Request, st *storage.Storage) (status int, err error) {
+func (h *Handler) handleOptions(rsp http.ResponseWriter, req *http.Request, user *storage.User) (status int, err error) {
+	st := user.Storage
 	path := st.Path + req.URL.Path
 
-	allow := ""
+	var allow string
 	if fi, err := os.Stat(path); err == nil {
 		if fi.IsDir() {
-			allow = "OPTIONS, DELETE, PROPPATCH, COPY, MOVE, PROPFIND"
+			allow = "OPTIONS, PROPFIND"
+			if !user.ReadOnly {
+				allow += ", DELETE, PROPPATCH, COPY, MOVE"
+			}
 			if h.enableWebui {
 				allow += ", GET"
 			}
 		} else {
-			allow = "OPTIONS, GET, HEAD, DELETE, PROPPATCH, COPY, MOVE, PROPFIND, PUT, PATCH"
+			allow = "OPTIONS, GET, HEAD, PROPFIND"
+			if !user.ReadOnly {
+				allow += ", DELETE, PROPPATCH, COPY, MOVE, PUT, PATCH"
+			}
 		}
 	} else if os.IsNotExist(err) {
-		allow = "OPTIONS, PUT, MKCOL"
+		allow = "OPTIONS"
+		if !user.ReadOnly {
+			allow += ", PUT, MKCOL"
+		}
 	} else if os.IsPermission(err) {
 		return http.StatusForbidden, nil
 	} else {
