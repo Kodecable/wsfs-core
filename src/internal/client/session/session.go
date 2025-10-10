@@ -128,10 +128,14 @@ func (s *Session) readLoop(conn *websocket.Conn, ctx context.Context, cancel con
 		buf := bufPool.Get().(*util.Buffer)
 		_, err = io.Copy(buf, reader)
 		if err != nil {
+			buf.Done()
+			bufPool.Put(buf)
 			log.Error().Err(err).Msg("Failed to read message")
 			break
 		}
 		if !buf.Ensure(1) {
+			buf.Done()
+			bufPool.Put(buf)
 			log.Error().Msg("Bad message, too short")
 			continue
 		}

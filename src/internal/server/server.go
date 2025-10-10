@@ -258,7 +258,7 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 	}
 
 	querys := req.URL.Query()
-	if querys.Has("webui-assets") {
+	if querys.Has("webui-assets") && s.webuiHandler != nil {
 		if req.Method != "GET" && req.Method != "HEAD" {
 			s.writeMethodNotAllow(rsp, "GET, HEAD")
 		} else {

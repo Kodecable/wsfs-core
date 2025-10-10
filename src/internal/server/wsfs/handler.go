@@ -39,6 +39,7 @@ type Handler struct {
 	sessions     sync.Map
 	sessionLast  atomic.Uint64
 	suser        Suser
+	ctx          context.Context
 
 	Stop context.CancelFunc
 }
@@ -47,6 +48,7 @@ func NewHandler(errorHandler internalerror.ErrorHandler, c config.WSFS) (h *Hand
 	h = &Handler{
 		errorHandler: errorHandler,
 	}
+	h.ctx, h.Stop = context.WithCancel(context.Background())
 
 	h.setupUpgrader()
 	h.ider, err = setupIder()
@@ -58,9 +60,6 @@ func NewHandler(errorHandler internalerror.ErrorHandler, c config.WSFS) (h *Hand
 }
 
 func (h *Handler) CollecteInactivedSession() {
-	var ctx context.Context
-	ctx, h.Stop = context.WithCancel(context.Background())
-
 	for {
 		time.Sleep(sessionInactiveScanPeriod)
 		existsSession := false
@@ -84,7 +83,7 @@ func (h *Handler) CollecteInactivedSession() {
 			}
 			return true
 		})
-		if ctx.Err() != nil && !existsSession {
+		if h.ctx.Err() != nil && !existsSession {
 			return
 		}
 	}
