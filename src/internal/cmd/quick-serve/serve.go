@@ -83,7 +83,7 @@ func configIDs(config *serverConfig.Server, c *cobra.Command) {
 	config.WSFS.Uid = int64(uid)
 	config.WSFS.Gid = int64(gid)
 	config.WSFS.OtherUid = int64(otherUid)
-	config.WSFS.Gid = int64(otherGid)
+	config.WSFS.OtherGid = int64(otherGid)
 }
 
 func parseArg(config *serverConfig.Server, args string) {

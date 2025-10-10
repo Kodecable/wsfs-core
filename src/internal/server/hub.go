@@ -28,6 +28,7 @@ type Hub struct {
 
 func NewHub() (h *Hub, err error) {
 	h = new(Hub)
+	h.exitErrorChan = make(chan error)
 
 	return
 }

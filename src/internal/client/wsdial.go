@@ -44,7 +44,7 @@ func unixSocketUrl(urlStr string) (isSocket bool, socketPath, httpUrl string, er
 	// 'http://' + '/' => path: '/'
 	// Which scheme is not important
 	hostpathUrl, err := url.Parse("http://" + hostpath)
-	if !ok {
+	if err != nil {
 		return false, "", "", err
 	}
 

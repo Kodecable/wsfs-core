@@ -105,7 +105,7 @@ var MountCmd = &cobra.Command{
 
 func setUids(c *cobra.Command) {
 	if (!c.Flags().Changed("uid")) ||
-		(!c.Flags().Changed("git")) ||
+		(!c.Flags().Changed("gid")) ||
 		(!c.Flags().Changed("nobody-uid")) ||
 		(!c.Flags().Changed("nobody-gid")) {
 		defaultIds, err := util.GetDefaultIds()

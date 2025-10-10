@@ -151,9 +151,9 @@ func (s *Session) CmdReadLink(lpath string) (tpath string, code uint8) {
 
 	if code == wsfsprotocol.ErrorOK {
 		if ok {
-			return "", wsfsprotocol.ErrorIO
+			return str, code
 		}
-		return str, code
+		return "", wsfsprotocol.ErrorIO
 	} else {
 		return "", code
 	}

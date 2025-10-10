@@ -3,6 +3,8 @@ package serve
 import (
 	"fmt"
 	"os"
+	"path"
+	"strings"
 	serverConfig "wsfs-core/internal/server/config"
 	"wsfs-core/internal/util"
 )
@@ -18,10 +20,20 @@ var defaultConfigPaths = []string{
 const iternalDefaultConfigPath = "<DEFAULT>"
 
 func findConfigFile() string {
-	for _, path := range defaultConfigPaths {
-		if _, err := os.Stat(path); err == nil {
-			fmt.Printf("Found config file: %s\n", path)
-			return path
+	for _, path_ := range defaultConfigPaths {
+		if cpath, found := strings.CutPrefix(path_, "~/"); found {
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Uable to get user home dir")
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(2)
+			}
+			path_ = path.Join(homeDir, cpath)
+		}
+
+		if _, err := os.Stat(path_); err == nil {
+			fmt.Printf("Found config file: %s\n", path_)
+			return path_
 		}
 	}
 

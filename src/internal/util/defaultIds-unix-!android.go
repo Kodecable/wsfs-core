@@ -32,7 +32,7 @@ func GetDefaultIds() (IdInfo, error) {
 	if err != nil {
 		return IdInfo{}, err
 	}
-	ngid, err := strconv.ParseUint(nobody.Uid, 10, uidBitSize)
+	ngid, err := strconv.ParseUint(nobody.Gid, 10, uidBitSize)
 	if err != nil {
 		return IdInfo{}, err
 	}

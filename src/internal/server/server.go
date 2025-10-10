@@ -110,7 +110,10 @@ func (s *Server) Shutdown(callback func(error)) {
 	done := make(chan any)
 
 	go func() {
-		s.wsfsHandler.Stop()
+		if s.wsfsHandler != nil {
+			s.wsfsHandler.Stop()
+		}
+
 		s.httpServer.RegisterOnShutdown(func() {
 			close(done)
 		})
