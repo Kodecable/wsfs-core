@@ -29,6 +29,11 @@ func moveFiles(src, dst string, overwrite bool) (status int, err error) {
 		if err := os.RemoveAll(dst); err != nil {
 			return http.StatusForbidden, err
 		}
+
+		if src[len(src)-1] != '/' && dst[len(dst)-1] == '/' {
+			// os.OpenFile() may give you EISDIR, remove '/'
+			dst = dst[:len(dst)-1]
+		}
 	} else {
 		return http.StatusPreconditionFailed, os.ErrExist
 	}
@@ -84,6 +89,11 @@ func copyFiles(src, dst string, overwrite bool, depth int, recursion int) (statu
 		if err := os.RemoveAll(dst); err != nil && !os.IsNotExist(err) {
 			return http.StatusForbidden, err
 		}
+	}
+
+	if src[len(src)-1] != '/' && dst[len(dst)-1] == '/' {
+		// os.OpenFile() may give you EISDIR, remove '/'
+		dst = dst[:len(dst)-1]
 	}
 
 	if srcStat.IsDir() {
