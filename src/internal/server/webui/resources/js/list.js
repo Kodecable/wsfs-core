@@ -275,6 +275,8 @@ function initWebui(reload) {
         }
     }
     GItemsElement = $("#files>tbody")
+    for (let elem of GItemsElement.children)
+        elem.setAttribute("title", elem.getElementsByTagName("a")[0].textContent)
     GItemsElement.addEventListener("click", ElementAGracefullyLoad)
     $(".path").addEventListener("click", ElementAGracefullyLoad)
     Sort("name", 1)
