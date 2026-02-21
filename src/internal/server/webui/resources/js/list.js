@@ -83,19 +83,19 @@ function FormatSeconds(v) {
     return str
 }
 
-function StableSpeed(newspeed) {
-    let diff = Math.abs(newspeed - GProgressAvgSpeed) / GProgressAvgSpeed
-    if (diff < 0.5)
-        return GProgressAvgSpeed = 0.05 * newspeed + 0.95 * GProgressAvgSpeed
-    else if (diff < 0.7)
-        return GProgressAvgSpeed = 0.1 * newspeed + 0.9 * GProgressAvgSpeed
-    else if (diff < 0.8)
-        return GProgressAvgSpeed = 0.2 * newspeed + 0.8 * GProgressAvgSpeed
-    else if (diff < 0.9)
-        return GProgressAvgSpeed = 0.3 * newspeed + 0.7 * GProgressAvgSpeed
-    else if (diff < 1)
-        return GProgressAvgSpeed = 0.5 * newspeed + 0.5 * GProgressAvgSpeed
-    return GProgressAvgSpeed = newspeed
+function StableSpeed(newspeed, timeInterval) {
+    const halfLife = 1000; // ms
+    
+    if (GProgressAvgSpeed === 0 || isNaN(GProgressAvgSpeed)) {
+        GProgressAvgSpeed = newspeed;
+        return GProgressAvgSpeed;
+    }
+    
+    const decayFactor = Math.pow(0.5, timeInterval / halfLife);
+    const newWeight = 1 - decayFactor;
+    const oldWeight = decayFactor;
+    GProgressAvgSpeed = newWeight * newspeed + oldWeight * GProgressAvgSpeed;
+    return GProgressAvgSpeed;
 }
 
 function UpdateProgressDialog(desc, totalValue, value) {
@@ -104,8 +104,9 @@ function UpdateProgressDialog(desc, totalValue, value) {
     $("#ProgressValue").style.width = (value / totalValue * 100).toString() + "%"
     $("#ProgressPercent").innerHTML = Math.floor(value / totalValue * 100).toString() + "%"
     if (GProgressLastUpdateValue != 0 && value != totalValue) {
-        let speed = (value - GProgressLastUpdateValue) / (now - GProgressLastUpdateTime)
-        speed = StableSpeed(speed)
+        let timeInterval = now - GProgressLastUpdateTime
+        let speed = (value - GProgressLastUpdateValue) / timeInterval
+        speed = StableSpeed(speed, timeInterval)
         $("#ProgressETA").innerHTML = FormatSeconds((totalValue - value) / speed / 1000)
     }
     GProgressLastUpdateValue = value
