@@ -166,6 +166,7 @@ var QuickServeCmd = &cobra.Command{
 		if len(config.Users) == 0 {
 			fmt.Fprintln(os.Stdout, "Warning: anonymous mode")
 			config.Anonymous.Enable = true
+			config.Anonymous.ReadOnly = false
 		}
 
 		hub, err := server.NewHub()

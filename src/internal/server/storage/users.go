@@ -65,6 +65,7 @@ func NewUsers(conf config.Server, anonymousUsername string) (users Users, anonym
 			return
 		}
 		anonymous = &User{
+			Name:     "<anonymous>", // a hint for debugger or log
 			ReadOnly: conf.Anonymous.ReadOnly,
 			Storage:  storages[conf.Anonymous.Storage],
 		}
