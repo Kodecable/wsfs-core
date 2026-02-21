@@ -151,7 +151,7 @@ buildAllArch(){
 OS="all"
 ARCH="all"
 
-while getopts "o:a:m:v:hc" o; do
+while getopts ":o:a:m:v:hc" o; do
     case "${o}" in
         o)OS=${OPTARG};;
         a)ARCH=${OPTARG};;
@@ -165,8 +165,25 @@ while getopts "o:a:m:v:hc" o; do
             clean
             exit 0
             ;;
+        \?)
+            echo "Unknown option: -${OPTARG}"
+            help
+            exit 0
+            ;;
+        :)
+            echo "Option -${OPTARG} requires an argument"
+            help
+            exit 0
+            ;;
     esac
 done
+
+shift "$((OPTIND - 1))"
+if [ "$#" -gt 0 ]; then
+    echo "Unknown argument(s): $*"
+    help
+    exit 0
+fi
 
 if [ "$BuildMode" != "release" ] && [ "$BuildMode" != "debug" ]; then
     echo "Unknown BuildMode: $BuildMode"
