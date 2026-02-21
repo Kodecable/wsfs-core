@@ -39,9 +39,9 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 	opts = append(opts, "volname="+opt.VolumeLabel)
 
 	opts = append(opts, "-o")
-	opts = append(opts, "FileInfoTimeout="+strconv.FormatInt(opt.AttrTimeout.Milliseconds(), 10))
-	opts = append(opts, "-o")
-	opts = append(opts, "DirInfoTimeout="+strconv.FormatInt(opt.AttrTimeout.Milliseconds(), 10))
+	opts = append(opts, "FileInfoTimeout="+strconv.FormatInt(10, 10))
+	//opts = append(opts, "-o")
+	//opts = append(opts, "DirInfoTimeout="+strconv.FormatInt(10, 10))
 
 	go func() {
 		err := session.Wait()
