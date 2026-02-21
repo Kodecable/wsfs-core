@@ -28,6 +28,7 @@ function I18nElement(element) {
             "Uploading": "上传中",
             "More than 1 day": "超过 1 天",
             "Upload": "上传文件",
+            "Drop files to upload": "拖拽文件到此处上传",
             "New folder": "新建文件夹",
             "Return to root": "回到根目录",
             "Not found": "资源不存在",

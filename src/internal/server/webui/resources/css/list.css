@@ -183,6 +183,31 @@
     background-color: var(--text);
 }
 
+#DropUploadMask {
+    display: flex;
+    z-index: 1;
+    background-color: #3F3F3F77;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s linear;
+}
+
+#DropUploadMask>div {
+    margin: auto;
+    padding: 24px 32px;
+    border: 2px dashed var(--text);
+    background-color: var(--background);
+}
+
+#DropUploadMask.Show {
+    opacity: 1;
+}
+
 .newFolderIcon {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M80-160v-640h334l66.667 66.666H880V-160H80Zm473.333-160h66.666v-86.667h86.667v-66.666h-86.667V-560h-66.666v86.667h-86.667v66.666h86.667V-320Z'/%3E%3C/svg%3E");
 }

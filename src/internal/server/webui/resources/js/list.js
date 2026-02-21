@@ -6,6 +6,7 @@ var GItemsElement
 var GProgressLastUpdateTime
 var GProgressLastUpdateValue = 0
 var GProgressAvgSpeed = 0
+var GDragCounter = 0
 
 function JLock() { GLock += 1; if (GLock == 1) { return false } else { GLock -= 1; return true } }
 function JUnlock() { GLock -= 1 }
@@ -137,15 +138,76 @@ function OpenFileInputer() {
     document.getElementById('FileInputer').click()
 }
 
-function UploadFiles() {
-    const files = document.getElementById("FileInputer").files
-    // Get the file before changing the dom 
+function StartUpload(files) {
+    if (files.length < 1) {
+        JUnlock()
+        return
+    }
+    // Get the file before changing the dom
     // After changing the dom the selected file seems to disappear
     OpenProgressDialog(I18nText("Uploading"))
     let fullSize = 0
     for (const file of files)
         fullSize += file.size
     UploadFile(files, fullSize, 0, 0)
+}
+
+function UploadFiles() {
+    const files = document.getElementById("FileInputer").files
+    StartUpload(files)
+}
+
+function ShowDropMask() {
+    $("#DropUploadMask").classList.add("Show")
+}
+
+function HideDropMask() {
+    GDragCounter = 0
+    $("#DropUploadMask").classList.remove("Show")
+}
+
+function IsFileDrag(event) {
+    return Exists(event.dataTransfer)
+        && Exists(event.dataTransfer.types)
+        && event.dataTransfer.types.includes("Files")
+}
+
+function DragUploadEnter(event) {
+    if (!IsFileDrag(event)) return
+    event.preventDefault()
+    GDragCounter += 1
+    ShowDropMask()
+}
+
+function DragUploadOver(event) {
+    if (!IsFileDrag(event)) return
+    event.preventDefault()
+}
+
+function DragUploadLeave(event) {
+    if (!IsFileDrag(event)) return
+    event.preventDefault()
+    GDragCounter -= 1
+    if (GDragCounter <= 0) HideDropMask()
+}
+
+function DragUploadDrop(event) {
+    if (!IsFileDrag(event)) return
+    event.preventDefault()
+    HideDropMask()
+    if (JLock()) {
+        alert(I18nText("Uploading"))
+        return
+    }
+    const files = event.dataTransfer.files
+    StartUpload(files)
+}
+
+function InitDragUpload() {
+    document.addEventListener("dragenter", DragUploadEnter)
+    document.addEventListener("dragover", DragUploadOver)
+    document.addEventListener("dragleave", DragUploadLeave)
+    document.addEventListener("drop", DragUploadDrop)
 }
 
 // onProgess(int uploaded)
@@ -266,7 +328,9 @@ function initWebui(reload) {
 		    </button>
 	        </div>`)
             $("main").insertAdjacentHTML("afterend", "<input type='file' id='FileInputer' style='opacity:0' onchange='UploadFiles()' multiple />")
+            $("main").insertAdjacentHTML("beforeend", `<div id="DropUploadMask"><div>${I18nText("Drop files to upload")}</div></div>`)
             $("#FileInputer").addEventListener("cancel", () => { JUnlock() })
+            InitDragUpload()
         }
         for (const field of ["name", "size", "time"]) {
             GTableHeaderElements[field] = document.getElementById(`${field}Header`)
