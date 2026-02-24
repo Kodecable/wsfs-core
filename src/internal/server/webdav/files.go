@@ -1,6 +1,7 @@
 package webdav
 
 import (
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -9,6 +10,10 @@ import (
 	"path/filepath"
 
 	"github.com/rs/zerolog/log"
+)
+
+const (
+	walkFsBuffer = 16
 )
 
 // moveFiles moves files and/or directories from src to dst.
@@ -164,28 +169,34 @@ func walkFS(depth int, base, path_ string, info os.FileInfo, walkFn filepath.Wal
 		walkFn(path_, info, err)
 		return err
 	}
-	fileInfos, err := f.Readdir(0)
-	f.Close()
-	if err != nil {
-		walkFn(path_, info, err)
-		return err
-	}
+	defer f.Close()
 
-	for _, fi := range fileInfos {
-		passfi := fi
-		if fi.Mode()&fs.ModeSymlink != 0 {
-			if realfi, err := os.Stat(path.Join(fullpath, fi.Name())); err == nil {
-				passfi = realfi
+	for {
+		fileInfos, err := f.Readdir(walkFsBuffer)
+		if err != nil && !errors.Is(err, io.EOF) {
+			walkFn(path_, info, err)
+			return err
+		}
+
+		for _, fi := range fileInfos {
+			passfi := fi
+			if fi.Mode()&fs.ModeSymlink != 0 {
+				if realfi, err := os.Stat(path.Join(fullpath, fi.Name())); err == nil {
+					passfi = realfi
+				} else {
+					log.Warn().Err(err).Str("Path", path.Join(fullpath, fi.Name())).Msg("follow symlink failed")
+				}
+			}
+			if fi.IsDir() {
+				walkFS(depth-1, base, path.Join(path_, fi.Name()), passfi, walkFn)
 			} else {
-				log.Warn().Err(err).Str("Path", path.Join(fullpath, fi.Name())).Msg("follow symlink failed")
+				walkFn(path.Join(path_, fi.Name()), passfi, nil)
 			}
 		}
-		if fi.IsDir() {
-			walkFS(depth-1, base, path.Join(path_, fi.Name()), passfi, walkFn)
-		} else {
-			walkFn(path.Join(path_, fi.Name()), passfi, nil)
-		}
-	}
 
-	return nil
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+
+	}
 }
