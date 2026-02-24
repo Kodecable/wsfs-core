@@ -37,6 +37,7 @@ type Server struct {
 	anonymous *storage.User
 
 	realIpHeader string
+	serverHeader string
 }
 
 func NewServer(c config.Server) (s *Server, err error) {
@@ -45,6 +46,7 @@ func NewServer(c config.Server) (s *Server, err error) {
 		errorChan:    make(chan error),
 		cacheId:      util.RandomString(8, cacheIdRunes),
 		realIpHeader: c.RealIpHeader,
+		serverHeader: c.ServerHeader,
 	}
 
 	s.users, s.anonymous, err = storage.NewUsers(c, anonymousUsername)
@@ -250,7 +252,11 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 	}()
 
 	rewriteRemoteAddr(req, s.realIpHeader)
-	rsp.Header().Set("Server", "WSFS/"+version.Version)
+	if s.serverHeader == "" {
+		rsp.Header().Set("Server", "WSFS/"+version.Version)
+	} else {
+		rsp.Header().Set("Server", s.serverHeader)
+	}
 
 	if !util.IsUrlValid(req.URL.Path) {
 		s.ServeErrorPage(rsp, req, http.StatusBadRequest, "invalid URL path")

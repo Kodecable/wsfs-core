@@ -66,6 +66,13 @@ The WebUI is designed for modern browsers. It requires no cookies. JavaScript is
 
 This server will automatically detect the `Host` header (in fact, most code avoids using the host/base-url). You only need to forward connections to it, and it should handle them perfectly.
 
+By default, the server uses the direct connection address as the client address. If you run behind a reverse proxy and need the upstream client IP in logs or something, set `RealIpHeader` in server config. When `RealIpHeader` is set, the server uses the first element in that header as the remote address.
+
+```toml
+RealIpHeader = "X-Forwarded-For"
+# Common choices are `X-Forwarded-For` or `X-Real-IP`, depending on your proxy setup.
+```
+
 ## Client
 
 ### Mount

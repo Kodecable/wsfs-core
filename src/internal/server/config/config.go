@@ -42,6 +42,7 @@ type Server struct {
 	Anonymous    AnonymousUser
 	Users        []User
 	RealIpHeader string
+	ServerHeader string
 }
 
 type User struct {
