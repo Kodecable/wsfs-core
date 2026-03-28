@@ -27,12 +27,10 @@ func parseRange(s string) (start, end int64, err error) {
 	}
 
 	if rr[0][2] != "" {
-		start, _ = strconv.ParseInt(rr[0][1], 10, 64)
-		end, _ = strconv.ParseInt(rr[0][2][1:], 10, 64)
-		if start > end {
-			return 0, 0, errors.New("range invaild")
-		}
-		if start < 0 {
+		var err1, err2 error
+		start, err1 = strconv.ParseInt(rr[0][1], 10, 64)
+		end, err2 = strconv.ParseInt(rr[0][2][1:], 10, 64)
+		if err1 != nil || err2 != nil || start > end || start < 0 {
 			return 0, 0, errors.New("range invaild")
 		}
 	} else {

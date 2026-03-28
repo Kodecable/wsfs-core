@@ -20,16 +20,19 @@ type session struct {
 	inactiveCount uint32
 	ConnLock      sync.Mutex
 	handler       *Handler
+	Username      string
 	storage       *storage.Storage
 	fds           sync.Map
 	fdLast        atomic.Uint32
 	wg            sync.WaitGroup
 }
 
-func newSession(handler *Handler, storage *storage.Storage) *session {
-	return &session{handler: handler,
-		storage: storage,
-		wg:      sync.WaitGroup{},
+func newSession(handler *Handler, username string, storage *storage.Storage) *session {
+	return &session{
+		Username: username,
+		handler:  handler,
+		storage:  storage,
+		wg:       sync.WaitGroup{},
 	}
 }
 

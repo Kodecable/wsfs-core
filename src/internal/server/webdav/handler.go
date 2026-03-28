@@ -373,10 +373,7 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 	})
 	templates.WritePropfindEnd(rsp)
 
-	if walkErr != nil {
-		return http.StatusInternalServerError, walkErr
-	}
-	return 0, nil
+	return 0, walkErr
 }
 
 func preconditionErrorReponse(rsp http.ResponseWriter, precondition, href string, code int) {

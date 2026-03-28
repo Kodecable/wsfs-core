@@ -117,7 +117,7 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 		}
 	} else {
 		var err error
-		id = h.newSession(user.Storage)
+		id = h.newSession(user.Name, user.Storage)
 		if idstr, err = h.ider.Encode([]uint64{id}); err != nil {
 			log.Error().Err(err).Msg("Ider encode failed")
 			h.delSession(id)
@@ -128,6 +128,11 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 
 	session := h.getSession(id)
 	if session == nil {
+		rsp.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if session.Username != user.Name {
+		// lie as session not found
 		rsp.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -163,14 +168,14 @@ func (h *Handler) getSession(id uint64) *session {
 	return v.(*session)
 }
 
-func (h *Handler) newSession(storage *storage.Storage) (id uint64) {
+func (h *Handler) newSession(username string, storage *storage.Storage) (id uint64) {
 	for {
 		id = h.sessionLast.Add(1)
 		if _, loaded := h.sessions.LoadOrStore(id, (*session)(nil)); !loaded {
 			break
 		}
 	}
-	h.sessions.Store(id, newSession(h, storage))
+	h.sessions.Store(id, newSession(h, username, storage))
 	log.Info().Uint64("Id", id).Msg("Seesion created")
 	return
 }

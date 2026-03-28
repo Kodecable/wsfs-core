@@ -142,9 +142,9 @@ func (s *Server) ServeError(rsp http.ResponseWriter, req *http.Request, err erro
 		s.webuiHandler.ServeError(rsp, req, err)
 	} else {
 		if errors.Is(err, internalerror.ErrInternalForbidden) {
-			s.ServeErrorPage(rsp, req, http.StatusNotFound, "Not Found")
-		} else if errors.Is(err, internalerror.ErrInternalNotFound) {
 			s.ServeErrorPage(rsp, req, http.StatusForbidden, "Forbidden")
+		} else if errors.Is(err, internalerror.ErrInternalNotFound) {
+			s.ServeErrorPage(rsp, req, http.StatusNotFound, "Not Found")
 		} else {
 			s.ServeErrorPage(rsp, req, http.StatusInternalServerError, err.Error())
 		}
