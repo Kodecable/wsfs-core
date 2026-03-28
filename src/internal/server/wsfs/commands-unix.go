@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"wsfs-core/internal/server/wsfs/copyfilerange"
 	"wsfs-core/internal/server/wsfs/fallocate"
-	"wsfs-core/internal/server/wsfs/frsize"
 	"wsfs-core/internal/server/wsfs/renameat2"
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/util"
@@ -443,7 +442,6 @@ func (s *session) cmdRmDir(clientMark uint8, writeCh chan<- *util.Buffer, lpath 
 
 func (s *session) cmdFsStat(clientMark uint8, writeCh chan<- *util.Buffer, lpath string) {
 	defer s.wg.Done()
-	var stat syscall.Statfs_t
 
 	if !util.IsUrlValid(lpath) {
 		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
@@ -451,16 +449,12 @@ func (s *session) cmdFsStat(clientMark uint8, writeCh chan<- *util.Buffer, lpath
 	}
 	apath := s.storage.Path + lpath
 
-	err := syscall.Statfs(apath, &stat)
+	total, free, avail, err := util.FsSize(apath)
 
 	if err != nil {
 		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK,
-			uint64(stat.Blocks)*uint64(frsize.Frsize(&stat)),
-			uint64(stat.Bfree)*uint64(frsize.Frsize(&stat)),
-			uint64(stat.Bavail)*uint64(frsize.Frsize(&stat)),
-		)
+		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, total, free, avail)
 	}
 }
 

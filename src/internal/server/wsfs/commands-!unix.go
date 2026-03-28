@@ -426,3 +426,20 @@ func (s *session) cmdSetAttrByFD(clientMark uint8, writeCh chan<- *util.Buffer, 
 	}
 	writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
 }
+
+func (s *session) cmdFsStat(clientMark uint8, writeCh chan<- *util.Buffer, lpath string) {
+	defer s.wg.Done()
+
+	if !util.IsUrlValid(lpath) {
+		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		return
+	}
+	apath := s.storage.Path + lpath
+
+	total, free, avail, err := util.FsSize(apath)
+	if err != nil {
+		writeCh <- msg(clientMark, osErrCode(err), "syscall error")
+	} else {
+		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, total, free, avail)
+	}
+}

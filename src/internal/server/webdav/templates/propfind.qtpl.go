@@ -8,10 +8,9 @@ package templates
 import (
 	"net/http"
 	"os"
-)
 
 //line propfind.qtpl:8
-import (
+
 	qtio422016 "io"
 
 	qt422016 "github.com/valyala/quicktemplate"
@@ -90,7 +89,7 @@ func PropfindEnd() string {
 }
 
 //line propfind.qtpl:17
-func StreamPropfindItemOKResponse(qw422016 *qt422016.Writer, name string, fi os.FileInfo, enableContentTypeProbe bool) {
+func StreamPropfindItemOKResponse(qw422016 *qt422016.Writer, name string, fi os.FileInfo, enableContentTypeProbe bool, total, avail uint64) {
 //line propfind.qtpl:17
 	qw422016.N().S(`<D:response><D:href>`)
 //line propfind.qtpl:19
@@ -129,82 +128,96 @@ func StreamPropfindItemOKResponse(qw422016 *qt422016.Writer, name string, fi os.
 		qw422016.N().S(`</D:getcontentlength>`)
 //line propfind.qtpl:37
 	}
-//line propfind.qtpl:37
+//line propfind.qtpl:38
+	if total != 0 {
+//line propfind.qtpl:38
+		qw422016.N().S(`<D:quota-available-bytes>`)
+//line propfind.qtpl:39
+		qw422016.N().DUL(avail)
+//line propfind.qtpl:39
+		qw422016.N().S(`</D:quota-available-bytes><D:quota-used-bytes>`)
+//line propfind.qtpl:40
+		qw422016.N().DUL(total - avail)
+//line propfind.qtpl:40
+		qw422016.N().S(`</D:quota-used-bytes>`)
+//line propfind.qtpl:41
+	}
+//line propfind.qtpl:41
 	qw422016.N().S(`<D:displayname>`)
-//line propfind.qtpl:38
+//line propfind.qtpl:42
 	qw422016.E().S(fileDisplayName(name))
-//line propfind.qtpl:38
+//line propfind.qtpl:42
 	qw422016.N().S(`</D:displayname><D:getlastmodified>`)
-//line propfind.qtpl:39
+//line propfind.qtpl:43
 	qw422016.N().S(fi.ModTime().UTC().Format(http.TimeFormat))
-//line propfind.qtpl:39
+//line propfind.qtpl:43
 	qw422016.N().S(`</D:getlastmodified></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>`)
-//line propfind.qtpl:44
+//line propfind.qtpl:48
 }
 
-//line propfind.qtpl:44
-func WritePropfindItemOKResponse(qq422016 qtio422016.Writer, name string, fi os.FileInfo, enableContentTypeProbe bool) {
-//line propfind.qtpl:44
+//line propfind.qtpl:48
+func WritePropfindItemOKResponse(qq422016 qtio422016.Writer, name string, fi os.FileInfo, enableContentTypeProbe bool, total, avail uint64) {
+//line propfind.qtpl:48
 	qw422016 := qt422016.AcquireWriter(qq422016)
-//line propfind.qtpl:44
-	StreamPropfindItemOKResponse(qw422016, name, fi, enableContentTypeProbe)
-//line propfind.qtpl:44
+//line propfind.qtpl:48
+	StreamPropfindItemOKResponse(qw422016, name, fi, enableContentTypeProbe, total, avail)
+//line propfind.qtpl:48
 	qt422016.ReleaseWriter(qw422016)
-//line propfind.qtpl:44
+//line propfind.qtpl:48
 }
 
-//line propfind.qtpl:44
-func PropfindItemOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool) string {
-//line propfind.qtpl:44
+//line propfind.qtpl:48
+func PropfindItemOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool, total, avail uint64) string {
+//line propfind.qtpl:48
 	qb422016 := qt422016.AcquireByteBuffer()
-//line propfind.qtpl:44
-	WritePropfindItemOKResponse(qb422016, name, fi, enableContentTypeProbe)
-//line propfind.qtpl:44
+//line propfind.qtpl:48
+	WritePropfindItemOKResponse(qb422016, name, fi, enableContentTypeProbe, total, avail)
+//line propfind.qtpl:48
 	qs422016 := string(qb422016.B)
-//line propfind.qtpl:44
+//line propfind.qtpl:48
 	qt422016.ReleaseByteBuffer(qb422016)
-//line propfind.qtpl:44
+//line propfind.qtpl:48
 	return qs422016
-//line propfind.qtpl:44
+//line propfind.qtpl:48
 }
 
-//line propfind.qtpl:46
+//line propfind.qtpl:50
 func StreamPropfindItemBadResponse(qw422016 *qt422016.Writer, name string, str string) {
-//line propfind.qtpl:46
+//line propfind.qtpl:50
 	qw422016.N().S(`<D:response><D:href>`)
-//line propfind.qtpl:48
+//line propfind.qtpl:52
 	qw422016.N().S(escapeWebdavHref(name))
-//line propfind.qtpl:48
+//line propfind.qtpl:52
 	qw422016.N().S(`</D:href><D:propstat><D:status>`)
-//line propfind.qtpl:50
+//line propfind.qtpl:54
 	qw422016.E().S(str)
-//line propfind.qtpl:50
+//line propfind.qtpl:54
 	qw422016.N().S(`</D:status></D:propstat></D:response>`)
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 }
 
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 func WritePropfindItemBadResponse(qq422016 qtio422016.Writer, name string, str string) {
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 	qw422016 := qt422016.AcquireWriter(qq422016)
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 	StreamPropfindItemBadResponse(qw422016, name, str)
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 	qt422016.ReleaseWriter(qw422016)
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 }
 
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 func PropfindItemBadResponse(name string, str string) string {
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 	qb422016 := qt422016.AcquireByteBuffer()
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 	WritePropfindItemBadResponse(qb422016, name, str)
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 	qs422016 := string(qb422016.B)
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 	qt422016.ReleaseByteBuffer(qb422016)
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 	return qs422016
-//line propfind.qtpl:53
+//line propfind.qtpl:57
 }

@@ -14,7 +14,7 @@
 </D:multistatus>
 {% endfunc %}
 
-{% func PropfindItemOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool) %}
+{% func PropfindItemOKResponse(name string, fi os.FileInfo, enableContentTypeProbe bool, total, avail uint64) %}
 <D:response>
     <D:href>{%s= escapeWebdavHref(name) %}</D:href>
     {% comment %}
@@ -34,6 +34,10 @@
                     {% endif %}
                 </D:getcontenttype>
                 <D:getcontentlength>{%dl fi.Size() %}</D:getcontentlength>
+            {% endif %}
+            {% if total != 0 %}
+                <D:quota-available-bytes>{%dul avail %}</D:quota-available-bytes>
+                <D:quota-used-bytes>{%dul total-avail %}</D:quota-used-bytes>
             {% endif %}
             <D:displayname>{%s fileDisplayName(name) %}</D:displayname>
             <D:getlastmodified>{%s= fi.ModTime().UTC().Format(http.TimeFormat) %}</D:getlastmodified>

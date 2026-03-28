@@ -5,10 +5,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"wsfs-core/internal/server/config"
 	internalerror "wsfs-core/internal/server/internalError"
 	"wsfs-core/internal/server/storage"
 	"wsfs-core/internal/server/webdav/templates"
+	"wsfs-core/internal/util"
 
 	"github.com/rs/zerolog/log"
 )
@@ -333,6 +335,10 @@ func (h *Handler) handleCopyMove(_ http.ResponseWriter, req *http.Request, st *s
 
 func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st *storage.Storage) (status int, err error) {
 	path := st.Path + req.URL.Path
+	targetIsRoot := false
+	if req.URL.Path == "" || req.URL.Path == "/" {
+		targetIsRoot = true
+	}
 
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -368,7 +374,20 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 			}
 			return nil
 		}
-		templates.WritePropfindItemOKResponse(rsp, reqPath, info, h.enableContentTypeProbe)
+		totalBytes, availBytes := uint64(0), uint64(0)
+		if targetIsRoot && (reqPath == "/" || reqPath == "") {
+			total, _, avail, err := util.FsSize(filepath.Join(st.Path, reqPath))
+			if err != nil {
+				log.Warn().Err(err).Str("Path", reqPath).Msg("Uable to get fs size")
+			} else {
+				totalBytes = total
+				availBytes = avail
+				if totalBytes < availBytes {
+					totalBytes = availBytes
+				}
+			}
+		}
+		templates.WritePropfindItemOKResponse(rsp, reqPath, info, h.enableContentTypeProbe, totalBytes, availBytes)
 		return nil
 	})
 	templates.WritePropfindEnd(rsp)
