@@ -69,12 +69,12 @@ var MountCmd = &cobra.Command{
 		case "wsfss", "https":
 			endpoint.Scheme = "wss"
 		case "unix":
-			endpoint.Scheme = "unix+wsfs"
-		case "ws", "wss", "unix+wsfs", "unix+wsfss":
+			endpoint.Scheme = "wsfs+unix"
+		case "ws", "wss", "wsfs+unix", "wsfss+unix":
 			endpoint.Scheme = inputedEndpoint.Scheme
 		default:
 			fmt.Fprintln(os.Stderr, "Bad endpoint url: unknown scheme")
-			fmt.Fprintln(os.Stderr, "Want: 'wsfs' or 'wsfss', have: "+endpoint.Scheme)
+			fmt.Fprintln(os.Stderr, "Want: 'wsfs' or 'wsfss', have: "+inputedEndpoint.Scheme)
 		}
 
 		opts := client.MountOption{

@@ -19,9 +19,9 @@ func unixSocketUrl(urlStr string) (isSocket bool, socketPath, httpUrl string, er
 
 	scheme := ""
 	switch parsedUrl.Scheme {
-	case "unix+wsfs":
+	case "wsfs+unix":
 		scheme = "ws"
-	case "unix+wsfss":
+	case "wsfss+unix":
 		scheme = "wss"
 	default:
 		return false, "", urlStr, nil
