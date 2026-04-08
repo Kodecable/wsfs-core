@@ -19,6 +19,8 @@ Options:
   -b DIR        Build artifact directory (default ../build)
   -w DIR        Work directory (default release/work/debian)
   -o DIR        Output directory (default release/output)
+  -e FILE       Example config file (default ../doc/server-config-exmaple.toml)
+  -l FILE       License file (default ../LICENSE)
 EOF
 }
 
@@ -27,14 +29,18 @@ arch_arg="all"
 build_dir="${DEFAULT_BUILD_DIR}"
 work_dir="${DEFAULT_WORK_DIR}/debian"
 output_dir="${DEFAULT_OUTPUT_DIR}"
+example_file="${DEFAULT_EXAMPLE_FILE}"
+license_file="${DEFAULT_LICENSE_FILE}"
 
-while getopts ":v:a:b:w:o:h" opt; do
+while getopts ":v:a:b:w:o:e:l:h" opt; do
     case "${opt}" in
         v) version="${OPTARG}" ;;
         a) arch_arg="${OPTARG}" ;;
         b) build_dir="${OPTARG}" ;;
         w) work_dir="${OPTARG}" ;;
         o) output_dir="${OPTARG}" ;;
+        e) example_file="${OPTARG}" ;;
+        l) license_file="${OPTARG}" ;;
         h)
             usage
             exit 0
@@ -56,8 +62,8 @@ release_require_command dpkg-deb
 release_require_command install
 release_require_command du
 
-release_require_file "${DEFAULT_EXAMPLE_FILE}"
-release_require_file "${DEFAULT_LICENSE_FILE}"
+release_require_file "${example_file}"
+release_require_file "${license_file}"
 
 mkdir -p "${output_dir}"
 release_prepare_dir "${work_dir}"
@@ -96,7 +102,7 @@ for build_arch in "${build_arches[@]}"; do
     release_prepare_dir "${stage_dir}"
 
     release_install_file "${binary_path}" "${pkg_root}/usr/bin/wsfs" 0755
-    release_install_file "${DEFAULT_EXAMPLE_FILE}" "${pkg_root}/etc/wsfs/exmaple.toml" 0644
+    release_install_file "${example_file}" "${pkg_root}/etc/wsfs/exmaple.toml" 0644
     release_install_file "${completion_dir}/bash/wsfs" "${pkg_root}/usr/share/bash-completion/completions/wsfs" 0644
 
     mkdir -p "${control_dir}"

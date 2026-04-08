@@ -137,18 +137,28 @@ jobs:
           name: linux-build
           path: build/wsfs-linux-*
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packaging-resources
+          path: |
+            LICENSE
+            doc/server-config-exmaple.toml
+
   package-debian:
     runs-on: ubuntu-latest
     needs: build-linux
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.build-linux.outputs.ref }}
 
       - uses: actions/download-artifact@v4
         with:
           name: linux-build
           path: build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packaging-resources
+          path: packaging-resources
 
       - name: Install Debian Packager
         shell: bash
@@ -158,7 +168,11 @@ jobs:
 
       - name: Package Debian Artifacts
         shell: bash
-        run: bash release/debian/package.sh -v "${{ needs.build-linux.outputs.version }}"
+        run: |
+          bash release/debian/package.sh \
+            -v "${{ needs.build-linux.outputs.version }}" \
+            -e packaging-resources/doc/server-config-exmaple.toml \
+            -l packaging-resources/LICENSE
 
       - uses: actions/upload-artifact@v4
         with:
@@ -172,13 +186,16 @@ jobs:
       image: archlinux:base-devel
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.build-linux.outputs.ref }}
 
       - uses: actions/download-artifact@v4
         with:
           name: linux-build
           path: build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packaging-resources
+          path: packaging-resources
 
       - name: Prepare Builder User
         shell: bash
@@ -189,7 +206,7 @@ jobs:
       - name: Package Arch Artifact
         shell: bash
         run: |
-          su builder -c "cd '${GITHUB_WORKSPACE}' && bash release/arch/package.sh -v '${{ needs.build-linux.outputs.version }}' -a amd64"
+          su builder -c "cd '${GITHUB_WORKSPACE}' && bash release/arch/package.sh -v '${{ needs.build-linux.outputs.version }}' -a amd64 -e packaging-resources/doc/server-config-exmaple.toml -l packaging-resources/LICENSE"
 
       - uses: actions/upload-artifact@v4
         with:
