@@ -1,0 +1,219 @@
+name: Packages
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref
+        required: false
+        type: string
+      version:
+        description: Package version
+        required: false
+        type: string
+      upload_to_tag_release:
+        description: Upload packages to release draft
+        required: false
+        default: false
+        type: boolean
+      overwrite_files:
+        description: Overwrite existing files in the target release
+        required: false
+        default: true
+        type: boolean
+      prerelease:
+        description: Mark the target release as a prerelease
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+      version: ${{ steps.resolve.outputs.version }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      publish_release: ${{ steps.resolve.outputs.publish_release }}
+      overwrite_files: ${{ steps.resolve.outputs.overwrite_files }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      - name: Resolve Build Inputs
+        id: resolve
+        shell: bash
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            target_ref="${{ inputs.ref }}"
+            version_input="${{ inputs.version }}"
+            upload_to_tag_release="${{ inputs.upload_to_tag_release }}"
+            overwrite_files="${{ inputs.overwrite_files }}"
+            prerelease="${{ inputs.prerelease }}"
+
+            if [[ -z "${target_ref}" ]]; then
+              target_ref="${GITHUB_REF_NAME}"
+            fi
+          else
+            target_ref="${GITHUB_REF_NAME}"
+            version_input=""
+            upload_to_tag_release="true"
+            overwrite_files="true"
+            prerelease="false"
+          fi
+
+          release_tag=""
+          derived_version=""
+          if [[ "${target_ref}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            release_tag="${target_ref}"
+            derived_version="${BASH_REMATCH[1]}"
+          fi
+
+          if [[ -n "${version_input}" ]]; then
+            version="${version_input}"
+          else
+            [[ -n "${derived_version}" ]] || {
+              echo "ref '${target_ref}' is not a vX.Y.Z-style tag, so version must be provided explicitly" >&2
+              exit 1
+            }
+            version="${derived_version}"
+          fi
+
+          publish_release="false"
+          if [[ "${upload_to_tag_release}" == "true" ]]; then
+            [[ -n "${release_tag}" ]] || {
+              echo "upload_to_tag_release requires ref '${target_ref}' to be a vX.Y.Z-style tag" >&2
+              exit 1
+            }
+            publish_release="true"
+          fi
+
+          echo "ref=${target_ref}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
+          echo "publish_release=${publish_release}" >> "${GITHUB_OUTPUT}"
+          echo "overwrite_files=${overwrite_files}" >> "${GITHUB_OUTPUT}"
+          echo "prerelease=${prerelease}" >> "${GITHUB_OUTPUT}"
+
+  build-linux:
+    runs-on: ubuntu-latest
+    needs: resolve
+    outputs:
+      version: ${{ needs.resolve.outputs.version }}
+      ref: ${{ needs.resolve.outputs.ref }}
+      release_tag: ${{ needs.resolve.outputs.release_tag }}
+      publish_release: ${{ needs.resolve.outputs.publish_release }}
+      overwrite_files: ${{ needs.resolve.outputs.overwrite_files }}
+      prerelease: ${{ needs.resolve.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+
+      - name: Install Minify
+        shell: bash
+        run: go install github.com/tdewolff/minify/v2/cmd/minify@latest
+
+      - name: Build Linux Artifacts
+        shell: bash
+        run: |
+          export PATH="$(go env GOPATH)/bin:${PATH}"
+          ./build.sh -o linux -m release -v "${{ needs.resolve.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: build/wsfs-linux-*
+
+  package-debian:
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-linux.outputs.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+          path: build
+
+      - name: Install Debian Packager
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev
+
+      - name: Package Debian Artifacts
+        shell: bash
+        run: bash release/debian/package.sh -v "${{ needs.build-linux.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian-packages
+          path: release/output/*.deb
+
+  package-arch:
+    runs-on: ubuntu-latest
+    needs: build-linux
+    container:
+      image: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-linux.outputs.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+          path: build
+
+      - name: Prepare Builder User
+        shell: bash
+        run: |
+          useradd -m builder
+          chown -R builder:builder "${GITHUB_WORKSPACE}"
+
+      - name: Package Arch Artifact
+        shell: bash
+        run: |
+          su builder -c "cd '${GITHUB_WORKSPACE}' && bash release/arch/package.sh -v '${{ needs.build-linux.outputs.version }}' -a amd64"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-packages
+          path: release/output/*.pkg.tar.zst
+
+  publish-release:
+    if: needs.build-linux.outputs.publish_release == 'true'
+    runs-on: ubuntu-latest
+    needs:
+      - build-linux
+      - package-debian
+      - package-arch
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build-linux.outputs.release_tag }}
+          overwrite_files: ${{ needs.build-linux.outputs.overwrite_files }}
+          prerelease: ${{ needs.build-linux.outputs.prerelease }}
+          draft: true
+          files: |
+            dist/debian-packages/*.deb
+            dist/arch-packages/*.pkg.tar.zst

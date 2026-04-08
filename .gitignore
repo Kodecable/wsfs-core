@@ -1,6 +1,6 @@
 build
-release
 run
+.codex
 .vscode
 *.autosave
 .DS_Store
