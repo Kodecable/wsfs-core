@@ -125,6 +125,7 @@ pkgdesc='${PACKAGE_DESCRIPTION}'
 arch=('${package_arch}')
 url='${PACKAGE_HOMEPAGE}'
 license=('${PACKAGE_LICENSE}')
+options=('!debug')
 depends=()
 optdepends=('fuse3: for no-direct mount')
 backup=('etc/wsfs/exmaple.toml')
@@ -149,7 +150,7 @@ EOF
         makepkg --force --nodeps --clean --cleanbuild --noconfirm >/dev/null
     )
 
-    built_package="$(find "${pkg_dest}" -maxdepth 1 -type f -name '*.pkg.tar.zst' | head -n 1)"
+    built_package="$(find "${pkg_dest}" -maxdepth 1 -type f -name 'wsfs-core-[0-9]*.pkg.tar.zst' ! -name '*-debug-*' | head -n 1)"
     [[ -n "${built_package}" ]] || release_die "makepkg did not produce a package for ${build_arch}"
 
     output_path="${output_dir}/wsfs-core-package-arch-${build_arch}.pkg.tar.zst"

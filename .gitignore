@@ -1,5 +1,7 @@
 build
 run
+release/output
+release/work
 .codex
 .vscode
 *.autosave
