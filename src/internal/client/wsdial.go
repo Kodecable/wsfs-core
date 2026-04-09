@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 func unixSocketUrl(urlStr string) (isSocket bool, socketPath, httpUrl string, err error) {
@@ -60,17 +60,19 @@ func wsdial(urlStr string, requestHeader http.Header) (*websocket.Conn, *http.Re
 		return nil, nil, err
 	}
 
-	dialer := websocket.Dialer{
-		Subprotocols:      []string{"WSFS/draft.2"},
-		EnableCompression: false,
-		NetDialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			if isSocket {
-				return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
-			} else {
-				return (&net.Dialer{}).DialContext(ctx, network, address)
-			}
-		},
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if isSocket {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, address)
 	}
 
-	return dialer.Dial(httpUrl, requestHeader)
+	return websocket.Dial(context.Background(), httpUrl, &websocket.DialOptions{
+		HTTPClient: &http.Client{
+			Transport: transport,
+		},
+		HTTPHeader:   requestHeader,
+		Subprotocols: []string{"WSFS/draft.2"},
+	})
 }

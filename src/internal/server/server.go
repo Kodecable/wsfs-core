@@ -243,11 +243,11 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 		if err := recover(); err != nil {
 			s.serveRecover(rsp, req, err)
 		} else {
-			if rsp.status == -1 {
+			if rsp.status == -1 || rsp.status == http.StatusSwitchingProtocols {
 				// conn hijacked
 				return
 			}
-			log.Info().Str("Path", req.RequestURI).Str("From", req.RemoteAddr).Int("Code", rsp.status).Msg(req.Method)
+			log.Info().Str("Path", req.RequestURI).Str("From", req.RemoteAddr).Int("Code", rsp.status).Msg("HTTP " + req.Method)
 		}
 	}()
 

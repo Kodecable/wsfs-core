@@ -11,7 +11,7 @@ import (
 	"time"
 	"wsfs-core/internal/client/session"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/rs/zerolog/log"
 )
 
@@ -89,13 +89,12 @@ func reDialFunc(url, username, password, resumeId string) func() (*websocket.Con
 }
 
 func logDialError(rsp *http.Response, err error) {
-	if errors.Is(err, websocket.ErrBadHandshake) &&
-		rsp != nil {
+	if rsp != nil {
 		if rsp.StatusCode == http.StatusUnauthorized {
 			log.Error().Err(err).Msg("Bad WSFS handshake: Authorize failed")
 			return
 		}
-		if rsp.Header.Get("Content-Type") == "text/plain" {
+		if strings.HasPrefix(rsp.Header.Get("Content-Type"), "text/plain") {
 			msg, err_ := io.ReadAll(io.LimitReader(rsp.Body, 64))
 			if err_ == nil {
 				msg := string(msg)

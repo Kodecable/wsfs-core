@@ -11,6 +11,7 @@ import (
 )
 
 func readTLSKeyPair(tlsConfig config.TLS) (*tls.Config, error) {
+	log.Info().Msg("Loading TLS key pair")
 	cert, err := tls.LoadX509KeyPair(tlsConfig.CertFile, tlsConfig.KeyFile)
 
 	if err != nil {

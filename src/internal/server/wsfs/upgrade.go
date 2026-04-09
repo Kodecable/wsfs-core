@@ -3,20 +3,16 @@ package wsfs
 import (
 	"net/http"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
-func (h *Handler) setupUpgrader() {
-	h.upgrader.Subprotocols = []string{"WSFS/draft.2"}
-	h.upgrader.EnableCompression = false
-}
-
 func (h *Handler) upgrade(rsp http.ResponseWriter, req *http.Request, resumeId string) (*websocket.Conn, error) {
-	header := http.Header{}
 	if len(resumeId) != 0 {
-		header.Set("X-Wsfs-Resume", resumeId)
+		rsp.Header().Set("X-Wsfs-Resume", resumeId)
 	}
-	conn, err := h.upgrader.Upgrade(rsp, req, header)
+	conn, err := websocket.Accept(rsp, req, &websocket.AcceptOptions{
+		Subprotocols: []string{"WSFS/draft.2"},
+	})
 	if err != nil {
 		return nil, err
 	}

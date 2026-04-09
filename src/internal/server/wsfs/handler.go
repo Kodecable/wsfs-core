@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,7 +12,6 @@ import (
 	internalerror "wsfs-core/internal/server/internalError"
 	"wsfs-core/internal/server/storage"
 
-	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 	"github.com/sqids/sqids-go"
 )
@@ -34,7 +34,6 @@ type Suser struct {
 
 type Handler struct {
 	ider         *sqids.Sqids
-	upgrader     websocket.Upgrader
 	errorHandler internalerror.ErrorHandler
 	sessions     sync.Map
 	sessionLast  atomic.Uint64
@@ -50,7 +49,6 @@ func NewHandler(errorHandler internalerror.ErrorHandler, c config.WSFS) (h *Hand
 	}
 	h.ctx, h.Stop = context.WithCancel(context.Background())
 
-	h.setupUpgrader()
 	h.ider, err = setupIder()
 	h.suser.Uid = uint32(c.Uid)
 	h.suser.Gid = uint32(c.Gid)
@@ -90,7 +88,7 @@ func (h *Handler) CollecteInactivedSession() {
 }
 
 func (h *Handler) TryServerHTTP(rsp http.ResponseWriter, req *http.Request, user *storage.User, forced bool) (handled bool) {
-	if !websocket.IsWebSocketUpgrade(req) {
+	if !isWebSocketUpgrade(req) {
 		if forced {
 			h.errorHandler.ServeErrorMessage(rsp, req, http.StatusBadRequest, "Bad WSFS handshake: Not a upgrade request")
 			return true
@@ -103,6 +101,22 @@ func (h *Handler) TryServerHTTP(rsp http.ResponseWriter, req *http.Request, user
 	}
 	h.ServeHTTP(rsp, req, user)
 	return true
+}
+
+func isWebSocketUpgrade(req *http.Request) bool {
+	return headerContainsToken(req.Header, "Connection", "Upgrade") &&
+		headerContainsToken(req.Header, "Upgrade", "websocket")
+}
+
+func headerContainsToken(header http.Header, key, want string) bool {
+	for _, value := range header.Values(key) {
+		for _, token := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(token), want) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *storage.User) {
@@ -157,7 +171,7 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 	sucessed = true
 
 	log.Info().Str("From", req.RemoteAddr).Str("User", user.Name).Uint64("Id", id).Msg("Session running")
-	session.takeConn(conn)
+	session.takeConn(conn, req.RemoteAddr)
 }
 
 func (h *Handler) getSession(id uint64) *session {

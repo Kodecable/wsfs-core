@@ -9,7 +9,7 @@ import (
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/util"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/rs/zerolog/log"
 )
 
@@ -86,6 +86,8 @@ func (s *Session) Wait() error {
 }
 
 func (s *Session) takeConn(conn *websocket.Conn) {
+	conn.SetReadLimit(int64(maxFrameSize))
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go s.writeLoop(conn, ctx, cancel)
@@ -108,20 +110,20 @@ func (s *Session) readLoop(conn *websocket.Conn, ctx context.Context, cancel con
 	}()
 
 	for {
-		msgType, reader, err := conn.NextReader()
+		msgType, reader, err := conn.Reader(ctx)
 
 		if err != nil {
 			// If the context is cancelled, errors are already logged in the write loop.
 			if ctx.Err() == nil {
-				if websocket.IsUnexpectedCloseError(err) {
-					log.Error().Msg("Disconnected")
+				if cs := websocket.CloseStatus(err); cs != -1 {
+					log.Info().Int("CloseStatus", int(cs)).Msg("Disconnected")
 				} else {
 					log.Error().Err(err).Msg("Failed to get a reader")
 				}
 			}
 			return
 		}
-		if msgType != websocket.BinaryMessage {
+		if msgType != websocket.MessageBinary {
 			log.Warn().Msg("Message type is not binary")
 		}
 
@@ -157,7 +159,7 @@ func (s *Session) writeLoop(conn *websocket.Conn, ctx context.Context, cancel co
 		// to call. The read loop will test whether the context is canceled to
 		// decide whether to log a warning, so this call should be after the
 		// cancel call.
-		_ = conn.Close()
+		_ = conn.CloseNow()
 
 		if err := recover(); err != nil {
 			if terr, ok := err.(error); ok {
@@ -176,13 +178,13 @@ func (s *Session) writeLoop(conn *websocket.Conn, ctx context.Context, cancel co
 			//T := buf.Done()
 			//log.Debug().Uint8("M", buf.ReadByteAt(0)).Uint8("C", buf.ReadByteAt(1)).Msg("Send commnad")
 			//err = conn.WriteMessage(websocket.BinaryMessage, T)
-			err = conn.WriteMessage(websocket.BinaryMessage, buf.Done())
+			err = conn.Write(ctx, websocket.MessageBinary, buf.Done())
 			bufPool.Put(buf)
 			if err != nil {
 				// If the context is cancelled, errors are already logged in the read loop.
 				if ctx.Err() == nil {
-					if websocket.IsUnexpectedCloseError(err) {
-						log.Error().Msg("Disconnected")
+					if cs := websocket.CloseStatus(err); cs != -1 {
+						log.Info().Int("CloseStatus", int(cs)).Msg("Disconnected")
 					} else {
 						log.Error().Err(err).Msg("Failed to write message")
 					}

@@ -6,9 +6,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"wsfs-core/internal/server/storage"
+	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/util"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/rs/zerolog/log"
 )
 
@@ -47,12 +48,14 @@ func (s *session) newFD(sfd sfd_t) uint32 {
 	return fd
 }
 
-func (s *session) takeConn(conn *websocket.Conn) {
+func (s *session) takeConn(conn *websocket.Conn, remoteAddr string) {
+	conn.SetReadLimit(int64(wsfsprotocol.MaxCommandLength))
+
 	ctx, cancel := context.WithCancel(context.Background())
 	writeCh := make(chan *util.Buffer)
 
-	go s.writeLoop(conn, ctx, cancel, writeCh)
-	go s.readLoop(conn, ctx, cancel, writeCh)
+	go s.writeLoop(conn, remoteAddr, ctx, cancel, writeCh)
+	go s.readLoop(conn, remoteAddr, ctx, cancel, writeCh)
 }
 
 func (s *session) onLoopExit() {
@@ -61,7 +64,7 @@ func (s *session) onLoopExit() {
 	s.ConnLock.Unlock()
 }
 
-func (s *session) readLoop(conn *websocket.Conn, ctx context.Context, cancel context.CancelFunc, writeCh chan<- *util.Buffer) {
+func (s *session) readLoop(conn *websocket.Conn, remoteAddr string, ctx context.Context, cancel context.CancelFunc, writeCh chan<- *util.Buffer) {
 	defer func() {
 		// Cancel() can be called multiple times safely.
 		cancel()
@@ -83,32 +86,32 @@ func (s *session) readLoop(conn *websocket.Conn, ctx context.Context, cancel con
 	}()
 
 	for {
-		msgType, reader, err := conn.NextReader()
+		msgType, reader, err := conn.Reader(ctx)
 
 		if err != nil {
 			// If the context is cancelled, errors are already logged in the write loop.
 			if ctx.Err() == nil {
-				if websocket.IsUnexpectedCloseError(err) {
-					log.Info().Str("From", conn.RemoteAddr().String()).Msg("Disconnected")
+				if cs := websocket.CloseStatus(err); cs != -1 {
+					log.Info().Int("CloseStatus", int(cs)).Str("From", remoteAddr).Msg("Disconnected")
 				} else {
-					log.Error().Str("From", conn.RemoteAddr().String()).Err(err).Msg("Failed to get a reader")
+					log.Error().Str("From", remoteAddr).Err(err).Msg("Failed to get a reader")
 				}
 			}
 			return
 		}
-		if msgType != websocket.BinaryMessage {
-			log.Warn().Str("From", conn.RemoteAddr().String()).Msg("Message type is not binary")
+		if msgType != websocket.MessageBinary {
+			log.Warn().Str("From", remoteAddr).Msg("Message type is not binary")
 		}
 
 		err = s.readAndExec(reader, writeCh)
 		if err != nil {
-			log.Error().Str("From", conn.RemoteAddr().String()).Err(err).Msg("Failed to execute cmd")
+			log.Error().Str("From", remoteAddr).Err(err).Msg("Failed to execute cmd")
 			return
 		}
 	}
 }
 
-func (s *session) writeLoop(conn *websocket.Conn, ctx context.Context, cancel context.CancelFunc, writeCh <-chan *util.Buffer) {
+func (s *session) writeLoop(conn *websocket.Conn, remoteAddr string, ctx context.Context, cancel context.CancelFunc, writeCh <-chan *util.Buffer) {
 	var err error = nil
 	defer func() {
 		// Cancel() can be called multiple times safely.
@@ -119,7 +122,7 @@ func (s *session) writeLoop(conn *websocket.Conn, ctx context.Context, cancel co
 		// to call. The read loop will test whether the context is canceled to
 		// decide whether to log a warning, so this call should be after the
 		// cancel call.
-		_ = conn.Close()
+		_ = conn.CloseNow()
 
 		if err := recover(); err != nil {
 			if terr, ok := err.(error); ok {
@@ -148,15 +151,15 @@ func (s *session) writeLoop(conn *websocket.Conn, ctx context.Context, cancel co
 			}
 			//T := buf.Done()
 			//log.Debug().Uint8("Cm", T[0]).Uint8("Sc", T[1]).Msg("Send response")
-			err = conn.WriteMessage(websocket.BinaryMessage, buf.Done())
+			err = conn.Write(ctx, websocket.MessageBinary, buf.Done())
 			bufPool.Put(buf)
 			if err != nil {
 				// If the context is cancelled, errors are already logged in the read loop.
 				if ctx.Err() == nil {
-					if websocket.IsUnexpectedCloseError(err) {
-						log.Info().Str("From", conn.RemoteAddr().String()).Msg("Disconnected")
+					if cs := websocket.CloseStatus(err); cs != -1 {
+						log.Info().Int("CloseStatus", int(cs)).Msg("Disconnected")
 					} else {
-						log.Error().Str("From", conn.RemoteAddr().String()).Err(err).Msg("Failed to write message")
+						log.Error().Str("From", remoteAddr).Err(err).Msg("Failed to write message")
 					}
 				}
 				return
