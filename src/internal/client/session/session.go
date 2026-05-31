@@ -16,7 +16,7 @@ import (
 type ReDialFunc func() (*websocket.Conn, error)
 
 const (
-	maxFrameSize = wsfsprotocol.MaxCommandLength
+	maxFrameSize = wsfsprotocol.MaxMsgSize
 )
 
 var (
@@ -27,34 +27,30 @@ var (
 	}
 )
 
-func msg(vals ...any) *util.Buffer {
-	buf := bufPool.Get().(*util.Buffer)
-
-	for _, val := range vals {
-		buf.Put(val)
-	}
-
-	return buf
-}
-
 type Session struct {
-	exitErr      error
-	exitWg       sync.WaitGroup
-	reDial       ReDialFunc
-	writeRequest chan *util.Buffer
-	readRequests [256]chan *util.Buffer
-	clientMarks  [256]sync.Mutex
-	lastMark     atomic.Uint32
+	exitErr error
+	exitWg  sync.WaitGroup
+	reDial  ReDialFunc
+
+	conn      *websocket.Conn
+	writer    io.WriteCloser
+	writeLock sync.Mutex
+
+	connCtx       context.Context
+	connCtxCancel context.CancelFunc
+	connErr       error
+	connErrLock   sync.Mutex
+
+	responses [256]chan *util.Buffer
+	lastMark  atomic.Uint32
+	marks     [256]sync.Mutex
 }
 
 func NewSession(reDial ReDialFunc) (*Session, error) {
 	s := &Session{reDial: reDial}
-
-	s.writeRequest = make(chan *util.Buffer)
-	for i := range s.readRequests {
-		s.readRequests[i] = make(chan *util.Buffer)
+	for i := range s.responses {
+		s.responses[i] = make(chan *util.Buffer, 1)
 	}
-
 	return s, nil
 }
 
@@ -67,7 +63,7 @@ func (s *Session) newClientMark() uint8 {
 	var v uint8
 	for {
 		v = uint8(s.lastMark.Add(1))
-		if s.clientMarks[v].TryLock() {
+		if s.marks[v].TryLock() {
 			break
 		}
 	}
@@ -87,39 +83,116 @@ func (s *Session) Wait() error {
 
 func (s *Session) takeConn(conn *websocket.Conn) {
 	conn.SetReadLimit(int64(maxFrameSize))
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go s.writeLoop(conn, ctx, cancel)
-	go s.readLoop(conn, ctx, cancel)
-	//s.readLoop(conn, ctx, cancel)
+	s.conn = conn
+	s.connCtx, s.connCtxCancel = context.WithCancel(context.Background())
+	go s.readLoop(conn)
 }
 
-func (s *Session) readLoop(conn *websocket.Conn, ctx context.Context, cancel context.CancelFunc) {
-	defer func() {
-		// Cancel() can be called multiple times safely.
-		cancel()
+func (s *Session) stopConn() {
+	s.connCtxCancel()
 
-		if err := recover(); err != nil {
-			if terr, ok := err.(error); ok {
-				log.Error().Err(terr).Msg("Read loop panic")
-			} else {
-				log.Error().Any("Error", err).Msg("Read loop panic")
+	s.writeLock.Lock()
+	conn := s.conn
+	s.conn = nil
+	s.writeLock.Unlock()
+	if conn != nil {
+		_ = conn.CloseNow()
+	}
+
+	if cs := websocket.CloseStatus(s.connErr); cs != -1 {
+		log.Info().Int("CloseStatus", int(cs)).Msg("Disconnected")
+	} else {
+		log.Error().Err(s.connErr).Msg("Failed to read/write message")
+	}
+	s.connErrLock.Unlock()
+
+	s.notifyAllMarksError()
+
+	s.errorMode()
+}
+
+func (s *Session) notifyAllMarksError() {
+	for i := range 256 {
+		if !s.marks[i].TryLock() {
+			buf := bufPool.Get().(*util.Buffer)
+			buf.Reset()
+			buf.Write([]byte{uint8(i), wsfsprotocol.ErrorIO})
+			wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: "Session error mode"}, buf)
+			s.responses[i] <- buf
+		}
+	}
+}
+
+func (s *Session) requireWrite() (ok bool) {
+	s.writeLock.Lock()
+
+	if s.conn == nil {
+		s.writeLock.Unlock()
+		return false
+	}
+
+	var err error
+	s.writer, err = s.conn.Writer(s.connCtx, websocket.MessageBinary)
+	if err != nil {
+		if s.connErrLock.TryLock() {
+			s.connErr = err
+		}
+		s.conn = nil
+		s.connCtxCancel()
+		s.writeLock.Unlock()
+		return false
+	}
+
+	return true
+}
+
+func (s *Session) writeDone(err error) {
+	if s.writer != nil {
+		closeErr := s.writer.Close()
+		if err == nil {
+			err = closeErr
+		}
+		s.writer = nil
+	}
+	if err != nil {
+		if s.connErrLock.TryLock() {
+			s.connErr = err
+		}
+		s.conn = nil
+		s.connCtxCancel()
+	}
+	s.writeLock.Unlock()
+}
+
+func (s *Session) beginRequest(clientMark uint8, cmd uint8) (ok bool) {
+	if !s.requireWrite() {
+		return false
+	}
+	_, err := s.writer.Write([]byte{clientMark, cmd})
+	if err != nil {
+		s.writeDone(err)
+		return false
+	}
+	return true
+}
+
+func (s *Session) readLoop(conn *websocket.Conn) {
+	defer func() {
+		if err := util.RecoverValue(recover()); err != nil {
+			log.Error().Err(err).Msg("Read loop panic")
+			if s.connErrLock.TryLock() {
+				s.connErr = err
 			}
 		}
+		s.stopConn()
 	}()
 
 	for {
-		msgType, reader, err := conn.Reader(ctx)
+		msgType, reader, err := conn.Reader(s.connCtx)
 
 		if err != nil {
-			// If the context is cancelled, errors are already logged in the write loop.
-			if ctx.Err() == nil {
-				if cs := websocket.CloseStatus(err); cs != -1 {
-					log.Info().Int("CloseStatus", int(cs)).Msg("Disconnected")
-				} else {
-					log.Error().Err(err).Msg("Failed to get a reader")
-				}
+			if s.connErrLock.TryLock() {
+				s.connErr = err
 			}
 			return
 		}
@@ -128,134 +201,45 @@ func (s *Session) readLoop(conn *websocket.Conn, ctx context.Context, cancel con
 		}
 
 		buf := bufPool.Get().(*util.Buffer)
+		buf.Reset()
 		_, err = io.Copy(buf, reader)
 		if err != nil {
-			buf.Done()
 			bufPool.Put(buf)
 			log.Error().Err(err).Msg("Failed to read message")
-			break
+			if s.connErrLock.TryLock() {
+				s.connErr = err
+			}
+			return
 		}
-		if !buf.Ensure(1) {
-			buf.Done()
+
+		if buf.Writted() < 2 {
 			bufPool.Put(buf)
 			log.Error().Msg("Bad message, too short")
 			continue
 		}
+		log.Debug().Uint8("Cm", buf.Bytes[0]).Uint8("Ec", buf.Bytes[1]).Msg("Recived response")
 
-		//log.Debug().Uint8("Cm", buf.ReadByteAt(0)).Uint8("Sc", buf.ReadByteAt(1)).Msg("Reviced response")
-		clientMark := buf.ReadByteAt(0)
-		s.readRequests[clientMark] <- buf
-	}
-}
-
-func (s *Session) writeLoop(conn *websocket.Conn, ctx context.Context, cancel context.CancelFunc) {
-	var err error = nil
-	defer func() {
-		// Cancel() can be called multiple times safely.
-		cancel()
-		// Close() will interrupt the read call in the read loop, allowing the
-		// read loop to exit normally, and the documentation does not confirm
-		// whether it is safe to call twice, so it is the job of the write loop
-		// to call. The read loop will test whether the context is canceled to
-		// decide whether to log a warning, so this call should be after the
-		// cancel call.
-		_ = conn.CloseNow()
-
-		if err := recover(); err != nil {
-			if terr, ok := err.(error); ok {
-				log.Error().Err(terr).Msg("Write loop panic")
-			} else {
-				log.Error().Any("Error", err).Msg("Write loop panic")
-			}
-		}
-
-		s.errorMode()
-	}()
-
-	for {
-		select {
-		case buf := <-s.writeRequest:
-			//T := buf.Done()
-			//log.Debug().Uint8("M", buf.ReadByteAt(0)).Uint8("C", buf.ReadByteAt(1)).Msg("Send commnad")
-			//err = conn.WriteMessage(websocket.BinaryMessage, T)
-			err = conn.Write(ctx, websocket.MessageBinary, buf.Done())
-			bufPool.Put(buf)
-			if err != nil {
-				// If the context is cancelled, errors are already logged in the read loop.
-				if ctx.Err() == nil {
-					if cs := websocket.CloseStatus(err); cs != -1 {
-						log.Info().Int("CloseStatus", int(cs)).Msg("Disconnected")
-					} else {
-						log.Error().Err(err).Msg("Failed to write message")
-					}
-				}
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (s *Session) execCommand(buf *util.Buffer) *util.Buffer {
-	clientMark := buf.ReadByteAt(0)
-	s.writeRequest <- buf
-	rsp := <-s.readRequests[clientMark]
-	s.clientMarks[clientMark].Unlock()
-	return rsp
-}
-
-//func (s *Session) allRequestError() {
-//	for i := range s.clientMarks {
-//		if s.clientMarks[i].TryLock() {
-//			s.clientMarks[i].Unlock()
-//			continue
-//		}
-//
-//	}
-//}
-
-func (s *Session) errorModeWriteLoop(ctx context.Context, wg *sync.WaitGroup) {
-	for {
-		select {
-		case buf := <-s.writeRequest:
-			clientMark := buf.Done()[0]
-			bufPool.Put(buf)
-			s.readRequests[clientMark] <- msg(uint8(clientMark), wsfsprotocol.ErrorIO, "Session error mode")
-		case <-ctx.Done():
-			//s.allRequestError()
-			wg.Done()
-			return
-		}
+		clientMark := buf.Bytes[0]
+		s.responses[clientMark] <- buf
 	}
 }
 
 func (s *Session) errorMode() {
 	log.Warn().Msg("Error mode activated")
-	ctx, cancel := context.WithCancel(context.Background())
-	wg := sync.WaitGroup{}
-
-	//go s.errorModeReadLoop(ctx, &wg)
-	wg.Add(1)
-	go s.errorModeWriteLoop(ctx, &wg)
 
 	if s.reDial == nil {
-		util.Unused(cancel)
 		log.Warn().Msg("Connection redial not configed")
 		s.exit(errors.New("recovery failed"))
 		return
 	}
+
 	log.Info().Msg("Try recovery session")
 	conn, err := s.reDial()
 	if err != nil {
-		util.Unused(cancel)
 		s.exit(err)
 		return
 	}
 	log.Info().Msg("Reconnected to server")
-	cancel()
-	wg.Wait()
-	log.Warn().Msg("Error mode deactivated")
 
 	s.takeConn(conn)
 }

@@ -5,6 +5,7 @@ package client
 import (
 	"os"
 	"strconv"
+	"time"
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/client/windows"
 	"wsfs-core/version"
@@ -39,9 +40,9 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 	opts = append(opts, "volname="+opt.VolumeLabel)
 
 	opts = append(opts, "-o")
-	opts = append(opts, "FileInfoTimeout="+strconv.FormatInt(10, 10))
-	//opts = append(opts, "-o")
-	//opts = append(opts, "DirInfoTimeout="+strconv.FormatInt(10, 10))
+	opts = append(opts, "FileInfoTimeout="+strconv.FormatInt(int64(opt.AttrTimeout/time.Second), 10))
+	opts = append(opts, "-o")
+	opts = append(opts, "DirInfoTimeout="+strconv.FormatInt(int64(opt.EntryTimeout/time.Second), 10))
 
 	go func() {
 		err := session.Wait()

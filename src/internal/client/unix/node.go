@@ -77,7 +77,7 @@ func fileMode(mode uint32) (r uint32) {
 	return
 }
 
-func attrFromFileInfo(path string, attr *fuse.Attr, fi *session.FileInfo, suser *Suser_t) {
+func attrFromFileInfo(path string, attr *fuse.Attr, fi *wsfsprotocol.FileInfo, suser *Suser_t) {
 	attr.Ino = maphash.String(inodeHashSeed, path)
 	attr.Size = fi.Size
 	attr.Atime = uint64(fi.MTime)
@@ -112,7 +112,7 @@ func attrFromFileInfo(path string, attr *fuse.Attr, fi *session.FileInfo, suser 
 }
 
 func attrFromDirItem(path string, attr *fuse.Attr, di *session.DirItem, suser *Suser_t) {
-	attrFromFileInfo(path, attr, &session.FileInfo{
+	attrFromFileInfo(path, attr, &wsfsprotocol.FileInfo{
 		Size:  di.Size,
 		MTime: di.MTime,
 		Mode:  di.Mode,
@@ -158,7 +158,12 @@ func (n *fsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*
 			subDirCache(&(node.(*fsNode).dirCache), item.Child, &n.dirCache)
 		} else if item.Data != nil {
 			subDataCache(&(node.(*fsNode).dataCache), item.Data, &n.dirCache)
-			subAttrCache(&(node.(*fsNode).attrCache), session.FileInfoFromDirItem(&item), &n.dirCache)
+			subAttrCache(&(node.(*fsNode).attrCache), wsfsprotocol.FileInfo{
+				Size:  item.Size,
+				MTime: item.MTime,
+				Mode:  item.Mode,
+				Owner: item.Owner,
+			}, &n.dirCache)
 		}
 	}
 
@@ -253,7 +258,10 @@ func (n *fsNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 	p := n.path()
 
 	path, code := n.fsdata.session.CmdReadLink(p)
-	return []byte(path), errorCodeMap[code]
+	if code != wsfsprotocol.ErrorOK {
+		return nil, errorCodeMap[code]
+	}
+	return []byte(filepath.Join(n.fsdata.mountpoint, strings.TrimPrefix(path, "/"))), fusefs.OK
 }
 
 var _ = (fusefs.NodeOpener)((*fsNode)(nil))
@@ -419,7 +427,7 @@ var _ = (fusefs.NodeSetattrer)((*fsNode)(nil))
 
 func (n *fsNode) Setattr(ctx context.Context, f fusefs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
 	var flag uint8
-	var fi session.FileInfo
+	var fi wsfsprotocol.FileInfo
 	var orig fuse.AttrOut
 
 	err := n.Getattr(ctx, f, &orig)
@@ -463,6 +471,10 @@ func (n *fsNode) Setattr(ctx context.Context, f fusefs.FileHandle, in *fuse.SetA
 		code = n.fsdata.session.CmdSetAttrByFD(fd, flag, fi)
 	} else {
 		code = n.fsdata.session.CmdSetAttr(n.path(), flag, fi)
+	}
+	if code == wsfsprotocol.ErrorOK {
+		wipeDataCache(&n.dataCache)
+		wipeAttrCache(&n.attrCache)
 	}
 	return errorCodeMap[code]
 }

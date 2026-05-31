@@ -69,7 +69,7 @@ func (h *Handler) CollecteInactivedSession() {
 				return true // continue
 			}
 
-			if s.ConnLock.TryLock() {
+			if s.Lock.TryLock() {
 				s.inactiveCount += 1
 
 				if s.inactiveCount >= sessionInactiveMaxCount {
@@ -77,7 +77,7 @@ func (h *Handler) CollecteInactivedSession() {
 					return true // continue
 				}
 
-				s.ConnLock.Unlock()
+				s.Lock.Unlock()
 			}
 			return true
 		})
@@ -150,7 +150,7 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 		rsp.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if !session.ConnLock.TryLock() {
+	if !session.Lock.TryLock() {
 		rsp.WriteHeader(http.StatusPreconditionFailed)
 		return
 	}
@@ -159,7 +159,7 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 	var sucessed = false
 	defer func() {
 		if !sucessed {
-			session.ConnLock.Unlock()
+			session.Lock.Unlock()
 		}
 	}()
 

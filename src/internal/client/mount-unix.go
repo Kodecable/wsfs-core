@@ -24,6 +24,7 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 			Gid:       opt.Gid,
 			NobodyUid: opt.NobodyUid,
 			NobodyGid: opt.NobodyGid},
+		mountpoint,
 		opt.AttrTimeout,
 		opt.NegativeTimeout)
 	root := fsroot.NewNode()

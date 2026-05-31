@@ -4,11 +4,12 @@ import (
 	"sync"
 	"time"
 	"wsfs-core/internal/client/session"
+	"wsfs-core/internal/share/wsfsprotocol"
 )
 
 type cachedData struct {
 	items []session.DirItem
-	attr  session.FileInfo
+	attr  wsfsprotocol.FileInfo
 }
 
 type cacheRecord struct {

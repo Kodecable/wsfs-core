@@ -34,5 +34,6 @@ require (
 	github.com/sqids/sqids-go v0.4.1
 	github.com/thediveo/enumflag v0.10.1
 	golang.org/x/crypto v0.50.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.42.0
 )

@@ -26,9 +26,10 @@ type fileSystem struct {
 }
 
 func NewFS(sesseion *session.Session, suser Suser_t,
-	structTimeout, negativeTimeout time.Duration) *fileSystem {
+	mountpoint string, structTimeout, negativeTimeout time.Duration) *fileSystem {
 	return &fileSystem{
 		session:         sesseion,
+		mountpoint:      mountpoint,
 		suser:           suser,
 		structTimeout:   structTimeout,
 		negativeTimeout: negativeTimeout,

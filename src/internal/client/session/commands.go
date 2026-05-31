@@ -1,67 +1,13 @@
 package session
 
 import (
+	"bytes"
+	"io"
 	"wsfs-core/internal/share/wsfsprotocol"
-	"wsfs-core/internal/util"
 
 	"github.com/rs/zerolog/log"
 )
 
-func (s *Session) CmdOpen(path string, oflag uint32, fmode uint32) (uint32, uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdOpen, path, oflag, fmode))
-
-	code := buf.ReadByteAt(1)
-	if code != wsfsprotocol.ErrorOK {
-		buf.Done()
-		bufPool.Put(buf)
-		return 0, code
-	}
-
-	if !buf.Ensure(5) {
-		buf.Done()
-		bufPool.Put(buf)
-		log.Error().Msg("Command response too short")
-		return 0, wsfsprotocol.ErrorIO
-	}
-
-	fd := buf.ReadU32(2)
-	buf.Done()
-	bufPool.Put(buf)
-	return fd, code
-}
-
-func (s *Session) CmdClose(fd uint32) uint8 {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdClose, fd))
-	code := buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
-	return code
-}
-
-func (s *Session) CmdRead(fd uint32, dest []byte) (uint64, uint8) {
-	clientMark := s.newClientMark()
-	s.writeRequest <- msg(clientMark, wsfsprotocol.CmdRead, fd, uint64(len(dest)))
-
-	var off int
-	for {
-		rsp := <-s.readRequests[clientMark]
-
-		code := rsp.ReadByteAt(1)
-		data := rsp.Done()[2:]
-		copy(dest[off:], data)
-		bufPool.Put(rsp)
-
-		if code == wsfsprotocol.ErrorPartialResponse {
-			off += len(data)
-			continue
-		} else {
-			s.clientMarks[clientMark].Unlock()
-			return uint64(off + len(data)), code
-		}
-	}
-}
-
-// A vaild DirItem has a non-empty Name
 type DirItem struct {
 	Name  string
 	Size  uint64
@@ -72,543 +18,756 @@ type DirItem struct {
 	Data  []byte
 }
 
-func readList(data *util.Buffer, items *[]DirItem) (ok bool) {
-	ok = true
-	off := 2
+const maxWritePayload int = maxFrameSize - 6 // header(2) + FD(4)
 
-	var di DirItem
-	for {
-		if !data.Ensure(off) {
-			break
+func readDirents(data []byte) ([]wsfsprotocol.Dirent, error) {
+	r := bytes.NewReader(data)
+	var items []wsfsprotocol.Dirent
+	for r.Len() > 0 {
+		var ent wsfsprotocol.Dirent
+		if err := wsfsprotocol.ReadDirentFromReader(&ent, r); err != nil {
+			return nil, err
 		}
-
-		di.Name, ok = data.ReadString(off)
-		if !ok {
-			return
-		}
-		off += len(di.Name) + 1
-
-		ok = data.Ensure(off + 20)
-		if !ok {
-			return
-		}
-		di.Size = data.ReadU64(off)
-		di.MTime = int64(data.ReadU64(off + 8))
-		di.Mode = data.ReadU32(off + 8 + 8)
-		di.Owner = data.ReadByteAt(off + 8 + 8 + 4)
-		//di.Child = nil
-		//di.Data = nil
-		off += 21 // more 1 byte for loop
-
-		*items = append(*items, di)
+		items = append(items, ent)
 	}
-
-	return
+	return items, nil
 }
 
-func (s *Session) CmdReadDir(path string) (list []DirItem, code uint8) {
+func readTreeChunk(data []byte, stack *[]*[]DirItem) (ok bool) {
+	r := bytes.NewReader(data)
+	current := (*stack)[len(*stack)-1]
+
+	for r.Len() > 0 {
+		indicator, err := r.ReadByte()
+		if err != nil {
+			return false
+		}
+
+		switch indicator {
+		case wsfsprotocol.TREEDIR_INDICATOR_ENTER_DIR:
+			(*current)[len(*current)-1].Child = []DirItem{}
+			*stack = append(*stack, &(*current)[len(*current)-1].Child)
+			current = (*stack)[len(*stack)-1]
+		case wsfsprotocol.TREEDIR_INDICATOR_END_DIR:
+			*stack = (*stack)[:len(*stack)-1]
+			current = (*stack)[len(*stack)-1]
+		case wsfsprotocol.TREEDIR_INDICATOR_END_DIR_WITH_FAIL:
+			*stack = (*stack)[:len(*stack)-1]
+			*current = nil
+			current = (*stack)[len(*stack)-1]
+		case wsfsprotocol.TREEDIR_INDICATOR_FILE, wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA:
+			var ent wsfsprotocol.Dirent
+			if err := wsfsprotocol.ReadDirentFromReader(&ent, r); err != nil {
+				return false
+			}
+			item := DirItem{
+				Name:  ent.Name,
+				Size:  ent.Size,
+				MTime: ent.MTime,
+				Mode:  ent.Mode,
+				Owner: ent.Owner,
+			}
+			if indicator == wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA {
+				item.Data = make([]byte, item.Size)
+				if _, err := io.ReadFull(r, item.Data); err != nil {
+					return false
+				}
+			}
+			*current = append(*current, item)
+		default:
+			log.Error().Uint8("Indicator", indicator).Msg("Unknown tree indicator")
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Session) CmdOpen(path string, oflag uint32, fmode uint32) (uint32, uint8) {
 	clientMark := s.newClientMark()
-	s.writeRequest <- msg(clientMark, wsfsprotocol.CmdReadDir, path)
 
-	var rsp *util.Buffer
-	for {
-		rsp = <-s.readRequests[clientMark]
-
-		code = rsp.ReadByteAt(1)
-		if code != wsfsprotocol.ErrorOK &&
-			code != wsfsprotocol.ErrorPartialResponse {
-			rsp.Done()
-			bufPool.Put(rsp)
-			return
-		}
-
-		ok := readList(rsp, &list)
-		rsp.Done()
-		bufPool.Put(rsp)
-		if !ok {
-			log.Error().Msg("Command response too short")
-			s.clientMarks[clientMark].Unlock()
-			return nil, wsfsprotocol.ErrorIO
-		}
-
-		if code == wsfsprotocol.ErrorPartialResponse {
-			continue
-		} else {
-			break
-		}
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdOpen) {
+		s.marks[clientMark].Unlock()
+		return 0, wsfsprotocol.ErrorIO
 	}
-
-	s.clientMarks[clientMark].Unlock()
-	return
-}
-
-func (s *Session) CmdReadLink(lpath string) (tpath string, code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdReadLink, lpath))
-	code = buf.ReadByteAt(1)
-	str, ok := buf.ReadString(2)
-	buf.Done()
-	bufPool.Put(buf)
-
-	if code == wsfsprotocol.ErrorOK {
-		if ok {
-			return str, code
-		}
-		return "", wsfsprotocol.ErrorIO
-	} else {
-		return "", code
-	}
-}
-
-const maxWritePayload int = maxFrameSize - 1 - 1 - 4
-
-func (s *Session) CmdWrite(fd uint32, data []byte) (written uint64, code uint8) {
-	if len(data) < maxWritePayload {
-		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWrite, fd, data))
-		code = buf.ReadByteAt(1)
-		if code != wsfsprotocol.ErrorOK {
-			buf.Done()
-			bufPool.Put(buf)
-			return 0, code
-		}
-
-		if !buf.Ensure(9) {
-			log.Error().Msg("Command response too short")
-			buf.Done()
-			bufPool.Put(buf)
-			return 0, wsfsprotocol.ErrorIO
-		}
-		written = buf.ReadU64(2)
-		buf.Done()
-		bufPool.Put(buf)
-		return
-	} else {
-		off := 0
-		for range len(data) / maxWritePayload {
-			buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWrite, fd, data[off:off+maxWritePayload]))
-			code = buf.ReadByteAt(1)
-			if code != wsfsprotocol.ErrorOK {
-				buf.Done()
-				bufPool.Put(buf)
-				return uint64(off), code
-			}
-
-			if !buf.Ensure(9) {
-				log.Error().Msg("Command response too short")
-				buf.Done()
-				bufPool.Put(buf)
-				return 0, wsfsprotocol.ErrorIO
-			}
-			off += int(buf.ReadU64(2))
-			buf.Done()
-			bufPool.Put(buf)
-		}
-		if len(data)%maxWritePayload == 0 {
-			return uint64(off), wsfsprotocol.ErrorOK
-		}
-
-		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWrite, fd, data[off:off+len(data)%maxWritePayload]))
-		code = buf.ReadByteAt(1)
-		if code != wsfsprotocol.ErrorOK {
-			buf.Done()
-			bufPool.Put(buf)
-			return uint64(off), code
-		}
-
-		if !buf.Ensure(9) {
-			log.Error().Msg("Command response too short")
-			buf.Done()
-			bufPool.Put(buf)
-			return 0, wsfsprotocol.ErrorIO
-		}
-		off += int(buf.ReadU64(2))
-		buf.Done()
-		bufPool.Put(buf)
-
-		return uint64(off), code
-	}
-}
-
-func (s *Session) CmdSeek(fd uint32, flag uint32, off int64) (pos uint64, code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdSeek, fd, flag, off))
-	code = buf.ReadByteAt(1)
-
-	if code != wsfsprotocol.ErrorOK {
-		buf.Done()
-		bufPool.Put(buf)
-		return
-	}
-
-	if !buf.Ensure(9) {
-		buf.Done()
-		bufPool.Put(buf)
-		log.Error().Msg("Command response too short")
+	err := wsfsprotocol.WriteCmdOpenStructToWriter(wsfsprotocol.CmdOpenStruct{Path: path, OFlag: oflag, FMode: fmode}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
 		return 0, wsfsprotocol.ErrorIO
 	}
 
-	pos = buf.ReadU64(2)
-	buf.Done()
-	bufPool.Put(buf)
-	return
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code := rspBuf.Bytes[1]
+
+	if code != wsfsprotocol.ErrorOK {
+		bufPool.Put(rspBuf)
+		return 0, code
+	}
+
+	var rsp wsfsprotocol.RspOpen
+	err = wsfsprotocol.ReadRspOpenFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	bufPool.Put(rspBuf)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to decode CmdOpen response")
+		return 0, wsfsprotocol.ErrorIO
+	}
+	return rsp.FD, code
 }
 
-func (s *Session) CmdAllocate(fd uint32, flag uint32, off uint64, size uint64) uint8 {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdSeek, fd, flag, off, size))
-	code := buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
+func (s *Session) CmdClose(fd uint32) uint8 {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdClose) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdCloseStructToWriter(wsfsprotocol.CmdCloseStruct{FD: fd}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code := rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
 	return code
 }
 
-type FileInfo struct {
-	Size  uint64
-	MTime int64
-	Mode  uint32
-	Owner uint8
-}
-
-func FileInfoFromDirItem(di *DirItem) FileInfo {
-	return FileInfo{
-		Size:  di.Size,
-		MTime: di.MTime,
-		Mode:  di.Mode,
-		Owner: di.Owner,
-	}
-}
-
-func (s *Session) CmdGetAttr(fpath string) (fi FileInfo, code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdGetAttr, fpath))
-	code = buf.ReadByteAt(1)
-	if code != wsfsprotocol.ErrorOK {
-		buf.Done()
-		bufPool.Put(buf)
-		return
-	}
-
-	if !buf.Ensure(22) {
-		buf.Done()
-		bufPool.Put(buf)
-		log.Error().Msg("Command response too short")
-		code = wsfsprotocol.ErrorIO
-		return
-	}
-
-	fi.Size = buf.ReadU64(2)
-	fi.MTime = int64(buf.ReadU64(10))
-	fi.Mode = buf.ReadU32(18)
-	fi.Owner = buf.ReadByteAt(22)
-	buf.Done()
-	bufPool.Put(buf)
-	return
-}
-
-func (s *Session) CmdSetAttr(fpath string, flag uint8, fi FileInfo) (code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdSetAttr, fpath, flag, fi.Size, fi.MTime, fi.Mode, fi.Owner))
-	code = buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
-	return
-}
-
-func (s *Session) CmdSync(fd uint32) (code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdSync, fd))
-	code = buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
-	return
-}
-
-func (s *Session) CmdMkdir(fpath string, mode uint32) (code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdMkdir, fpath, mode))
-	code = buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
-	return
-}
-
-func (s *Session) CmdSymLink(target string, fpath string) (code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdSymLink, target, fpath))
-	code = buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
-	return
-}
-
-func (s *Session) CmdRemove(fpath string) (code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdRemove, fpath))
-	code = buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
-	return
-}
-
-func (s *Session) CmdRmDir(fpath string) (code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdRmDir, fpath))
-	code = buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
-	return
-}
-
-type FsInfo struct {
-	Total     uint64
-	Free      uint64
-	Available uint64
-}
-
-func (s *Session) CmdFsStat(fpath string) (fsi FsInfo, code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdFsStat, fpath))
-	code = buf.ReadByteAt(1)
-	if code != wsfsprotocol.ErrorOK {
-		buf.Done()
-		bufPool.Put(buf)
-		return
-	}
-
-	if !buf.Ensure(25) {
-		buf.Done()
-		bufPool.Put(buf)
-		log.Error().Msg("Command response too short")
-		code = wsfsprotocol.ErrorIO
-		return
-	}
-
-	fsi.Total = buf.ReadU64(2)
-	fsi.Free = buf.ReadU64(10)
-	fsi.Available = buf.ReadU64(18)
-	buf.Done()
-	bufPool.Put(buf)
-	return
-}
-
-func (s *Session) CmdReadAt(fd uint32, offset uint64, dest []byte) (uint64, uint8) {
+func (s *Session) CmdRead(fd uint32, dest []byte) (uint64, uint8) {
 	clientMark := s.newClientMark()
-	s.writeRequest <- msg(clientMark, wsfsprotocol.CmdReadAt, fd, offset, uint64(len(dest)))
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdRead) {
+		s.marks[clientMark].Unlock()
+		return 0, wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdReadStructToWriter(wsfsprotocol.CmdReadStruct{FD: fd, Size: uint64(len(dest))}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return 0, wsfsprotocol.ErrorIO
+	}
 
 	var off int
 	for {
-		rsp := <-s.readRequests[clientMark]
-
-		code := rsp.ReadByteAt(1)
-		data := rsp.Done()[2:]
+		rsp := <-s.responses[clientMark]
+		code := rsp.Bytes[1]
+		data := rsp.Bytes[2:rsp.Writted()]
 		copy(dest[off:], data)
 		bufPool.Put(rsp)
 
 		if code == wsfsprotocol.ErrorPartialResponse {
 			off += len(data)
 			continue
-		} else {
-			s.clientMarks[clientMark].Unlock()
-			return uint64(off + len(data)), code
 		}
+		s.marks[clientMark].Unlock()
+		return uint64(off + len(data)), code
 	}
 }
 
-const maxWriteAtPayload int = maxFrameSize - 1 - 1 - 4 - 8
+func (s *Session) CmdReadDir(path string) (list []DirItem, code uint8) {
+	clientMark := s.newClientMark()
 
-func (s *Session) CmdWriteAt(fd uint32, offset uint64, data []byte) (written uint64, code uint8) {
-	if len(data) < maxWriteAtPayload {
-		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWriteAt, fd, offset, data))
-		code = buf.ReadByteAt(1)
-		if code != wsfsprotocol.ErrorOK {
-			buf.Done()
-			bufPool.Put(buf)
-			return 0, code
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdReadDir) {
+		s.marks[clientMark].Unlock()
+		return nil, wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdReadDirStructToWriter(wsfsprotocol.CmdReadDirStruct{Path: path}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return nil, wsfsprotocol.ErrorIO
+	}
+
+	for {
+		rsp := <-s.responses[clientMark]
+		code = rsp.Bytes[1]
+
+		if code != wsfsprotocol.ErrorOK &&
+			code != wsfsprotocol.ErrorPartialResponse {
+			bufPool.Put(rsp)
+			s.marks[clientMark].Unlock()
+			return
 		}
 
-		if !buf.Ensure(9) {
-			log.Error().Msg("Command response too short")
-			buf.Done()
-			bufPool.Put(buf)
+		dirents, readErr := readDirents(rsp.Bytes[2:rsp.Writted()])
+		bufPool.Put(rsp)
+		if readErr != nil {
+			log.Error().Err(readErr).Msg("Failed to read directory entries")
+			s.marks[clientMark].Unlock()
+			return nil, wsfsprotocol.ErrorIO
+		}
+
+		for _, d := range dirents {
+			list = append(list, DirItem{
+				Name:  d.Name,
+				Size:  d.Size,
+				MTime: d.MTime,
+				Mode:  d.Mode,
+				Owner: d.Owner,
+			})
+		}
+
+		if code == wsfsprotocol.ErrorPartialResponse {
+			continue
+		}
+		break
+	}
+
+	s.marks[clientMark].Unlock()
+	return
+}
+
+func (s *Session) CmdReadLink(lpath string) (tpath string, code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdReadLink) {
+		s.marks[clientMark].Unlock()
+		return "", wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdReadLinkStructToWriter(wsfsprotocol.CmdReadLinkStruct{Path: lpath}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return "", wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+
+	if code != wsfsprotocol.ErrorOK {
+		bufPool.Put(rspBuf)
+		return
+	}
+
+	var rsp wsfsprotocol.RspReadLink
+	err = wsfsprotocol.ReadRspReadLinkFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	bufPool.Put(rspBuf)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to decode CmdReadLink response")
+		return "", wsfsprotocol.ErrorIO
+	}
+	return rsp.TargetPath, code
+}
+
+func (s *Session) CmdWrite(fd uint32, data []byte) (written uint64, code uint8) {
+	clientMark := s.newClientMark()
+
+	if len(data) <= maxWritePayload {
+		if !s.beginRequest(clientMark, wsfsprotocol.CmdWrite) {
+			s.marks[clientMark].Unlock()
 			return 0, wsfsprotocol.ErrorIO
 		}
-		written = buf.ReadU64(2)
-		buf.Done()
-		bufPool.Put(buf)
-		return
-	} else {
-		off := 0
-		for range len(data) / maxWriteAtPayload {
-			buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWriteAt, fd, offset+uint64(off), data[off:off+maxWriteAtPayload]))
-			code = buf.ReadByteAt(1)
-			if code != wsfsprotocol.ErrorOK {
-				buf.Done()
-				bufPool.Put(buf)
-				return uint64(off), code
-			}
-
-			if !buf.Ensure(9) {
-				log.Error().Msg("Command response too short")
-				buf.Done()
-				bufPool.Put(buf)
-				return 0, wsfsprotocol.ErrorIO
-			}
-			off += int(buf.ReadU64(2))
-			buf.Done()
-			bufPool.Put(buf)
-		}
-		if len(data)%maxWriteAtPayload == 0 {
-			return uint64(off), wsfsprotocol.ErrorOK
+		err := wsfsprotocol.WriteCmdWriteStructToWriter(wsfsprotocol.CmdWriteStruct{FD: fd, Data: data}, s.writer)
+		s.writeDone(err)
+		if err != nil {
+			s.marks[clientMark].Unlock()
+			return 0, wsfsprotocol.ErrorIO
 		}
 
-		buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdWriteAt, fd, offset+uint64(off), data[off:off+len(data)%maxWriteAtPayload]))
-		code = buf.ReadByteAt(1)
+		rspBuf := <-s.responses[clientMark]
+		s.marks[clientMark].Unlock()
+		code = rspBuf.Bytes[1]
+
 		if code != wsfsprotocol.ErrorOK {
-			buf.Done()
-			bufPool.Put(buf)
+			bufPool.Put(rspBuf)
+			return
+		}
+
+		var rsp wsfsprotocol.RspWrite
+		err = wsfsprotocol.ReadRspWriteFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+		bufPool.Put(rspBuf)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to decode CmdWrite response")
+			return 0, wsfsprotocol.ErrorIO
+		}
+		return rsp.Written, code
+	}
+
+	var off int
+	s.marks[clientMark].Unlock()
+
+	nChunks := len(data) / maxWritePayload
+	lastSize := len(data) % maxWritePayload
+
+	for i := 0; i < nChunks; i++ {
+		chunk := data[off : off+maxWritePayload]
+		n, code := s.CmdWrite(fd, chunk)
+		if code != wsfsprotocol.ErrorOK {
 			return uint64(off), code
 		}
+		off += int(n)
+	}
 
-		if !buf.Ensure(9) {
-			log.Error().Msg("Command response too short")
-			buf.Done()
-			bufPool.Put(buf)
+	if lastSize > 0 {
+		n, code := s.CmdWrite(fd, data[off:])
+		if code != wsfsprotocol.ErrorOK {
+			return uint64(off), code
+		}
+		off += int(n)
+	}
+
+	return uint64(off), wsfsprotocol.ErrorOK
+}
+
+func (s *Session) CmdSeek(fd uint32, flag uint32, off int64) (pos uint64, code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdSeek) {
+		s.marks[clientMark].Unlock()
+		return
+	}
+	err := wsfsprotocol.WriteCmdSeekStructToWriter(wsfsprotocol.CmdSeekStruct{FD: fd, Flag: flag, Offset: off}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+
+	if code != wsfsprotocol.ErrorOK {
+		bufPool.Put(rspBuf)
+		return
+	}
+
+	var rsp wsfsprotocol.RspSeek
+	err = wsfsprotocol.ReadRspSeekFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	bufPool.Put(rspBuf)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to decode CmdSeek response")
+		return 0, wsfsprotocol.ErrorIO
+	}
+	return rsp.Offset, code
+}
+
+func (s *Session) CmdAllocate(fd uint32, flag uint32, off uint64, size uint64) uint8 {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdAllocate) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdAllocateStructToWriter(wsfsprotocol.CmdAllocateStruct{FD: fd, Flag: flag, Offset: off, Size: size}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code := rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return code
+}
+
+func (s *Session) CmdGetAttr(fpath string) (fi wsfsprotocol.FileInfo, code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdGetAttr) {
+		s.marks[clientMark].Unlock()
+		return
+	}
+	err := wsfsprotocol.WriteCmdGetAttrStructToWriter(wsfsprotocol.CmdGetAttrStruct{Path: fpath}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+
+	if code != wsfsprotocol.ErrorOK {
+		bufPool.Put(rspBuf)
+		return
+	}
+
+	var rsp wsfsprotocol.RspGetAttr
+	err = wsfsprotocol.ReadRspGetAttrFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	bufPool.Put(rspBuf)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to decode CmdGetAttr response")
+		return fi, wsfsprotocol.ErrorIO
+	}
+	return rsp.FI, code
+}
+
+func (s *Session) CmdSetAttr(fpath string, flag uint8, fi wsfsprotocol.FileInfo) (code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdSetAttr) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdSetAttrStructToWriter(wsfsprotocol.CmdSetAttrStruct{Path: fpath, Flag: flag, FI: fi}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return
+}
+
+func (s *Session) CmdSync(fd uint32) (code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdSync) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdSyncStructToWriter(wsfsprotocol.CmdSyncStruct{FD: fd}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return
+}
+
+func (s *Session) CmdMkdir(fpath string, mode uint32) (code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdMkdir) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdMkdirStructToWriter(wsfsprotocol.CmdMkdirStruct{Path: fpath, Mode: mode}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return
+}
+
+func (s *Session) CmdSymLink(target string, fpath string) (code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdSymLink) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdSymLinkStructToWriter(wsfsprotocol.CmdSymLinkStruct{TargetPath: target, FilePath: fpath}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return
+}
+
+func (s *Session) CmdRemove(fpath string) (code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdRemove) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdRemoveStructToWriter(wsfsprotocol.CmdRemoveStruct{Path: fpath}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return
+}
+
+func (s *Session) CmdRmDir(fpath string) (code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdRmDir) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdRmDirStructToWriter(wsfsprotocol.CmdRmDirStruct{Path: fpath}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return
+}
+
+func (s *Session) CmdFsStat(fpath string) (fsi wsfsprotocol.RspFsStat, code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdFsStat) {
+		s.marks[clientMark].Unlock()
+		return
+	}
+	err := wsfsprotocol.WriteCmdFsStatStructToWriter(wsfsprotocol.CmdFsStatStruct{Path: fpath}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+
+	if code != wsfsprotocol.ErrorOK {
+		bufPool.Put(rspBuf)
+		return
+	}
+
+	err = wsfsprotocol.ReadRspFsStatFromReader(&fsi, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	bufPool.Put(rspBuf)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to decode CmdFsStat response")
+		return fsi, wsfsprotocol.ErrorIO
+	}
+	return
+}
+
+func (s *Session) CmdReadAt(fd uint32, offset uint64, dest []byte) (uint64, uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdReadAt) {
+		s.marks[clientMark].Unlock()
+		return 0, wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdReadAtStructToWriter(wsfsprotocol.CmdReadAtStruct{FD: fd, Offset: offset, Size: uint64(len(dest))}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return 0, wsfsprotocol.ErrorIO
+	}
+
+	var off int
+	for {
+		rsp := <-s.responses[clientMark]
+		code := rsp.Bytes[1]
+		data := rsp.Bytes[2:rsp.Writted()]
+		copy(dest[off:], data)
+		bufPool.Put(rsp)
+
+		if code == wsfsprotocol.ErrorPartialResponse {
+			off += len(data)
+			continue
+		}
+		s.marks[clientMark].Unlock()
+		return uint64(off + len(data)), code
+	}
+}
+
+const maxWriteAtPayload int = maxFrameSize - 14 // header(2) + FD(4) + Offset(8)
+
+func (s *Session) CmdWriteAt(fd uint32, offset uint64, data []byte) (written uint64, code uint8) {
+	clientMark := s.newClientMark()
+
+	if len(data) <= maxWriteAtPayload {
+		if !s.beginRequest(clientMark, wsfsprotocol.CmdWriteAt) {
+			s.marks[clientMark].Unlock()
 			return 0, wsfsprotocol.ErrorIO
 		}
-		off += int(buf.ReadU64(2))
-		buf.Done()
-		bufPool.Put(buf)
+		err := wsfsprotocol.WriteCmdWriteAtStructToWriter(wsfsprotocol.CmdWriteAtStruct{FD: fd, Offset: offset, Data: data}, s.writer)
+		s.writeDone(err)
+		if err != nil {
+			s.marks[clientMark].Unlock()
+			return 0, wsfsprotocol.ErrorIO
+		}
 
-		return uint64(off), code
+		rspBuf := <-s.responses[clientMark]
+		s.marks[clientMark].Unlock()
+		code = rspBuf.Bytes[1]
+
+		if code != wsfsprotocol.ErrorOK {
+			bufPool.Put(rspBuf)
+			return
+		}
+
+		var rsp wsfsprotocol.RspWriteAt
+		err = wsfsprotocol.ReadRspWriteAtFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+		bufPool.Put(rspBuf)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to decode CmdWriteAt response")
+			return 0, wsfsprotocol.ErrorIO
+		}
+		return rsp.Written, code
 	}
+
+	var off int
+	s.marks[clientMark].Unlock()
+
+	nChunks := len(data) / maxWriteAtPayload
+	lastSize := len(data) % maxWriteAtPayload
+
+	for i := 0; i < nChunks; i++ {
+		chunk := data[off : off+maxWriteAtPayload]
+		n, code := s.CmdWriteAt(fd, offset+uint64(off), chunk)
+		if code != wsfsprotocol.ErrorOK {
+			return uint64(off), code
+		}
+		off += int(n)
+	}
+
+	if lastSize > 0 {
+		n, code := s.CmdWriteAt(fd, offset+uint64(off), data[off:])
+		if code != wsfsprotocol.ErrorOK {
+			return uint64(off), code
+		}
+		off += int(n)
+	}
+
+	return uint64(off), wsfsprotocol.ErrorOK
 }
 
 func (s *Session) CmdRename(old string, new string, mode uint32) (code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdRename, old, new, mode))
-	code = buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdRename) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdRenameStructToWriter(wsfsprotocol.CmdRenameStruct{OldPath: old, NewPath: new, Flag: mode}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
 	return
 }
 
-func (s *Session) CmdCopyFileRange(wfd1 uint32, wfd2 uint32, off1 uint64, off2 uint64, size uint64) (copyed uint64, code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdCopyFileRange, wfd1, wfd2, off1, off2, size))
-	if !buf.Ensure(9) {
-		buf.Done()
-		bufPool.Put(buf)
+func (s *Session) CmdCopyFileRange(wfd1 uint32, wfd2 uint32, off1 uint64, off2 uint64, size uint64) (copied uint64, code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdCopyFileRange) {
+		s.marks[clientMark].Unlock()
+		return
+	}
+	err := wsfsprotocol.WriteCmdCopyFileRangeStructToWriter(wsfsprotocol.CmdCopyFileRangeStruct{
+		SrcFD: wfd1, DstFD: wfd2, SrcOffset: off1, DstOffset: off2, Size: size,
+	}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+
+	if code != wsfsprotocol.ErrorOK {
+		bufPool.Put(rspBuf)
+		return
+	}
+
+	var rsp wsfsprotocol.RspCopyFileRange
+	err = wsfsprotocol.ReadRspCopyFileRangeFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	bufPool.Put(rspBuf)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to decode CmdCopyFileRange response")
 		return 0, wsfsprotocol.ErrorIO
 	}
-	copyed = buf.ReadU64(2)
-	buf.Done()
-	bufPool.Put(buf)
-	return
+	return rsp.Copied, code
 }
 
-func (s *Session) CmdSetAttrByFD(wfd uint32, flag uint8, fi FileInfo) (code uint8) {
-	buf := s.execCommand(msg(s.newClientMark(), wsfsprotocol.CmdSetAttrByFD, wfd, flag, fi.Size, fi.MTime, fi.Mode, fi.Owner))
-	code = buf.ReadByteAt(1)
-	buf.Done()
-	bufPool.Put(buf)
-	return
-}
+func (s *Session) CmdSetAttrByFD(wfd uint32, flag uint8, fi wsfsprotocol.FileInfo) (code uint8) {
+	clientMark := s.newClientMark()
 
-func GetDirTreeItemAtDepth(tree *DirItem, depth *uint8) *DirItem {
-	for range *depth {
-		tree = &tree.Child[len(tree.Child)-1]
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdSetAttrByFD) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
 	}
-	return tree
-}
-
-func readTree(data *util.Buffer, stack *[]*[]DirItem) (ok bool) {
-	ok = true
-	off := 1
-
-	current := (*stack)[len(*stack)-1]
-	var tmp DirItem
-	for {
-		off += 1
-		if !data.Ensure(off) {
-			break
-		}
-		indicator := uint8(data.ReadByteAt(off))
-
-		switch indicator {
-		case wsfsprotocol.TREEDIR_INDICATOR_ENTER_DIR:
-			(*current)[len(*current)-1].Child = []DirItem{}
-			*stack = append(*stack, &((*current)[len(*current)-1].Child))
-			current = (*stack)[len(*stack)-1]
-			continue
-		case wsfsprotocol.TREEDIR_INDICATOR_END_DIR:
-			*stack = (*stack)[:len(*stack)-1]
-			current = (*stack)[len(*stack)-1]
-			continue
-		case wsfsprotocol.TREEDIR_INDICATOR_END_DIR_WITH_FAIL:
-			*stack = (*stack)[:len(*stack)-1]
-			(*current) = nil
-			current = (*stack)[len(*stack)-1]
-			continue
-		default:
-		}
-
-		off += 1
-		if ok = data.Ensure(off); !ok {
-			break
-		}
-		tmp.Name, ok = data.ReadString(off)
-		if !ok {
-			return
-		}
-		off += len(tmp.Name) + 1
-
-		ok = data.Ensure(off + 20)
-		if !ok {
-			return
-		}
-		tmp.Size = data.ReadU64(off)
-		tmp.MTime = int64(data.ReadU64(off + 8))
-		tmp.Mode = data.ReadU32(off + 8 + 8)
-		tmp.Owner = data.ReadByteAt(off + 8 + 8 + 4)
-		off += 20
-		tmp.Child = nil
-
-		if indicator == wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA {
-			ok = data.Ensure(off + int(tmp.Size))
-			if !ok {
-				return
-			}
-			tmp.Data = data.ReadDataAtLen(off, int(tmp.Size))
-			off += int(tmp.Size)
-		} else {
-			//tmp.Data = nil
-		}
-
-		*current = append(*current, tmp)
+	err := wsfsprotocol.WriteCmdSetAttrByFDStructToWriter(wsfsprotocol.CmdSetAttrByFDStruct{FD: wfd, Flag: flag, FI: fi}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
 	}
 
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
 	return
 }
 
 func (s *Session) CmdTreeDir(path string, depth uint8, hint string) (tree []DirItem, code uint8) {
 	clientMark := s.newClientMark()
-	s.writeRequest <- msg(clientMark, wsfsprotocol.CmdTreeDir, path, depth, hint)
 
-	var rsp *util.Buffer
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdTreeDir) {
+		s.marks[clientMark].Unlock()
+		return nil, wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdTreeDirStructToWriter(wsfsprotocol.CmdTreeDirStruct{Path: path, Depth: depth, Hint: hint}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return nil, wsfsprotocol.ErrorIO
+	}
+
 	tree = append(tree, DirItem{})
-	stack := []*[]DirItem{&tree} // stack store where sub tree should return to
-	for {
-		rsp = <-s.readRequests[clientMark]
+	stack := []*[]DirItem{&tree}
 
-		code = rsp.ReadByteAt(1)
+	for {
+		rsp := <-s.responses[clientMark]
+		code = rsp.Bytes[1]
+
 		if code != wsfsprotocol.ErrorOK &&
 			code != wsfsprotocol.ErrorPartialResponse {
-			rsp.Done()
 			bufPool.Put(rsp)
+			s.marks[clientMark].Unlock()
 			return
 		}
 
-		ok := readTree(rsp, &stack)
-		rsp.Done()
+		ok := readTreeChunk(rsp.Bytes[2:rsp.Writted()], &stack)
 		bufPool.Put(rsp)
 		if !ok {
-			log.Error().Msg("Command response too short")
-			s.clientMarks[clientMark].Unlock()
+			log.Error().Msg("Failed to read tree response")
+			s.marks[clientMark].Unlock()
 			return nil, wsfsprotocol.ErrorIO
 		}
 
 		if code == wsfsprotocol.ErrorPartialResponse {
 			continue
-		} else {
-			break
 		}
+		break
 	}
 
 	if len(tree) != 1 || tree[0].Child == nil {
@@ -616,6 +775,6 @@ func (s *Session) CmdTreeDir(path string, depth uint8, hint string) (tree []DirI
 	}
 	tree = tree[0].Child
 
-	s.clientMarks[clientMark].Unlock()
+	s.marks[clientMark].Unlock()
 	return
 }

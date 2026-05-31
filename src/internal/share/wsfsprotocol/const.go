@@ -3,8 +3,9 @@ package wsfsprotocol
 // There are consts defined by spec
 
 const (
-	MaxCommandLength  int = 8192
-	MaxResponseLength int = MaxCommandLength
+	MaxMsgSize        int = 8192
+	MaxCommandLength  int = MaxMsgSize
+	MaxResponseLength int = MaxMsgSize
 )
 
 const (

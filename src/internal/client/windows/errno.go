@@ -10,6 +10,7 @@ import (
 
 var errorCodeMap = map[uint8]int{
 	wsfsprotocol.ErrorOK:         0,
+	wsfsprotocol.ErrorUnknown:    -fuse.EIO,
 	wsfsprotocol.ErrorAccess:     -fuse.EACCES,
 	wsfsprotocol.ErrorBusy:       -fuse.EBUSY,
 	wsfsprotocol.ErrorExists:     -fuse.EEXIST,

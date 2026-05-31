@@ -1,11 +1,13 @@
 package wsfs
 
 import (
-	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -15,48 +17,49 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+//go:generate go run genCommandCalls.go -- "../../share/wsfsprotocol/const.go" "commandCalls.go" "wsfs"
+
 const (
-	maxFrameSize          = wsfsprotocol.MaxResponseLength
-	maxReadPayLoad uint64 = uint64(maxFrameSize) - 2
+	MaxMsgSize            = wsfsprotocol.MaxMsgSize
+	maxReadPayLoad uint64 = uint64(MaxMsgSize) - 2
 )
 
 var (
 	bufPool = sync.Pool{
 		New: func() any {
-			return util.NewBuffer(maxFrameSize)
+			return util.NewBuffer(MaxMsgSize)
 		},
 	}
 )
 
-func msg(vals ...any) *util.Buffer {
-	buf := bufPool.Get().(*util.Buffer)
-
-	for _, val := range vals {
-		buf.Put(val)
+func (s *session) dispatchCommand(r io.Reader) (err error) {
+	var header [2]byte
+	_, err = io.ReadFull(r, header[:])
+	if err != nil {
+		return fmt.Errorf("bad command header: %e", err)
 	}
-
-	return buf
-}
-
-func (s *session) readAndExec(r io.Reader, writeCh chan<- *util.Buffer) (err error) {
-	var clientMark uint8
-	if err = binary.Read(r, binary.LittleEndian, &clientMark); err != nil {
-		return
+	log.Debug().Uint8("Cm", header[0]).Uint8("Op", header[1]).Msg("Recived commnad")
+	s.doCommandCall(header[0], header[1], r)
+	// coder/websocket requires the current message reader to be drained to EOF
+	// before Reader can be called for the next message.
+	n, err := io.Copy(io.Discard, r)
+	if err != nil {
+		return fmt.Errorf("bad command payload: %w", err)
 	}
-
-	var cmd uint8
-	if err = binary.Read(r, binary.LittleEndian, &cmd); err != nil {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "Bad command format")
-		return
+	if n > 0 {
+		log.Warn().
+			Uint8("Cm", header[0]).
+			Uint8("Op", header[1]).
+			Int64("TrailingBytes", n).
+			Msg("Command payload not fully consumed")
 	}
-
-	//log.Debug().Uint8("Cm", clientMark).Uint8("Op", cmd).Msg("Recived commnad")
-
-	s.wg.Add(1)
-	return s.doCommandCall(clientMark, cmd, r, writeCh)
+	return nil
 }
 
 func osErrCode(err error) uint8 {
+	if code, ok := osErrCode_osOverride(err); ok {
+		return code
+	}
 	if os.IsExist(err) {
 		return wsfsprotocol.ErrorExists
 	} else if os.IsNotExist(err) {
@@ -96,45 +99,48 @@ func (s *session) restrictingSymlinkByFileInfo(base string, fi fs.FileInfo) (fs.
 	}
 }
 
-// base ends with "/"
-func (s *session) sendDirent(clientMark uint8, writeCh chan<- *util.Buffer, base string, dirents []fs.DirEntry, okCode uint8) {
-	rsp := bufPool.Get().(*util.Buffer)
-	rsp.Put(clientMark)
-	rsp.Put(okCode)
-	for _, dirent := range dirents {
-		rsp.Put(dirent.Name())
-		fi, err := dirent.Info()
-		if err == nil && fi.Mode()&fs.ModeSymlink != 0 {
-			fi, err = s.restrictingSymlinkByFileInfo(base, fi)
-		}
+func (s *session) lookupDirent(base string, dirent fs.DirEntry) (wdirent wsfsprotocol.Dirent, err error) {
+	wdirent.Name = dirent.Name()
+	fi, err := dirent.Info()
+	if err != nil {
+		return
+	}
+	if fi.Mode()&fs.ModeSymlink != 0 {
+		fi, err = s.restrictingSymlinkByFileInfo(base, fi)
 		if err != nil {
-			//log.Error().Err(err).Str("File", dirent.Name()).Str("Dir", base).Msg("get file info failed")
-			rsp.Put(uint64(0))
-			rsp.Put(int64(0))
-			rsp.Put(uint32(os.ModeIrregular))
-			rsp.Put(wsfsprotocol.OWNER_NN)
-		} else {
-			rsp.Put(uint64(fi.Size()))
-			rsp.Put(fi.ModTime().Unix())
-			rsp.Put(uint32(fi.Mode()))
-			rsp.Put(s.convOwner(fi))
+			return
 		}
 	}
-	writeCh <- rsp
+	wdirent.Size = uint64(fi.Size())
+	wdirent.MTime = fi.ModTime().Unix()
+	wdirent.Mode = uint32(fi.Mode())
+	wdirent.Owner = s.convOwner(fi)
+	return
 }
 
-func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path string) {
-	defer s.wg.Done()
+func (s *session) getAttrFileInfo(apath string) (fs.FileInfo, error) {
+	fi, err := os.Lstat(apath)
+	if err != nil {
+		return nil, err
+	}
+	if fi.Mode()&fs.ModeSymlink == 0 {
+		return fi, nil
+	}
+	return s.restrictingSymlinkByFileInfo(filepath.Dir(apath)+"/", fi)
+}
+
+func (s *session) cmdReadDir(clientMark uint8, req wsfsprotocol.CmdReadDirStruct) {
+	path := req.Path
 
 	if !util.IsUrlValid(path) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
 	apath := s.storage.Path + path
 
 	f, err := os.Open(apath)
 	if err != nil {
-		writeCh <- msg(clientMark, osErrCode(err), "open dir failed")
+		s.writeRspError(clientMark, osErrCode(err), "open dir failed")
 		return
 	}
 	defer func() {
@@ -143,75 +149,66 @@ func (s *session) cmdReadDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 		}
 	}()
 
-	dirents, err := f.ReadDir(-1)
-	if err != nil {
-		writeCh <- msg(clientMark, osErrCode(err), "read dir failed")
-		return
-	}
-
-	if len(dirents) == 0 {
-		s.sendDirent(clientMark, writeCh, apath, dirents, wsfsprotocol.ErrorOK)
-		return
-	}
-
-	lastIndex := 0
-	msgSize := 2
-	for i, dirent := range dirents {
-		entSize := 0
-		entSize += len(dirent.Name()) + 1
-		entSize += 21
-		if msgSize+entSize > maxFrameSize {
-			if i == len(dirents)-1 {
-				s.sendDirent(clientMark, writeCh, apath, dirents[lastIndex:i], wsfsprotocol.ErrorOK)
-			} else {
-				s.sendDirent(clientMark, writeCh, apath, dirents[lastIndex:i], wsfsprotocol.ErrorPartialResponse)
-			}
-			lastIndex = i
-			msgSize = 2 + entSize
-		} else {
-			msgSize += entSize
+	rsp := bufPool.Get().(*util.Buffer)
+	defer bufPool.Put(rsp)
+	rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
+	for {
+		dirents, readdirerr := f.ReadDir(16)
+		if readdirerr != nil && !errors.Is(readdirerr, io.EOF) {
+			s.writeRspError(clientMark, osErrCode(readdirerr), "read dir failed")
+			break
 		}
-	}
-	if msgSize != 2 {
-		s.sendDirent(clientMark, writeCh, apath, dirents[lastIndex:], wsfsprotocol.ErrorOK)
+
+		for _, dirent := range dirents {
+			wdirent, lookupErr := s.lookupDirent(apath, dirent)
+			if lookupErr != nil {
+				wdirent = wsfsprotocol.Dirent{
+					Name:  dirent.Name(),
+					Mode:  uint32(os.ModeIrregular),
+					Owner: wsfsprotocol.OWNER_NN,
+				}
+			}
+
+			if rsp.Writted()+wsfsprotocol.GetDirentRequiredSize(wdirent) > wsfsprotocol.MaxMsgSize {
+				s.write(rsp.Done())
+				rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
+			}
+			wsfsprotocol.WriteDirentToWriter(wdirent, rsp)
+		}
+
+		if len(dirents) == 0 || errors.Is(readdirerr, io.EOF) {
+			rsp.Bytes[1] = wsfsprotocol.ErrorOK
+			s.write(rsp.Done())
+			break
+		}
 	}
 }
 
-func (s *session) cmdGetAttr(clientMark uint8, writeCh chan<- *util.Buffer, lpath string) {
-	defer s.wg.Done()
+func (s *session) cmdGetAttr(clientMark uint8, req wsfsprotocol.CmdGetAttrStruct) {
+	lpath := req.Path
 
 	if !util.IsUrlValid(lpath) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
 	apath := s.storage.Path + lpath
 
-	rsp := bufPool.Get().(*util.Buffer)
-	fi, err := os.Stat(apath)
+	fi, err := s.getAttrFileInfo(apath)
 	if err != nil {
 		goto BAD
 	}
-
-	rsp.Put(clientMark)
-	rsp.Put(wsfsprotocol.ErrorOK)
-	if fi.Mode()&fs.ModeSymlink != 0 {
-		fi, err = s.restrictingSymlinkByFileInfo(apath, fi)
+	if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+		err = wsfsprotocol.WriteRspGetAttrToWriter(wsfsprotocol.RspGetAttr{FI: wsfsprotocol.FileInfo{
+			Size:  uint64(fi.Size()),
+			MTime: fi.ModTime().Unix(),
+			Mode:  uint32(fi.Mode()),
+			Owner: s.convOwner(fi),
+		}}, s.writer)
+		s.writeDone(err)
 	}
-	if err != nil {
-		goto BAD
-	}
-	rsp.Put(uint64(fi.Size()))
-	rsp.Put(fi.ModTime().Unix())
-	rsp.Put(uint32(fi.Mode()))
-	rsp.Put(s.convOwner(fi))
-	writeCh <- rsp
 	return
 BAD:
-	rsp.Done()
-	rsp.Put(clientMark)
-	rsp.Put(osErrCode(err))
-	rsp.Put("syscall error")
-	writeCh <- rsp
+	s.writeRspError(clientMark, osErrCode(err), "syscall error")
 }
 
 func (s *session) treeADir(depth uint8, path string, hint string,
@@ -247,23 +244,22 @@ func (s *session) treeADir(depth uint8, path string, hint string,
 	}
 }
 
-func (s *session) cmdTreeDir(clientMark uint8, writeCh chan<- *util.Buffer, path string, depth uint8, hint string) {
-	defer s.wg.Done()
+func (s *session) cmdTreeDir(clientMark uint8, req wsfsprotocol.CmdTreeDirStruct) {
+	path, depth, hint := req.Path, req.Depth, req.Hint
 
 	if !util.IsUrlValid(path) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
 	apath := s.storage.Path + path
 
 	rsp := bufPool.Get().(*util.Buffer)
-	rsp.Put(clientMark)
-	rsp.Put(wsfsprotocol.ErrorPartialResponse)
+	rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
 	sendRsp := func() {
-		writeCh <- rsp
+		s.write(rsp.Done())
+		bufPool.Put(rsp)
 		rsp = bufPool.Get().(*util.Buffer)
-		rsp.Put(clientMark)
-		rsp.Put(wsfsprotocol.ErrorPartialResponse)
+		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
 	}
 
 	s.treeADir(depth, apath, hint,
@@ -277,7 +273,7 @@ func (s *session) cmdTreeDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 			if err == nil &&
 				fi.Mode()&fs.ModeSymlink == 0 &&
 				entry.Name() == hint &&
-				2+1+int64(len(entry.Name()))+1+21+fi.Size() <= int64(maxFrameSize) {
+				int64(2+1+wsfsprotocol.GetDirentRequiredSize(wsfsprotocol.Dirent{Name: entry.Name()}))+fi.Size() <= int64(MaxMsgSize) {
 				fileData, err = os.ReadFile(base + entry.Name())
 				if err != nil {
 					fileData = nil
@@ -285,48 +281,44 @@ func (s *session) cmdTreeDir(clientMark uint8, writeCh chan<- *util.Buffer, path
 				}
 			}
 
+			n := wsfsprotocol.GetDirentRequiredSize(wsfsprotocol.Dirent{Name: entry.Name()})
 			if fileData != nil {
-				if rsp.Len()+1+len(entry.Name())+1+21+len(fileData) > maxFrameSize {
+				if rsp.Writted()+1+n+len(fileData) > MaxMsgSize {
 					sendRsp()
 				}
-			} else if rsp.Len()+1+len(entry.Name())+1+21 > maxFrameSize {
+			} else if rsp.Writted()+1+n > MaxMsgSize {
 				sendRsp()
 			}
 
 			if fileData != nil {
-				rsp.Put(wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA)
+				rsp.Write([]byte{wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA})
 			} else {
-				rsp.Put(wsfsprotocol.TREEDIR_INDICATOR_FILE)
+				rsp.Write([]byte{wsfsprotocol.TREEDIR_INDICATOR_FILE})
 			}
 
-			rsp.Put(entry.Name())
+			rsp.Write([]byte(entry.Name()))
+			rsp.Write([]byte{0})
 			if err != nil {
 				//log.Error().Err(err).Str("File", dirent.Name()).Str("Dir", base).Msg("get file info failed")
-				rsp.Put(uint64(0))
-				rsp.Put(int64(0))
-				rsp.Put(uint32(os.ModeIrregular))
-				rsp.Put(wsfsprotocol.OWNER_NN)
+				wsfsprotocol.WriteFileInfoToWriter(wsfsprotocol.FileInfo{Mode: uint32(os.ModeIrregular), Owner: wsfsprotocol.OWNER_NN}, rsp)
 			} else {
-				rsp.Put(uint64(fi.Size()))
-				rsp.Put(fi.ModTime().Unix())
-				rsp.Put(uint32(fi.Mode()))
-				rsp.Put(s.convOwner(fi))
+				wsfsprotocol.WriteFileInfoToWriter(wsfsprotocol.FileInfo{Size: uint64(fi.Size()), MTime: fi.ModTime().Unix(), Mode: uint32(fi.Mode()), Owner: s.convOwner(fi)}, rsp)
 			}
 			if fileData != nil {
-				rsp.Put(fileData)
+				rsp.Write(fileData)
 			}
 		}, func(status uint8) {
-			if rsp.Len()+1 > maxFrameSize {
+			if rsp.Writted()+1 > MaxMsgSize {
 				sendRsp()
 			}
-			rsp.Put(status)
+			rsp.Write([]byte{status})
 		})
 
-	if rsp.Len() != 2 {
-		rsp.ModifyByteAt(1, wsfsprotocol.ErrorOK)
-		writeCh <- rsp
+	if rsp.Writted() != 2 {
+		rsp.Bytes[1] = wsfsprotocol.ErrorOK
+		s.write(rsp.Done())
 	} else {
 		rsp.Done()
-		bufPool.Put(rsp)
 	}
+	bufPool.Put(rsp)
 }

@@ -4,6 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 	"wsfs-core/internal/client/session"
+	"wsfs-core/internal/share/wsfsprotocol"
 )
 
 type dirCache struct {
@@ -17,7 +18,7 @@ type dataCache struct {
 }
 
 type attrCache struct {
-	attr     session.FileInfo
+	attr     wsfsprotocol.FileInfo
 	expireAt time.Time
 }
 
@@ -29,7 +30,7 @@ func subDataCache(pointer *atomic.Pointer[dataCache], data []byte, father *atomi
 	pointer.Store(&dataCache{data: data, expireAt: father.Load().expireAt})
 }
 
-func subAttrCache(pointer *atomic.Pointer[attrCache], attr session.FileInfo, father *atomic.Pointer[dirCache]) {
+func subAttrCache(pointer *atomic.Pointer[attrCache], attr wsfsprotocol.FileInfo, father *atomic.Pointer[dirCache]) {
 	pointer.Store(&attrCache{attr: attr, expireAt: father.Load().expireAt})
 }
 
@@ -37,7 +38,7 @@ func saveDirCache(pointer *atomic.Pointer[dirCache], items []session.DirItem, ex
 	pointer.Store(&dirCache{items: items, expireAt: time.Now().Add(expire)})
 }
 
-func saveAttrCache(pointer *atomic.Pointer[attrCache], attr session.FileInfo, expire time.Duration) {
+func saveAttrCache(pointer *atomic.Pointer[attrCache], attr wsfsprotocol.FileInfo, expire time.Duration) {
 	pointer.Store(&attrCache{attr: attr, expireAt: time.Now().Add(expire)})
 }
 
@@ -87,14 +88,14 @@ func getDataCache(pointer *atomic.Pointer[dataCache]) ([]byte, bool) {
 	return cache.data, true
 }
 
-func getAttrCache(pointer *atomic.Pointer[attrCache]) (session.FileInfo, bool) {
+func getAttrCache(pointer *atomic.Pointer[attrCache]) (wsfsprotocol.FileInfo, bool) {
 	cache := pointer.Load()
 	if cache == nil {
-		return session.FileInfo{}, false
+		return wsfsprotocol.FileInfo{}, false
 	}
 	if cache.expireAt.Before(time.Now()) {
 		pointer.Store(nil)
-		return session.FileInfo{}, false
+		return wsfsprotocol.FileInfo{}, false
 	}
 	return cache.attr, true
 }

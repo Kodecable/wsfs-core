@@ -18,6 +18,7 @@ import (
 var (
 	configPath string
 	noLogTime  bool
+	noLogColor bool
 	logLevel   zerolog.Level = zerolog.InfoLevel
 )
 
@@ -26,7 +27,7 @@ var ServeCmd = &cobra.Command{
 	Short: "Start a Websocket Filesystem server",
 	Args:  cobra.NoArgs,
 	Run: func(_ *cobra.Command, _ []string) {
-		util.SetupZerolog(noLogTime, logLevel)
+		util.SetupZerolog(noLogTime, noLogColor, logLevel)
 
 		config := findAndDecodeConfig()
 
@@ -67,6 +68,7 @@ func init() {
 
 	ServeCmd.Flags().StringVarP(&configPath, "config", "c", iternalDefaultConfigPath, "Path to config file")
 	ServeCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
+	ServeCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
 	ServeCmd.Flags().VarP(
 		enumflag.New(&logLevel, "LEVEL", util.ZerologLevelIds, enumflag.EnumCaseInsensitive),
 		"level", "l",

@@ -22,12 +22,14 @@ import (
 var randomPasswordRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*")
 
 var (
-	uid      uint32
-	gid      uint32
-	otherUid uint32
-	otherGid uint32
-	storage  string
-	logLevel zerolog.Level = zerolog.InfoLevel
+	uid        uint32
+	gid        uint32
+	otherUid   uint32
+	otherGid   uint32
+	storage    string
+	noLogTime  bool
+	noLogColor bool
+	logLevel   zerolog.Level = zerolog.InfoLevel
 )
 
 func exitWithError(code int, msg string, err error) {
@@ -152,7 +154,7 @@ var QuickServeCmd = &cobra.Command{
   wsfs qucik-serve unix://username:password@/run/unix.sock`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(c *cobra.Command, args []string) {
-		util.SetupZerolog(false, logLevel)
+		util.SetupZerolog(noLogTime, noLogColor, logLevel)
 
 		config := serverConfig.Default
 
@@ -200,4 +202,6 @@ func init() {
 	QuickServeCmd.Flags().Uint32VarP(&otherUid, "other-uid", "", 0, "Other uid in filesystem")
 	QuickServeCmd.Flags().Uint32VarP(&otherGid, "other-gid", "", 0, "Other gid in filesystem")
 	QuickServeCmd.Flags().StringVarP(&storage, "storage", "s", "", "Storage path")
+	QuickServeCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
+	QuickServeCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
 }

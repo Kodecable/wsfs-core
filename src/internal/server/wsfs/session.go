@@ -3,6 +3,7 @@ package wsfs
 import (
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"sync/atomic"
 	"wsfs-core/internal/server/storage"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -18,23 +20,56 @@ var (
 )
 
 type session struct {
+	// Lock is an external indicator of whether a session is running.
+	Lock sync.Mutex
+
+	Username string
+	handler  *Handler
+	storage  *storage.Storage
+
 	inactiveCount uint32
-	ConnLock      sync.Mutex
-	handler       *Handler
-	Username      string
-	storage       *storage.Storage
-	fds           sync.Map
-	fdLast        atomic.Uint32
-	wg            sync.WaitGroup
+
+	// this should only be read by write caller
+	// read caller take another copy of conn to make sure independent
+	// so writeLock's holder can set conn to nil to stop incoming write
+	conn      *websocket.Conn
+	writer    io.WriteCloser
+	writeLock sync.Mutex
+
+	remoteAddr string
+
+	connCtx       context.Context
+	connCtxCancel context.CancelFunc
+	connErr       error
+	connErrLock   sync.Mutex
+
+	fds    sync.Map
+	fdLast atomic.Uint32
+
+	cmdGroup    errgroup.Group
+	fastBuffers chan []byte
 }
 
 func newSession(handler *Handler, username string, storage *storage.Storage) *session {
-	return &session{
-		Username: username,
-		handler:  handler,
-		storage:  storage,
-		wg:       sync.WaitGroup{},
+	s := &session{
+		Username:    username,
+		handler:     handler,
+		storage:     storage,
+		fastBuffers: make(chan []byte, 16),
 	}
+	s.cmdGroup.SetLimit(64)
+	for range cap(s.fastBuffers) {
+		s.fastBuffers <- make([]byte, wsfsprotocol.MaxCommandLength)
+	}
+	return s
+}
+
+func (s *session) acquireFastBuffer() []byte {
+	return <-s.fastBuffers
+}
+
+func (s *session) releaseFastBuffer(buf []byte) {
+	s.fastBuffers <- buf[:cap(buf)]
 }
 
 func (s *session) newFD(sfd sfd_t) uint32 {
@@ -50,122 +85,144 @@ func (s *session) newFD(sfd sfd_t) uint32 {
 
 func (s *session) takeConn(conn *websocket.Conn, remoteAddr string) {
 	conn.SetReadLimit(int64(wsfsprotocol.MaxCommandLength))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	writeCh := make(chan *util.Buffer)
-
-	go s.writeLoop(conn, remoteAddr, ctx, cancel, writeCh)
-	go s.readLoop(conn, remoteAddr, ctx, cancel, writeCh)
+	s.conn = conn
+	s.remoteAddr = remoteAddr
+	s.connCtx, s.connCtxCancel = context.WithCancel(context.Background())
+	go s.readLoop(conn)
 }
 
-func (s *session) onLoopExit() {
+func (s *session) stopConn() {
+	s.connCtxCancel()
+	s.writeLock.Lock()
+	conn := s.conn
+	s.conn = nil
+	s.writeLock.Unlock()
+	if conn != nil {
+		_ = conn.CloseNow()
+	}
+	_ = s.cmdGroup.Wait()
+
+	if cs := websocket.CloseStatus(s.connErr); cs != -1 {
+		log.Info().Str("From", s.remoteAddr).Int("CloseStatus", int(cs)).Msg("Disconnected")
+	} else {
+		log.Error().Str("From", s.remoteAddr).Err(s.connErr).Msg("Failed to read/write message")
+	}
+	s.connErrLock.Unlock()
+
 	log.Info().Msg("Session hibernated")
+
 	s.inactiveCount = 0
-	s.ConnLock.Unlock()
+	s.Lock.Unlock()
 }
 
-func (s *session) readLoop(conn *websocket.Conn, remoteAddr string, ctx context.Context, cancel context.CancelFunc, writeCh chan<- *util.Buffer) {
+func (s *session) readLoop(conn *websocket.Conn) {
 	defer func() {
-		// Cancel() can be called multiple times safely.
-		cancel()
+		var err error
+		if err = util.RecoverValue(recover()); err != nil {
+			log.Error().Err(err).Msg("Read loop panic")
+			if s.connErrLock.TryLock() {
+				s.connErr = err
+			}
+		}
+		s.stopConn()
 
-		/*
-			if err := recover(); err != nil {
-				if terr, ok := err.(error); ok {
-					log.Error().Err(terr).Msg("Read loop panic")
-				} else {
-					log.Error().Any("Error", err).Msg("Read loop panic")
-				}
-			}*/
-
-		s.wg.Wait()
-		// Goruntine may write new response to writeCh. In case of write data
-		// to a closed chan and panic, writeCh should be close after wait group
-		// done.
-		close(writeCh)
+		_ = s.cmdGroup.Wait()
 	}()
 
 	for {
-		msgType, reader, err := conn.Reader(ctx)
+		msgType, reader, err := conn.Reader(s.connCtx)
 
 		if err != nil {
-			// If the context is cancelled, errors are already logged in the write loop.
-			if ctx.Err() == nil {
-				if cs := websocket.CloseStatus(err); cs != -1 {
-					log.Info().Int("CloseStatus", int(cs)).Str("From", remoteAddr).Msg("Disconnected")
-				} else {
-					log.Error().Str("From", remoteAddr).Err(err).Msg("Failed to get a reader")
-				}
+			if s.connErrLock.TryLock() {
+				s.connErr = err
 			}
 			return
 		}
 		if msgType != websocket.MessageBinary {
-			log.Warn().Str("From", remoteAddr).Msg("Message type is not binary")
+			log.Warn().Str("From", s.remoteAddr).Msg("Message type is not binary")
 		}
 
-		err = s.readAndExec(reader, writeCh)
+		err = s.dispatchCommand(reader)
 		if err != nil {
-			log.Error().Str("From", remoteAddr).Err(err).Msg("Failed to execute cmd")
+			if s.connErrLock.TryLock() {
+				s.connErr = err
+			}
 			return
 		}
 	}
 }
 
-func (s *session) writeLoop(conn *websocket.Conn, remoteAddr string, ctx context.Context, cancel context.CancelFunc, writeCh <-chan *util.Buffer) {
-	var err error = nil
-	defer func() {
-		// Cancel() can be called multiple times safely.
-		cancel()
-		// Close() will interrupt the read call in the read loop, allowing the
-		// read loop to exit normally, and the documentation does not confirm
-		// whether it is safe to call twice, so it is the job of the write loop
-		// to call. The read loop will test whether the context is canceled to
-		// decide whether to log a warning, so this call should be after the
-		// cancel call.
-		_ = conn.CloseNow()
+func (s *session) requireWrite() (ok bool) {
+	var err error
 
-		if err := recover(); err != nil {
-			if terr, ok := err.(error); ok {
-				log.Error().Err(terr).Msg("Write loop panic")
-			} else {
-				log.Error().Any("Error", err).Msg("Write loop panic")
-			}
-		}
-		// we are not sure it is possible to send msg now, so just drop datas
-		// from writeCh untill it's closed.
-		for {
-			_, ok := <-writeCh
-			if !ok {
-				break
-			}
-		}
-
-		s.onLoopExit()
-	}()
-
-	for {
-		select {
-		case buf, ok := <-writeCh:
-			if !ok {
-				return
-			}
-			//T := buf.Done()
-			//log.Debug().Uint8("Cm", T[0]).Uint8("Sc", T[1]).Msg("Send response")
-			err = conn.Write(ctx, websocket.MessageBinary, buf.Done())
-			bufPool.Put(buf)
-			if err != nil {
-				// If the context is cancelled, errors are already logged in the read loop.
-				if ctx.Err() == nil {
-					if cs := websocket.CloseStatus(err); cs != -1 {
-						log.Info().Int("CloseStatus", int(cs)).Msg("Disconnected")
-					} else {
-						log.Error().Str("From", remoteAddr).Err(err).Msg("Failed to write message")
-					}
-				}
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
+	s.writeLock.Lock()
+	if s.conn == nil {
+		s.writeLock.Unlock()
+		return false
 	}
+
+	s.writer, err = s.conn.Writer(s.connCtx, websocket.MessageBinary)
+
+	if err != nil {
+		if s.connErrLock.TryLock() {
+			s.connErr = err
+		}
+		s.conn = nil
+		s.connCtxCancel()
+		s.writeLock.Unlock()
+		return false
+	}
+	return true
+}
+
+func (s *session) writeDone(err error) {
+	if s.writer != nil {
+		closeErr := s.writer.Close()
+		if err == nil {
+			err = closeErr
+		}
+		s.writer = nil
+	}
+	if err != nil {
+		if s.connErrLock.TryLock() {
+			s.connErr = err
+		}
+		s.conn = nil
+		s.connCtxCancel()
+	}
+	s.writeLock.Unlock()
+}
+
+func (s *session) write(d []byte) {
+	if !s.requireWrite() {
+		return
+	}
+	_, err := s.writer.Write(d)
+	s.writeDone(err)
+}
+
+func (s *session) beginRsp(clientMark uint8, ec uint8) bool {
+	if !s.requireWrite() {
+		return false
+	}
+	_, err := s.writer.Write([]byte{clientMark, ec})
+	if err != nil {
+		s.writeDone(err)
+		return false
+	}
+	return true
+}
+
+func (s *session) writeRspOK(clientMark uint8) {
+	if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+		s.writeDone(nil)
+	}
+}
+
+func (s *session) writeRspError(clientMark uint8, ec uint8, desc string) {
+	if !s.beginRsp(clientMark, ec) {
+		return
+	}
+	err := wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: desc}, s.writer)
+	s.writeDone(err)
 }

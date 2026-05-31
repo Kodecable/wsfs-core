@@ -101,36 +101,37 @@ func (s *session) convOwner(fi os.FileInfo) (ownerInfo uint8) {
 	return
 }
 
-func (s *session) cmdOpen(clientMark uint8, writeCh chan<- *util.Buffer, path string, oflag uint32, fmode uint32) {
-	defer s.wg.Done()
+func (s *session) cmdOpen(clientMark uint8, req wsfsprotocol.CmdOpenStruct) {
 
-	if !util.IsUrlValid(path) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
-	apath := s.storage.Path + path
+	apath := s.storage.Path + req.Path
 
 	var sfd int
 	var err error
 	ignoringEINTR(func() error {
-		sfd, err = syscall.Open(apath, int(oflag), syscallMode(fs.FileMode(fmode)))
+		sfd, err = syscall.Open(apath, int(req.OFlag), syscallMode(fs.FileMode(req.FMode)))
 		return err
 	})
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
 		wfd := s.newFD(sfd_t(sfd))
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, wfd)
+		if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+			err = wsfsprotocol.WriteRspOpenToWriter(wsfsprotocol.RspOpen{FD: wfd}, s.writer)
+			s.writeDone(err)
+		}
 	}
 }
 
-func (s *session) cmdClose(clientMark uint8, writeCh chan<- *util.Buffer, wfd uint32) {
-	defer s.wg.Done()
+func (s *session) cmdClose(clientMark uint8, req wsfsprotocol.CmdCloseStruct) {
 
-	rsfd, ok := s.fds.Load(wfd)
+	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd := rsfd.(sfd_t)
@@ -139,82 +140,73 @@ func (s *session) cmdClose(clientMark uint8, writeCh chan<- *util.Buffer, wfd ui
 	// when close() return EINTR. Linux and AIX typically close the file
 	// descriptor despite interruption, whereas HPUX may keep the descriptor
 	// open.
-	s.fds.Delete(wfd)
+	s.fds.Delete(req.FD)
 	err := syscall.Close(int(sfd))
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		s.writeRspOK(clientMark)
 	}
 }
 
-func readAndSend(clientMark uint8, writeCh chan<- *util.Buffer, fd int, size uint64, okCode uint8) bool {
+func (s *session) readAndSend(clientMark uint8, fd int, size uint64, okCode uint8) bool {
 	buf := bufPool.Get().(*util.Buffer)
-	buf.Put(clientMark)
-	buf.Put(okCode)
-	readed, err := syscall.Read(fd, buf.DirectPutStart(int(size)))
-	buf.DirectPutDone(readed)
+	defer bufPool.Put(buf)
+	buf.Write([]byte{clientMark, okCode})
+	readed, err := syscall.Read(fd, buf.Bytes[buf.Writted():][:int(size)])
+	buf.Grow(readed)
 
 	if err != nil {
-		buf.Done()
-		buf.Put(clientMark)
-		buf.Put(wsfsErrCode(err))
-		buf.Put("syscall error")
-		writeCh <- buf
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 		return false
-	} else {
-		writeCh <- buf
-		return true
 	}
+	s.write(buf.Done())
+	return true
 }
 
-func (s *session) cmdRead(clientMark uint8, writeCh chan<- *util.Buffer, wfd uint32, size uint64) {
-	defer s.wg.Done()
-
-	rsfd, ok := s.fds.Load(wfd)
+func (s *session) cmdRead(clientMark uint8, req wsfsprotocol.CmdReadStruct) {
+	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd := rsfd.(sfd_t)
 
-	if size < maxReadPayLoad {
-		readAndSend(clientMark, writeCh, int(sfd), size, wsfsprotocol.ErrorOK)
+	if req.Size < maxReadPayLoad {
+		s.readAndSend(clientMark, int(sfd), req.Size, wsfsprotocol.ErrorOK)
 	} else {
-		for range size / maxReadPayLoad {
-			ok := readAndSend(clientMark, writeCh, int(sfd), maxReadPayLoad, wsfsprotocol.ErrorPartialResponse)
+		for range req.Size / maxReadPayLoad {
+			ok := s.readAndSend(clientMark, int(sfd), maxReadPayLoad, wsfsprotocol.ErrorPartialResponse)
 			if !ok {
 				return
 			}
 		}
-		if size%maxReadPayLoad == 0 {
-			writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		if req.Size%maxReadPayLoad == 0 {
+			s.writeRspOK(clientMark)
 		} else {
-			readAndSend(clientMark, writeCh, int(sfd), size%maxReadPayLoad, wsfsprotocol.ErrorOK)
+			s.readAndSend(clientMark, int(sfd), req.Size%maxReadPayLoad, wsfsprotocol.ErrorOK)
 		}
 	}
 }
 
-func (s *session) cmdReadLink(clientMark uint8, writeCh chan<- *util.Buffer, lpath string) {
-	defer s.wg.Done()
-
-	if !util.IsUrlValid(lpath) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+func (s *session) cmdReadLink(clientMark uint8, req wsfsprotocol.CmdReadLinkStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
-	apath := s.storage.Path + lpath
+	apath := s.storage.Path + req.Path
 
 	var buf [256]byte
 	var size int
 	var err error
 	ignoringEINTR(func() error {
-		size, err = syscall.Readlink(lpath, buf[:])
+		size, err = syscall.Readlink(apath, buf[:])
 		return err
 	})
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorType, "syscall error")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorType, "syscall error")
 		return
 	}
 	target := string(buf[:size])
@@ -225,40 +217,42 @@ func (s *session) cmdReadLink(clientMark uint8, writeCh chan<- *util.Buffer, lpa
 
 	if strings.HasPrefix(target, s.storage.Path) {
 		target = strings.TrimPrefix(target, s.storage.Path)
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, target)
+		if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+			err = wsfsprotocol.WriteRspReadLinkToWriter(wsfsprotocol.RspReadLink{TargetPath: target}, s.writer)
+			s.writeDone(err)
+		}
 	} else {
 		// we will handle this kind symlinks in getattr and readdir to
 		// prevent escape storage root. So, fake it.
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorType, "syscall error")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorType, "syscall error")
 	}
 }
 
-func (s *session) cmdSeek(clientMark uint8, writeCh chan<- *util.Buffer, wfd uint32, flag uint8, off int64) {
-	defer s.wg.Done()
-
-	rsfd, ok := s.fds.Load(wfd)
+func (s *session) cmdSeek(clientMark uint8, req wsfsprotocol.CmdSeekStruct) {
+	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd := rsfd.(sfd_t)
 
 	// syscall lseek will not return EINTR
-	offset, err := syscall.Seek(int(sfd), off, int(flag))
+	offset, err := syscall.Seek(int(sfd), req.Offset, int(req.Flag))
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, uint64(offset))
+		if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+			err = wsfsprotocol.WriteRspSeekToWriter(wsfsprotocol.RspSeek{Offset: uint64(offset)}, s.writer)
+			s.writeDone(err)
+		}
 	}
 }
 
-func (s *session) cmdWrite(clientMark uint8, writeCh chan<- *util.Buffer, wfd uint32, data *util.Buffer) {
-	defer s.wg.Done()
-
-	rsfd, ok := s.fds.Load(wfd)
+func (s *session) cmdWrite(clientMark uint8, req wsfsprotocol.CmdWriteStruct) {
+	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd := rsfd.(sfd_t)
@@ -266,94 +260,90 @@ func (s *session) cmdWrite(clientMark uint8, writeCh chan<- *util.Buffer, wfd ui
 	var count int
 	var err error
 	ignoringEINTR(func() error {
-		count, err = syscall.Write(int(sfd), data.Done())
+		count, err = syscall.Write(int(sfd), req.Data)
 		return err
 	})
-	bufPool.Put(data)
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, uint64(count))
+		if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+			err = wsfsprotocol.WriteRspWriteToWriter(wsfsprotocol.RspWrite{Written: uint64(count)}, s.writer)
+			s.writeDone(err)
+		}
 	}
 }
 
-func (s *session) cmdAllocate(clientMark uint8, writeCh chan<- *util.Buffer, wfd uint32, flag uint32, off uint64, size uint64) {
-	defer s.wg.Done()
-
-	rsfd, ok := s.fds.Load(wfd)
+func (s *session) cmdAllocate(clientMark uint8, req wsfsprotocol.CmdAllocateStruct) {
+	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd := rsfd.(sfd_t)
 
-	err := fallocate.Fallocate(int(sfd), flag, int64(off), int64(size))
+	err := fallocate.Fallocate(int(sfd), req.Flag, int64(req.Offset), int64(req.Size))
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		s.writeRspOK(clientMark)
 	}
 }
 
-func (s *session) cmdSetAttr(clientMark uint8, writeCh chan<- *util.Buffer, lpath string, flag uint8, size uint64, mtime int64, mode uint32, owner uint8) {
-	defer s.wg.Done()
-
-	if !util.IsUrlValid(lpath) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+func (s *session) cmdSetAttr(clientMark uint8, req wsfsprotocol.CmdSetAttrStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
-	apath := s.storage.Path + lpath
+	apath := s.storage.Path + req.Path
 
-	if flag&wsfsprotocol.SETATTR_SIZE != 0 {
-		err := syscall.Truncate(apath, int64(size))
+	if req.Flag&wsfsprotocol.SETATTR_SIZE != 0 {
+		err := syscall.Truncate(apath, int64(req.FI.Size))
 		if err != nil {
-			writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 			return
 		}
 	}
-	if flag&wsfsprotocol.SETATTR_MTIME != 0 {
+	if req.Flag&wsfsprotocol.SETATTR_MTIME != 0 {
 		err := syscall.Utimes(apath, []syscall.Timeval{
-			{Sec: timeval(mtime), Usec: 0}, // mtime is int32 in 32 bit arch
-			{Sec: timeval(mtime), Usec: 0},
+			{Sec: timeval(req.FI.MTime), Usec: 0}, // mtime is int32 in 32 bit arch
+			{Sec: timeval(req.FI.MTime), Usec: 0},
 		})
 		if err != nil {
-			writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 			return
 		}
 	}
-	if flag&wsfsprotocol.SETATTR_MODE != 0 {
-		err := syscall.Chmod(apath, syscallMode(fs.FileMode(mode)))
+	if req.Flag&wsfsprotocol.SETATTR_MODE != 0 {
+		err := syscall.Chmod(apath, syscallMode(fs.FileMode(req.FI.Mode)))
 		if err != nil {
-			writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 			return
 		}
 	}
-	if flag&wsfsprotocol.SETATTR_OWNER != 0 {
+	if req.Flag&wsfsprotocol.SETATTR_OWNER != 0 {
 		uid := s.handler.suser.OtherUid
 		gid := s.handler.suser.OtherGid
-		if owner&wsfsprotocol.OWNER_UN != 0 {
+		if req.FI.Owner&wsfsprotocol.OWNER_UN != 0 {
 			uid = s.handler.suser.Uid
 		}
-		if owner&wsfsprotocol.OWNER_NG != 0 {
+		if req.FI.Owner&wsfsprotocol.OWNER_NG != 0 {
 			gid = s.handler.suser.Gid
 		}
 		err := syscall.Chown(apath, int(uid), int(gid))
 		if err != nil {
-			writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 			return
 		}
 	}
-	writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+	s.writeRspOK(clientMark)
 }
 
-func (s *session) cmdSync(clientMark uint8, writeCh chan<- *util.Buffer, wfd uint32) {
-	defer s.wg.Done()
-
-	rsfd, ok := s.fds.Load(wfd)
+func (s *session) cmdSync(clientMark uint8, req wsfsprotocol.CmdSyncStruct) {
+	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd := rsfd.(sfd_t)
@@ -361,157 +351,142 @@ func (s *session) cmdSync(clientMark uint8, writeCh chan<- *util.Buffer, wfd uin
 	err := syscall.Fsync(int(sfd))
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		s.writeRspOK(clientMark)
 	}
 }
 
-func (s *session) cmdMkdir(clientMark uint8, writeCh chan<- *util.Buffer, lpath string, mode uint32) {
-	defer s.wg.Done()
-
-	if !util.IsUrlValid(lpath) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+func (s *session) cmdMkdir(clientMark uint8, req wsfsprotocol.CmdMkdirStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
-	apath := s.storage.Path + lpath
+	apath := s.storage.Path + req.Path
 
-	err := syscall.Mkdir(apath, syscallMode(fs.FileMode(mode)))
+	err := syscall.Mkdir(apath, syscallMode(fs.FileMode(req.Mode)))
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		s.writeRspOK(clientMark)
 	}
 }
 
-func (s *session) cmdSymLink(clientMark uint8, writeCh chan<- *util.Buffer, oldPath string, newPath string) {
-	defer s.wg.Done()
-
-	if !util.IsUrlValid(oldPath) || !util.IsUrlValid(newPath) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+func (s *session) cmdSymLink(clientMark uint8, req wsfsprotocol.CmdSymLinkStruct) {
+	if !util.IsUrlValid(req.TargetPath) || !util.IsUrlValid(req.FilePath) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
-	aOldPath := s.storage.Path + oldPath
-	aNewPath := s.storage.Path + newPath
+	aOldPath := s.storage.Path + req.TargetPath
+	aNewPath := s.storage.Path + req.FilePath
 
 	err := syscall.Symlink(aOldPath, aNewPath)
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		s.writeRspOK(clientMark)
 	}
 }
 
-func (s *session) cmdRemove(clientMark uint8, writeCh chan<- *util.Buffer, lpath string) {
-	defer s.wg.Done()
-
-	if !util.IsUrlValid(lpath) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+func (s *session) cmdRemove(clientMark uint8, req wsfsprotocol.CmdRemoveStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
-	apath := s.storage.Path + lpath
+	apath := s.storage.Path + req.Path
 
 	err := syscall.Unlink(apath)
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		s.writeRspOK(clientMark)
 	}
 }
 
-func (s *session) cmdRmDir(clientMark uint8, writeCh chan<- *util.Buffer, lpath string) {
-	defer s.wg.Done()
-
-	if !util.IsUrlValid(lpath) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+func (s *session) cmdRmDir(clientMark uint8, req wsfsprotocol.CmdRmDirStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
-	apath := s.storage.Path + lpath
+	apath := s.storage.Path + req.Path
 
 	err := syscall.Rmdir(apath)
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		s.writeRspOK(clientMark)
 	}
 }
 
-func (s *session) cmdFsStat(clientMark uint8, writeCh chan<- *util.Buffer, lpath string) {
-	defer s.wg.Done()
-
-	if !util.IsUrlValid(lpath) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+func (s *session) cmdFsStat(clientMark uint8, req wsfsprotocol.CmdFsStatStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
-	apath := s.storage.Path + lpath
+	apath := s.storage.Path + req.Path
 
 	total, free, avail, err := util.FsSize(apath)
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, total, free, avail)
+		if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+			err = wsfsprotocol.WriteRspFsStatToWriter(wsfsprotocol.RspFsStat{Total: total, Free: free, Available: avail}, s.writer)
+			s.writeDone(err)
+		}
 	}
 }
 
-func readAtAndSend(clientMark uint8, writeCh chan<- *util.Buffer, fd int, off uint64, size uint64, okCode uint8) (uint64, bool) {
+func (s *session) readAtAndSend(clientMark uint8, fd int, off uint64, size uint64, okCode uint8) (uint64, bool) {
 	buf := bufPool.Get().(*util.Buffer)
-	buf.Put(clientMark)
-	buf.Put(okCode)
-	readed, err := syscall.Pread(fd, buf.DirectPutStart(int(size)), int64(off))
-	buf.DirectPutDone(readed)
+	defer bufPool.Put(buf)
+	buf.Write([]byte{clientMark, okCode})
+	readed, err := syscall.Pread(fd, buf.Bytes[buf.Writted():][:int(size)], int64(off))
+	buf.Grow(readed)
 
 	if err != nil {
-		buf.Done()
-		buf.Put(clientMark)
-		buf.Put(wsfsErrCode(err))
-		buf.Put("syscall error")
-		writeCh <- buf
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 		return 0, false
-	} else {
-		writeCh <- buf
-		return uint64(readed), true
 	}
+	s.write(buf.Done())
+	return uint64(readed), true
 }
 
-func (s *session) cmdReadAt(clientMark uint8, writeCh chan<- *util.Buffer, wfd uint32, off uint64, size uint64) {
-	defer s.wg.Done()
-
-	rsfd, ok := s.fds.Load(wfd)
+func (s *session) cmdReadAt(clientMark uint8, req wsfsprotocol.CmdReadAtStruct) {
+	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd := rsfd.(sfd_t)
+	off := req.Offset
 
-	if size < maxReadPayLoad {
-		readAtAndSend(clientMark, writeCh, int(sfd), off, size, wsfsprotocol.ErrorOK)
+	if req.Size < maxReadPayLoad {
+		s.readAtAndSend(clientMark, int(sfd), off, req.Size, wsfsprotocol.ErrorOK)
 	} else {
-		for range size / maxReadPayLoad {
-			readed, ok := readAtAndSend(clientMark, writeCh, int(sfd), off, maxReadPayLoad, wsfsprotocol.ErrorPartialResponse)
+		for range req.Size / maxReadPayLoad {
+			readed, ok := s.readAtAndSend(clientMark, int(sfd), off, maxReadPayLoad, wsfsprotocol.ErrorPartialResponse)
 			if !ok {
 				return
 			}
 			off += readed
 		}
-		if size%maxReadPayLoad == 0 {
-			writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		if req.Size%maxReadPayLoad == 0 {
+			s.writeRspOK(clientMark)
 		} else {
-			readAtAndSend(clientMark, writeCh, int(sfd), off, size%maxReadPayLoad, wsfsprotocol.ErrorOK)
+			s.readAtAndSend(clientMark, int(sfd), off, req.Size%maxReadPayLoad, wsfsprotocol.ErrorOK)
 		}
 	}
 }
 
-func (s *session) cmdWriteAt(clientMark uint8, writeCh chan<- *util.Buffer, wfd uint32, off uint64, data *util.Buffer) {
-	defer s.wg.Done()
-
-	rsfd, ok := s.fds.Load(wfd)
+func (s *session) cmdWriteAt(clientMark uint8, req wsfsprotocol.CmdWriteAtStruct) {
+	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd := rsfd.(sfd_t)
@@ -519,58 +494,59 @@ func (s *session) cmdWriteAt(clientMark uint8, writeCh chan<- *util.Buffer, wfd 
 	var count int
 	var err error
 	ignoringEINTR(func() error {
-		count, err = syscall.Pwrite(int(sfd), data.Done(), int64(off))
+		count, err = syscall.Pwrite(int(sfd), req.Data, int64(req.Offset))
 		return err
 	})
-	bufPool.Put(data)
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, uint64(count))
+		if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+			err = wsfsprotocol.WriteRspWriteAtToWriter(wsfsprotocol.RspWriteAt{Written: uint64(count)}, s.writer)
+			s.writeDone(err)
+		}
 	}
 }
 
-func (s *session) cmdCopyFileRange(clientMark uint8, writeCh chan<- *util.Buffer, wfd1 uint32, wfd2 uint32, off1 uint64, off2 uint64, size uint64) {
-	defer s.wg.Done()
-
-	rsfd1, ok := s.fds.Load(wfd1)
+func (s *session) cmdCopyFileRange(clientMark uint8, req wsfsprotocol.CmdCopyFileRangeStruct) {
+	rsfd1, ok := s.fds.Load(req.SrcFD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd1 := rsfd1.(sfd_t)
 
-	rsfd2, ok := s.fds.Load(wfd2)
+	rsfd2, ok := s.fds.Load(req.DstFD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd2 := rsfd2.(sfd_t)
 
-	off1i := int64(off1)
-	off2i := int64(off2)
-	writed, err := copyfilerange.CopyFileRange(int(sfd1), &off1i, int(sfd2), &off2i, int(size), 0)
+	off1i := int64(req.SrcOffset)
+	off2i := int64(req.DstOffset)
+	writed, err := copyfilerange.CopyFileRange(int(sfd1), &off1i, int(sfd2), &off2i, int(req.Size), 0)
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK, uint64(writed))
+		if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+			err = wsfsprotocol.WriteRspCopyFileRangeToWriter(wsfsprotocol.RspCopyFileRange{Copied: uint64(writed)}, s.writer)
+			s.writeDone(err)
+		}
 	}
 }
 
-func (s *session) cmdRename(clientMark uint8, writeCh chan<- *util.Buffer, oldPath string, newPath string, flag uint32) {
-	defer s.wg.Done()
-
-	if !util.IsUrlValid(oldPath) || !util.IsUrlValid(newPath) {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+func (s *session) cmdRename(clientMark uint8, req wsfsprotocol.CmdRenameStruct) {
+	if !util.IsUrlValid(req.OldPath) || !util.IsUrlValid(req.NewPath) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
-	aOldPath := s.storage.Path + oldPath
-	aNewPath := s.storage.Path + newPath
+	aOldPath := s.storage.Path + req.OldPath
+	aNewPath := s.storage.Path + req.NewPath
 
 	var err error
-	if flag == 0 {
+	if req.Flag == 0 {
 		err = syscall.Rename(aOldPath, aNewPath)
 	} else {
 		var fd1, fd2 int
@@ -578,7 +554,7 @@ func (s *session) cmdRename(clientMark uint8, writeCh chan<- *util.Buffer, oldPa
 		if err == nil {
 			fd2, err = syscall.Open(filepath.Dir(aNewPath), syscall.O_DIRECTORY, 0)
 			if err == nil {
-				err = renameat2.Renameat2(fd1, aOldPath, fd2, aNewPath, flag)
+				err = renameat2.Renameat2(fd1, aOldPath, fd2, aNewPath, req.Flag)
 				syscall.Close(fd2)
 			}
 			syscall.Close(fd1)
@@ -586,56 +562,58 @@ func (s *session) cmdRename(clientMark uint8, writeCh chan<- *util.Buffer, oldPa
 	}
 
 	if err != nil {
-		writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 	} else {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+		s.writeRspOK(clientMark)
 	}
 }
 
-func (s *session) cmdSetAttrByFD(clientMark uint8, writeCh chan<- *util.Buffer, wfd uint32, flag uint8, size uint64, mtime int64, mode uint32, owner uint8) {
-	defer s.wg.Done()
-
-	rsfd, ok := s.fds.Load(wfd)
+func (s *session) cmdSetAttrByFD(clientMark uint8, req wsfsprotocol.CmdSetAttrByFDStruct) {
+	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		writeCh <- msg(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
 	sfd := rsfd.(sfd_t)
 
-	if flag&wsfsprotocol.SETATTR_SIZE != 0 {
-		err := syscall.Ftruncate(int(sfd), int64(size))
+	if req.Flag&wsfsprotocol.SETATTR_SIZE != 0 {
+		err := syscall.Ftruncate(int(sfd), int64(req.FI.Size))
 		if err != nil {
-			writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
+			return
 		}
 	}
-	if flag&wsfsprotocol.SETATTR_MTIME != 0 {
+	if req.Flag&wsfsprotocol.SETATTR_MTIME != 0 {
 		err := syscall.Futimes(int(sfd), []syscall.Timeval{
-			{Sec: timeval(mtime), Usec: 0},
-			{Sec: timeval(mtime), Usec: 0},
+			{Sec: timeval(req.FI.MTime), Usec: 0},
+			{Sec: timeval(req.FI.MTime), Usec: 0},
 		})
 		if err != nil {
-			writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
+			return
 		}
 	}
-	if flag&wsfsprotocol.SETATTR_MODE != 0 {
-		err := syscall.Fchmod(int(sfd), syscallMode(fs.FileMode(mode)))
+	if req.Flag&wsfsprotocol.SETATTR_MODE != 0 {
+		err := syscall.Fchmod(int(sfd), syscallMode(fs.FileMode(req.FI.Mode)))
 		if err != nil {
-			writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
+			return
 		}
 	}
-	if flag&wsfsprotocol.SETATTR_OWNER != 0 {
+	if req.Flag&wsfsprotocol.SETATTR_OWNER != 0 {
 		uid := s.handler.suser.OtherUid
 		gid := s.handler.suser.OtherGid
-		if owner&wsfsprotocol.OWNER_UN != 0 {
+		if req.FI.Owner&wsfsprotocol.OWNER_UN != 0 {
 			uid = s.handler.suser.Uid
 		}
-		if owner&wsfsprotocol.OWNER_NG != 0 {
+		if req.FI.Owner&wsfsprotocol.OWNER_NG != 0 {
 			gid = s.handler.suser.Gid
 		}
 		err := syscall.Fchown(int(sfd), int(uid), int(gid))
 		if err != nil {
-			writeCh <- msg(clientMark, wsfsErrCode(err), "syscall error")
+			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
+			return
 		}
 	}
-	writeCh <- msg(clientMark, wsfsprotocol.ErrorOK)
+	s.writeRspOK(clientMark)
 }

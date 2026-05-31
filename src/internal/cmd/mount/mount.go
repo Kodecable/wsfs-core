@@ -24,6 +24,7 @@ var (
 	structTimeout    int16
 	directMount      bool
 	noLogTime        bool
+	noLogColor       bool
 	uid              int64
 	gid              int64
 	nobodyUid        int64
@@ -40,7 +41,7 @@ var MountCmd = &cobra.Command{
 	Args: cobra.ExactArgs(2),
 	Run: func(c *cobra.Command, args []string) {
 		setUids(c)
-		util.SetupZerolog(noLogTime, logLevel)
+		util.SetupZerolog(noLogTime, noLogColor, logLevel)
 
 		urlArg := args[0]
 		if ok, _ := regexp.MatchString(`.*:?\/\/`, urlArg); !ok {
@@ -144,6 +145,7 @@ func init() {
 	MountCmd.Flags().Int16VarP(&structTimeout, "struct-timeout", "", 60, "Fuse struct cache timeout in seconds, improves performance and inconsistency")
 	MountCmd.Flags().BoolVarP(&masqueradeAsNtfs, "masquerade-as-ntfs", "", false, "Allow Windows to run executable as administrator (Windows only)")
 	MountCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
+	MountCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
 	MountCmd.Flags().VarP(
 		enumflag.New(&logLevel, "LEVEL", util.ZerologLevelIds, enumflag.EnumCaseInsensitive),
 		"level", "l",
