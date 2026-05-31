@@ -11,6 +11,8 @@ import (
 /*
 Command structs with []byte payload fields:
   - CmdWriteAtStruct
+  - CmdWriteStreamDataStruct
+  - CmdWriteStreamOpenStruct
   - CmdWriteStruct
 */
 
@@ -122,6 +124,14 @@ func GetCmdWriteAtStructRequiredSize(d CmdWriteAtStruct) int {
 	return len(d.Data) + 12
 }
 
+func GetCmdWriteStreamDataStructRequiredSize(d CmdWriteStreamDataStruct) int {
+	return len(d.Data) + 1
+}
+
+func GetCmdWriteStreamOpenStructRequiredSize(d CmdWriteStreamOpenStruct) int {
+	return len(d.Data) + 12
+}
+
 func GetCmdWriteStructRequiredSize(d CmdWriteStruct) int {
 	return len(d.Data) + 4
 }
@@ -223,6 +233,10 @@ func GetRspWriteRequiredSize(d RspWrite) int {
 }
 
 func GetRspWriteAtRequiredSize(d RspWriteAt) int {
+	return 8
+}
+
+func GetRspWriteStreamCloseRequiredSize(d RspWriteStreamClose) int {
 	return 8
 }
 
@@ -541,6 +555,36 @@ func WriteCmdWriteAtStructToWriter(d CmdWriteAtStruct, w io.Writer) error {
 	return nil
 }
 
+func WriteCmdWriteStreamDataStructToWriter(d CmdWriteStreamDataStruct, w io.Writer) error {
+	var buf [1]byte
+	// IsEnd uint8
+	buf[0] = byte(d.IsEnd)
+	// Data []byte
+	if _, err := w.Write(buf[:1]); err != nil {
+		return err
+	}
+	if _, err := w.Write(d.Data); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdWriteStreamOpenStructToWriter(d CmdWriteStreamOpenStruct, w io.Writer) error {
+	var buf [12]byte
+	// FD uint32
+	binary.LittleEndian.PutUint32(buf[0:], uint32(d.FD))
+	// Offset uint64
+	binary.LittleEndian.PutUint64(buf[4:], uint64(d.Offset))
+	// Data []byte
+	if _, err := w.Write(buf[:12]); err != nil {
+		return err
+	}
+	if _, err := w.Write(d.Data); err != nil {
+		return err
+	}
+	return nil
+}
+
 func WriteCmdWriteStructToWriter(d CmdWriteStruct, w io.Writer) error {
 	var buf [4]byte
 	// FD uint32
@@ -751,6 +795,16 @@ func WriteRspWriteToWriter(d RspWrite, w io.Writer) error {
 }
 
 func WriteRspWriteAtToWriter(d RspWriteAt, w io.Writer) error {
+	var buf [8]byte
+	// Written uint64
+	binary.LittleEndian.PutUint64(buf[0:], uint64(d.Written))
+	if _, err := w.Write(buf[:8]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteRspWriteStreamCloseToWriter(d RspWriteStreamClose, w io.Writer) error {
 	var buf [8]byte
 	// Written uint64
 	binary.LittleEndian.PutUint64(buf[0:], uint64(d.Written))
@@ -1032,6 +1086,40 @@ func ReadCmdWriteAtStructFromReader(d *CmdWriteAtStruct, r io.Reader) error {
 	return nil
 }
 
+func ReadCmdWriteStreamDataStructFromReader(d *CmdWriteStreamDataStruct, r io.Reader) error {
+	var buf [1]byte
+	// IsEnd uint8
+	// Data []byte
+	if _, err := io.ReadFull(r, buf[:1]); err != nil {
+		return err
+	}
+	d.IsEnd = (uint8)(buf[0])
+	var err error
+	d.Data, err = io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdWriteStreamOpenStructFromReader(d *CmdWriteStreamOpenStruct, r io.Reader) error {
+	var buf [12]byte
+	// FD uint32
+	// Offset uint64
+	// Data []byte
+	if _, err := io.ReadFull(r, buf[:12]); err != nil {
+		return err
+	}
+	d.FD = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
+	d.Offset = (uint64)(binary.LittleEndian.Uint64(buf[4:]))
+	var err error
+	d.Data, err = io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func ReadCmdWriteStructFromReader(d *CmdWriteStruct, r io.Reader) error {
 	var buf [4]byte
 	// FD uint32
@@ -1252,7 +1340,51 @@ func ReadRspWriteAtFromReader(d *RspWriteAt, r io.Reader) error {
 	return nil
 }
 
+func ReadRspWriteStreamCloseFromReader(d *RspWriteStreamClose, r io.Reader) error {
+	var buf [8]byte
+	// Written uint64
+	if _, err := io.ReadFull(r, buf[:8]); err != nil {
+		return err
+	}
+	d.Written = (uint64)(binary.LittleEndian.Uint64(buf[0:]))
+	return nil
+}
+
 func ReadCmdWriteAtStructFromReaderWithBuffer(d *CmdWriteAtStruct, r io.Reader, dataBuf []byte) error {
+	var buf [12]byte
+	// FD uint32
+	// Offset uint64
+	// Data []byte
+	if _, err := io.ReadFull(r, buf[:12]); err != nil {
+		return err
+	}
+	d.FD = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
+	d.Offset = (uint64)(binary.LittleEndian.Uint64(buf[4:]))
+	var err error
+	d.Data, err = readAllToBuffer(r, dataBuf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdWriteStreamDataStructFromReaderWithBuffer(d *CmdWriteStreamDataStruct, r io.Reader, dataBuf []byte) error {
+	var buf [1]byte
+	// IsEnd uint8
+	// Data []byte
+	if _, err := io.ReadFull(r, buf[:1]); err != nil {
+		return err
+	}
+	d.IsEnd = (uint8)(buf[0])
+	var err error
+	d.Data, err = readAllToBuffer(r, dataBuf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdWriteStreamOpenStructFromReaderWithBuffer(d *CmdWriteStreamOpenStruct, r io.Reader, dataBuf []byte) error {
 	var buf [12]byte
 	// FD uint32
 	// Offset uint64

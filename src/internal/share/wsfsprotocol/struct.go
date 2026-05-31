@@ -133,6 +133,17 @@ type CmdTreeDirStruct struct {
 	Hint  string
 }
 
+type CmdWriteStreamOpenStruct struct {
+	FD     uint32
+	Offset uint64
+	Data   []byte
+}
+
+type CmdWriteStreamDataStruct struct {
+	IsEnd uint8
+	Data  []byte
+}
+
 type RspError struct {
 	Desc string
 }
@@ -205,4 +216,8 @@ type RspSetAttrByFD struct{}
 
 type RspTreeDir struct {
 	Data []byte
+}
+
+type RspWriteStreamClose struct {
+	Written uint64
 }

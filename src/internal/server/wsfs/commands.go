@@ -322,3 +322,56 @@ func (s *session) cmdTreeDir(clientMark uint8, req wsfsprotocol.CmdTreeDirStruct
 	}
 	bufPool.Put(rsp)
 }
+
+func (s *session) cmdWriteStreamOpen(clientMark uint8, req wsfsprotocol.CmdWriteStreamOpenStruct) {
+	stream := &writeStreamState{
+		offset: req.Offset,
+	}
+	if _, loaded := s.writeStreams.LoadOrStore(clientMark, stream); loaded {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "write stream already open")
+		return
+	}
+
+	if rsfd, ok := s.fds.Load(req.FD); ok {
+		stream.fd = rsfd.(sfd_t)
+	} else {
+		s.markWriteStreamError(clientMark, stream, wsfsprotocol.ErrorInvailFD, "bad fd")
+	}
+
+	if len(req.Data) > 0 {
+		s.writeStreamChunk(clientMark, stream, req.Data)
+	}
+}
+
+func (s *session) cmdWriteStreamData(clientMark uint8, req wsfsprotocol.CmdWriteStreamDataStruct) {
+	stream, ok := s.loadWriteStream(clientMark)
+	if !ok {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "write stream not open")
+		return
+	}
+
+	if len(req.Data) > 0 {
+		s.writeStreamChunk(clientMark, stream, req.Data)
+	}
+
+	if req.IsEnd != 0 {
+		s.writeStreams.Delete(clientMark)
+		s.writeRspWriteStreamClose(clientMark, stream.written)
+	}
+}
+
+func (s *session) markWriteStreamError(clientMark uint8, stream *writeStreamState, code uint8, desc string) {
+	if stream.writeErrSent {
+		return
+	}
+	stream.writeErrSent = true
+	s.writeRspError(clientMark, code, desc)
+}
+
+func (s *session) writeRspWriteStreamClose(clientMark uint8, written uint64) {
+	if !s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+		return
+	}
+	err := wsfsprotocol.WriteRspWriteStreamCloseToWriter(wsfsprotocol.RspWriteStreamClose{Written: written}, s.writer)
+	s.writeDone(err)
+}

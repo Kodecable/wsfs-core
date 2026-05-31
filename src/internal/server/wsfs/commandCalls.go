@@ -256,6 +256,28 @@ func (s *session) doCommandCall(clientMark, cmd uint8, r io.Reader) {
 			return nil
 		})
 		return
+	case wsfsprotocol.CmdWriteStreamOpen:
+		var req wsfsprotocol.CmdWriteStreamOpenStruct
+		dataBuf := s.acquireFastBuffer()
+		err := wsfsprotocol.ReadCmdWriteStreamOpenStructFromReaderWithBuffer(&req, r, dataBuf)
+		if err != nil {
+			s.releaseFastBuffer(dataBuf)
+			goto BadCmdFormat
+		}
+		s.cmdWriteStreamOpen(clientMark, req)
+		s.releaseFastBuffer(dataBuf)
+		return
+	case wsfsprotocol.CmdWriteStreamData:
+		var req wsfsprotocol.CmdWriteStreamDataStruct
+		dataBuf := s.acquireFastBuffer()
+		err := wsfsprotocol.ReadCmdWriteStreamDataStructFromReaderWithBuffer(&req, r, dataBuf)
+		if err != nil {
+			s.releaseFastBuffer(dataBuf)
+			goto BadCmdFormat
+		}
+		s.cmdWriteStreamData(clientMark, req)
+		s.releaseFastBuffer(dataBuf)
+		return
 	default:
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "Unknown command")
 	}

@@ -43,8 +43,9 @@ type session struct {
 	connErr       error
 	connErrLock   sync.Mutex
 
-	fds    sync.Map
-	fdLast atomic.Uint32
+	fds          sync.Map
+	fdLast       atomic.Uint32
+	writeStreams sync.Map
 
 	cmdGroup    errgroup.Group
 	fastBuffers chan []byte
@@ -101,6 +102,7 @@ func (s *session) stopConn() {
 		_ = conn.CloseNow()
 	}
 	_ = s.cmdGroup.Wait()
+	s.clearWriteStreams()
 
 	if cs := websocket.CloseStatus(s.connErr); cs != -1 {
 		log.Info().Str("From", s.remoteAddr).Int("CloseStatus", int(cs)).Msg("Disconnected")
@@ -113,6 +115,28 @@ func (s *session) stopConn() {
 
 	s.inactiveCount = 0
 	s.Lock.Unlock()
+}
+
+func (s *session) clearWriteStreams() {
+	s.writeStreams.Range(func(key, _ any) bool {
+		s.writeStreams.Delete(key)
+		return true
+	})
+}
+
+type writeStreamState struct {
+	fd           sfd_t
+	offset       uint64
+	written      uint64
+	writeErrSent bool
+}
+
+func (s *session) loadWriteStream(clientMark uint8) (*writeStreamState, bool) {
+	v, ok := s.writeStreams.Load(clientMark)
+	if !ok {
+		return nil, false
+	}
+	return v.(*writeStreamState), true
 }
 
 func (s *session) readLoop(conn *websocket.Conn) {

@@ -33,6 +33,15 @@ func readDirents(data []byte) ([]wsfsprotocol.Dirent, error) {
 	return items, nil
 }
 
+func readRspErrorDesc(data []byte) string {
+	var rsp wsfsprotocol.RspError
+	if err := wsfsprotocol.ReadRspErrorFromReader(&rsp, bytes.NewReader(data)); err != nil {
+		log.Error().Err(err).Msg("Failed to decode error response")
+		return ""
+	}
+	return rsp.Desc
+}
+
 func readTreeChunk(data []byte, stack *[]*[]DirItem) (ok bool) {
 	r := bytes.NewReader(data)
 	current := (*stack)[len(*stack)-1]
@@ -592,9 +601,9 @@ func (s *Session) CmdReadAt(fd uint32, offset uint64, dest []byte) (uint64, uint
 const maxWriteAtPayload int = maxFrameSize - 14 // header(2) + FD(4) + Offset(8)
 
 func (s *Session) CmdWriteAt(fd uint32, offset uint64, data []byte) (written uint64, code uint8) {
-	clientMark := s.newClientMark()
-
 	if len(data) <= maxWriteAtPayload {
+		clientMark := s.newClientMark()
+
 		if !s.beginRequest(clientMark, wsfsprotocol.CmdWriteAt) {
 			s.marks[clientMark].Unlock()
 			return 0, wsfsprotocol.ErrorIO
@@ -625,30 +634,21 @@ func (s *Session) CmdWriteAt(fd uint32, offset uint64, data []byte) (written uin
 		return rsp.Written, code
 	}
 
-	var off int
-	s.marks[clientMark].Unlock()
-
-	nChunks := len(data) / maxWriteAtPayload
-	lastSize := len(data) % maxWriteAtPayload
-
-	for i := 0; i < nChunks; i++ {
-		chunk := data[off : off+maxWriteAtPayload]
-		n, code := s.CmdWriteAt(fd, offset+uint64(off), chunk)
-		if code != wsfsprotocol.ErrorOK {
-			return uint64(off), code
-		}
-		off += int(n)
+	stream, err := s.OpenWriteStream(fd, offset, data)
+	if err != nil {
+		return 0, wsfsprotocol.ErrorIO
+	}
+	written, code, _ = stream.Close(nil)
+	if code != wsfsprotocol.ErrorOK {
+		return written, code
 	}
 
-	if lastSize > 0 {
-		n, code := s.CmdWriteAt(fd, offset+uint64(off), data[off:])
-		if code != wsfsprotocol.ErrorOK {
-			return uint64(off), code
-		}
-		off += int(n)
+	writeErrCode, _ := stream.WriteError()
+	if writeErrCode != 0 {
+		return written, writeErrCode
 	}
 
-	return uint64(off), wsfsprotocol.ErrorOK
+	return written, wsfsprotocol.ErrorOK
 }
 
 func (s *Session) CmdRename(old string, new string, mode uint32) (code uint8) {

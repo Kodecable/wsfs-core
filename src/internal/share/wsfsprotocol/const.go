@@ -9,28 +9,30 @@ const (
 )
 
 const (
-	CmdOpen          uint8 = 1
-	CmdClose         uint8 = 2
-	CmdRead          uint8 = 3
-	CmdReadDir       uint8 = 4
-	CmdReadLink      uint8 = 5
-	CmdWrite         uint8 = 6
-	CmdSeek          uint8 = 7
-	CmdAllocate      uint8 = 8
-	CmdGetAttr       uint8 = 9
-	CmdSetAttr       uint8 = 10
-	CmdSync          uint8 = 11
-	CmdMkdir         uint8 = 12
-	CmdSymLink       uint8 = 13
-	CmdRemove        uint8 = 14
-	CmdRmDir         uint8 = 15
-	CmdFsStat        uint8 = 16
-	CmdReadAt        uint8 = 17
-	CmdWriteAt       uint8 = 18
-	CmdCopyFileRange uint8 = 19
-	CmdRename        uint8 = 20
-	CmdSetAttrByFD   uint8 = 21
-	CmdTreeDir       uint8 = 22
+	CmdOpen            uint8 = 1
+	CmdClose           uint8 = 2
+	CmdRead            uint8 = 3
+	CmdReadDir         uint8 = 4
+	CmdReadLink        uint8 = 5
+	CmdWrite           uint8 = 6
+	CmdSeek            uint8 = 7
+	CmdAllocate        uint8 = 8
+	CmdGetAttr         uint8 = 9
+	CmdSetAttr         uint8 = 10
+	CmdSync            uint8 = 11
+	CmdMkdir           uint8 = 12
+	CmdSymLink         uint8 = 13
+	CmdRemove          uint8 = 14
+	CmdRmDir           uint8 = 15
+	CmdFsStat          uint8 = 16
+	CmdReadAt          uint8 = 17
+	CmdWriteAt         uint8 = 18
+	CmdCopyFileRange   uint8 = 19
+	CmdRename          uint8 = 20
+	CmdSetAttrByFD     uint8 = 21
+	CmdTreeDir         uint8 = 22
+	CmdWriteStreamOpen uint8 = 23
+	CmdWriteStreamData uint8 = 24
 )
 
 const (

@@ -16,6 +16,8 @@ import (
 /*
 Command structs with []byte payload fields:
   - CmdWriteAtStruct
+  - CmdWriteStreamDataStruct
+  - CmdWriteStreamOpenStruct
   - CmdWriteStruct
 */
 
@@ -127,6 +129,14 @@ func GetCmdWriteAtStructRequiredSize(d CmdWriteAtStruct) int {
 	return len(d.Data) + 12
 }
 
+func GetCmdWriteStreamDataStructRequiredSize(d CmdWriteStreamDataStruct) int {
+	return len(d.Data) + 1
+}
+
+func GetCmdWriteStreamOpenStructRequiredSize(d CmdWriteStreamOpenStruct) int {
+	return len(d.Data) + 12
+}
+
 func GetCmdWriteStructRequiredSize(d CmdWriteStruct) int {
 	return len(d.Data) + 4
 }
@@ -228,6 +238,10 @@ func GetRspWriteRequiredSize(d RspWrite) int {
 }
 
 func GetRspWriteAtRequiredSize(d RspWriteAt) int {
+	return 8
+}
+
+func GetRspWriteStreamCloseRequiredSize(d RspWriteStreamClose) int {
 	return 8
 }
 
@@ -548,6 +562,34 @@ func WriteCmdWriteAtStructToWriter(d CmdWriteAtStruct, w io.Writer) error {
 	return nil
 }
 
+func WriteCmdWriteStreamDataStructToWriter(d CmdWriteStreamDataStruct, w io.Writer) error {
+	// IsEnd uint8
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.IsEnd)), 1)); err != nil {
+		return err
+	}
+	// Data []byte
+	if _, err := w.Write(d.Data); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdWriteStreamOpenStructToWriter(d CmdWriteStreamOpenStruct, w io.Writer) error {
+	// FD uint32
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.FD)), 4)); err != nil {
+		return err
+	}
+	// Offset uint64
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Offset)), 8)); err != nil {
+		return err
+	}
+	// Data []byte
+	if _, err := w.Write(d.Data); err != nil {
+		return err
+	}
+	return nil
+}
+
 func WriteCmdWriteStructToWriter(d CmdWriteStruct, w io.Writer) error {
 	// FD uint32
 	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.FD)), 4)); err != nil {
@@ -758,6 +800,14 @@ func WriteRspWriteToWriter(d RspWrite, w io.Writer) error {
 }
 
 func WriteRspWriteAtToWriter(d RspWriteAt, w io.Writer) error {
+	// Written uint64
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Written)), 8)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteRspWriteStreamCloseToWriter(d RspWriteStreamClose, w io.Writer) error {
 	// Written uint64
 	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Written)), 8)); err != nil {
 		return err
@@ -1039,6 +1089,38 @@ func ReadCmdWriteAtStructFromReader(d *CmdWriteAtStruct, r io.Reader) error {
 	return nil
 }
 
+func ReadCmdWriteStreamDataStructFromReader(d *CmdWriteStreamDataStruct, r io.Reader) error {
+	// IsEnd uint8
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.IsEnd)), 1)); err != nil {
+		return err
+	}
+	// Data []byte
+	var err error
+	d.Data, err = io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdWriteStreamOpenStructFromReader(d *CmdWriteStreamOpenStruct, r io.Reader) error {
+	// FD uint32
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.FD)), 4)); err != nil {
+		return err
+	}
+	// Offset uint64
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Offset)), 8)); err != nil {
+		return err
+	}
+	// Data []byte
+	var err error
+	d.Data, err = io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func ReadCmdWriteStructFromReader(d *CmdWriteStruct, r io.Reader) error {
 	// FD uint32
 	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.FD)), 4)); err != nil {
@@ -1257,7 +1339,47 @@ func ReadRspWriteAtFromReader(d *RspWriteAt, r io.Reader) error {
 	return nil
 }
 
+func ReadRspWriteStreamCloseFromReader(d *RspWriteStreamClose, r io.Reader) error {
+	// Written uint64
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Written)), 8)); err != nil {
+		return err
+	}
+	return nil
+}
+
 func ReadCmdWriteAtStructFromReaderWithBuffer(d *CmdWriteAtStruct, r io.Reader, dataBuf []byte) error {
+	// FD uint32
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.FD)), 4)); err != nil {
+		return err
+	}
+	// Offset uint64
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Offset)), 8)); err != nil {
+		return err
+	}
+	// Data []byte
+	var err error
+	d.Data, err = readAllToBuffer(r, dataBuf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdWriteStreamDataStructFromReaderWithBuffer(d *CmdWriteStreamDataStruct, r io.Reader, dataBuf []byte) error {
+	// IsEnd uint8
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.IsEnd)), 1)); err != nil {
+		return err
+	}
+	// Data []byte
+	var err error
+	d.Data, err = readAllToBuffer(r, dataBuf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdWriteStreamOpenStructFromReaderWithBuffer(d *CmdWriteStreamOpenStruct, r io.Reader, dataBuf []byte) error {
 	// FD uint32
 	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.FD)), 4)); err != nil {
 		return err
