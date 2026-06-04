@@ -3,7 +3,9 @@ package cases
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -53,6 +55,8 @@ func All() []harness.Case {
 		testCase{name: "create_and_read_symlink", run: createAndReadSymlink},
 		testCase{name: "read_file_via_symlink", run: readFileViaSymlink},
 		testCase{name: "many_small_random_writes", run: manySmallRandomWrites},
+		testCase{name: "interleaved_random_rw_8x64mib", run: interleavedRandomReadWrite8x64MiB},
+		testCase{name: "random_readdir_walk_deep_fanout", prepare: prepareRandomReaddirWalkDeepFanout, run: randomReaddirWalkDeepFanout},
 		testCase{name: "write_large_file_cross_message_boundary", run: writeLargeFileCrossMessageBoundary},
 	}
 }
@@ -601,6 +605,229 @@ func manySmallRandomWrites(_ context.Context, env *harness.Env) error {
 	return nil
 }
 
+func interleavedRandomReadWrite8x64MiB(_ context.Context, env *harness.Env) error {
+	const (
+		fileCount       = 8
+		fileSize  int64 = 64 << 20
+		ops             = 320
+		maxRWSize       = 256 << 10
+	)
+
+	refDir := filepath.Join(env.CaseRoot, "reference-rw")
+	if err := os.MkdirAll(refDir, 0o755); err != nil {
+		return err
+	}
+
+	type filePair struct {
+		name    string
+		mount   *os.File
+		ref     *os.File
+		backend string
+	}
+
+	files := make([]filePair, 0, fileCount)
+	for i := range fileCount {
+		name := fmt.Sprintf("blob-%02d.bin", i)
+		mountPath := filepath.Join(env.MountDir, name)
+		refPath := filepath.Join(refDir, name)
+
+		mountFile, err := os.OpenFile(mountPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
+		if err != nil {
+			return err
+		}
+		refFile, err := os.OpenFile(refPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
+		if err != nil {
+			_ = mountFile.Close()
+			return err
+		}
+		if err := mountFile.Truncate(fileSize); err != nil {
+			_ = mountFile.Close()
+			_ = refFile.Close()
+			return err
+		}
+		if err := refFile.Truncate(fileSize); err != nil {
+			_ = mountFile.Close()
+			_ = refFile.Close()
+			return err
+		}
+		files = append(files, filePair{
+			name:    name,
+			mount:   mountFile,
+			ref:     refFile,
+			backend: filepath.Join(env.BackendDir, name),
+		})
+	}
+	defer func() {
+		for _, f := range files {
+			_ = f.mount.Close()
+			_ = f.ref.Close()
+		}
+	}()
+
+	rng := rand.New(rand.NewSource(64))
+	for op := range ops {
+		pair := &files[rng.Intn(len(files))]
+		size := rng.Intn(maxRWSize) + 1
+		off := rng.Int63n(fileSize - int64(size) + 1)
+
+		if op%3 == 0 {
+			want := make([]byte, size)
+			got := make([]byte, size)
+			nRef, err := pair.ref.ReadAt(want, off)
+			if err != nil && err != io.EOF {
+				return err
+			}
+			nMount, err := pair.mount.ReadAt(got, off)
+			if err != nil && err != io.EOF {
+				return err
+			}
+			if nRef != nMount || !bytes.Equal(got[:nMount], want[:nRef]) {
+				return fmt.Errorf("random read mismatch file=%s off=%d size=%d", pair.name, off, size)
+			}
+			continue
+		}
+
+		chunk := make([]byte, size)
+		if _, err := rng.Read(chunk); err != nil {
+			return err
+		}
+		if _, err := pair.ref.WriteAt(chunk, off); err != nil {
+			return err
+		}
+		if _, err := pair.mount.WriteAt(chunk, off); err != nil {
+			return err
+		}
+	}
+
+	for _, pair := range files {
+		if err := pair.mount.Sync(); err != nil {
+			return err
+		}
+		if err := pair.ref.Sync(); err != nil {
+			return err
+		}
+		if err := pair.mount.Close(); err != nil {
+			return err
+		}
+		pair.mount = nil
+		if err := pair.ref.Close(); err != nil {
+			return err
+		}
+		pair.ref = nil
+
+		refPath := filepath.Join(refDir, pair.name)
+		mountPath := filepath.Join(env.MountDir, pair.name)
+		if err := assertFilesEqual(mountPath, refPath); err != nil {
+			return fmt.Errorf("mount file mismatch for %s: %w", pair.name, err)
+		}
+		if err := assertFilesEqual(pair.backend, refPath); err != nil {
+			return fmt.Errorf("backend file mismatch for %s: %w", pair.name, err)
+		}
+	}
+
+	return nil
+}
+
+func prepareRandomReaddirWalkDeepFanout(env *harness.Env) error {
+	counts := []int{16, 32, 64, 128, 256, 800, 1200, 1600}
+	for rootIdx, count := range counts {
+		root := filepath.Join(env.BackendDir, fmt.Sprintf("walk-root-%02d", rootIdx))
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return err
+		}
+		current := root
+		for depth := 1; depth <= 6; depth++ {
+			for i := range count {
+				name := fmt.Sprintf("f-%d-%04d.dat", depth, i)
+				payload := []byte(fmt.Sprintf("root=%d depth=%d file=%d", rootIdx, depth, i))
+				if err := os.WriteFile(filepath.Join(current, name), payload, 0o644); err != nil {
+					return err
+				}
+			}
+			nextName := fmt.Sprintf("level-%d", depth)
+			next := filepath.Join(current, nextName)
+			if err := os.Mkdir(next, 0o755); err != nil {
+				return err
+			}
+			current = next
+		}
+	}
+	return nil
+}
+
+func randomReaddirWalkDeepFanout(_ context.Context, env *harness.Env) error {
+	rng := rand.New(rand.NewSource(1600))
+	roots := make([]string, 8)
+	for i := range roots {
+		roots[i] = fmt.Sprintf("walk-root-%02d", i)
+	}
+
+	compareDir := func(rel string) error {
+		mountNames, err := harness.SortedNames(filepath.Join(env.MountDir, rel))
+		if err != nil {
+			return err
+		}
+		backendNames, err := harness.SortedNames(filepath.Join(env.BackendDir, rel))
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(mountNames, backendNames) {
+			return fmt.Errorf("readdir mismatch at %s: got %d entries want %d", rel, len(mountNames), len(backendNames))
+		}
+		return nil
+	}
+
+	if err := compareDir("."); err != nil {
+		return err
+	}
+
+	for walk := 0; walk < 8; walk++ {
+		rel := roots[walk]
+		if err := compareDir(rel); err != nil {
+			return err
+		}
+		for step := 0; step < 32; step++ {
+			entries, err := os.ReadDir(filepath.Join(env.BackendDir, rel))
+			if err != nil {
+				return err
+			}
+			if len(entries) == 0 {
+				break
+			}
+
+			entry := entries[rng.Intn(len(entries))]
+			if entry.IsDir() {
+				rel = filepath.Join(rel, entry.Name())
+				if err := compareDir(rel); err != nil {
+					return err
+				}
+				continue
+			}
+
+			mountData, err := os.ReadFile(filepath.Join(env.MountDir, rel, entry.Name()))
+			if err != nil {
+				return err
+			}
+			backendData, err := os.ReadFile(filepath.Join(env.BackendDir, rel, entry.Name()))
+			if err != nil {
+				return err
+			}
+			if !bytes.Equal(mountData, backendData) {
+				return fmt.Errorf("file content mismatch at %s", filepath.Join(rel, entry.Name()))
+			}
+
+			for rel != roots[walk] && rng.Intn(3) == 0 {
+				rel = filepath.Dir(rel)
+				if err := compareDir(rel); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 func writeLargeFileCrossMessageBoundary(_ context.Context, env *harness.Env) error {
 	path := filepath.Join(env.MountDir, "large.bin")
 	payload := make([]byte, 20000)
@@ -627,6 +854,49 @@ func writeLargeFileCrossMessageBoundary(_ context.Context, env *harness.Env) err
 		return fmt.Errorf("large mount readback mismatch")
 	}
 	return nil
+}
+
+func assertFilesEqual(gotPath, wantPath string) error {
+	gotInfo, err := os.Stat(gotPath)
+	if err != nil {
+		return err
+	}
+	wantInfo, err := os.Stat(wantPath)
+	if err != nil {
+		return err
+	}
+	if gotInfo.Size() != wantInfo.Size() {
+		return fmt.Errorf("size mismatch: got %d want %d", gotInfo.Size(), wantInfo.Size())
+	}
+
+	gotHash, err := fileSHA256(gotPath)
+	if err != nil {
+		return err
+	}
+	wantHash, err := fileSHA256(wantPath)
+	if err != nil {
+		return err
+	}
+	if gotHash != wantHash {
+		return fmt.Errorf("sha256 mismatch")
+	}
+	return nil
+}
+
+func fileSHA256(path string) ([32]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return [32]byte{}, err
+	}
+	var sum [32]byte
+	copy(sum[:], h.Sum(nil))
+	return sum, nil
 }
 
 func Names() []string {

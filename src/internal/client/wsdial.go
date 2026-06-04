@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"wsfs-core/internal/share/wsfsprotocol"
 
 	"github.com/coder/websocket"
 )
@@ -73,6 +74,6 @@ func wsdial(urlStr string, requestHeader http.Header) (*websocket.Conn, *http.Re
 			Transport: transport,
 		},
 		HTTPHeader:   requestHeader,
-		Subprotocols: []string{"WSFS/draft.2"},
+		Subprotocols: []string{wsfsprotocol.WSSubprotocol},
 	})
 }

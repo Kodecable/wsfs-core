@@ -44,24 +44,27 @@ func saveAttrCache(pointer *atomic.Pointer[attrCache], attr wsfsprotocol.FileInf
 
 // if ok is false, cache is expired
 // if not found, return empty(invaild) DirItem which have a empty name
-func lookupDirCache(pointer *atomic.Pointer[dirCache], name string) (fi session.DirItem, delta time.Duration, ok bool) {
+// lookupDirCache returns a pointer to the DirItem in the cache so that
+// callers can wait on childReady and observe Child mutations performed
+// by the background goroutine in CmdReadDirPlus.
+func lookupDirCache(pointer *atomic.Pointer[dirCache], name string) (fi *session.DirItem, delta time.Duration, ok bool) {
 	cache := pointer.Load()
 	if cache == nil || cache.items == nil {
-		return session.DirItem{}, zeroTimeDuration, false
+		return nil, zeroTimeDuration, false
 	}
 
 	delta = time.Until(cache.expireAt)
 	if delta < 0 {
 		pointer.Store(nil)
-		return session.DirItem{}, zeroTimeDuration, false
+		return nil, zeroTimeDuration, false
 	}
 
-	for _, item := range cache.items {
-		if item.Name == name {
-			return item, delta, true
+	for i := range cache.items {
+		if cache.items[i].Name == name {
+			return &cache.items[i], delta, true
 		}
 	}
-	return session.DirItem{}, delta, true
+	return nil, delta, true
 }
 
 func getDirCache(pointer *atomic.Pointer[dirCache]) ([]session.DirItem, bool) {

@@ -5,6 +5,7 @@ package windows
 import (
 	"wsfs-core/internal/share/wsfsprotocol"
 
+	"github.com/rs/zerolog/log"
 	"github.com/winfsp/cgofuse/fuse"
 )
 
@@ -24,4 +25,12 @@ var errorCodeMap = map[uint8]int{
 	wsfsprotocol.ErrorType:       -fuse.ENOTDIR,
 	wsfsprotocol.ErrorIO:         -fuse.EIO,
 	wsfsprotocol.ErrorNotSupport: -fuse.ENOTSUP,
+}
+
+func errnoFromCode(code uint8) int {
+	if errno, ok := errorCodeMap[code]; ok {
+		return errno
+	}
+	log.Error().Uint8("Code", code).Msg("Unknown WSFS error code")
+	return -fuse.EIO
 }

@@ -217,7 +217,7 @@ func (s *Session) readLoop(conn *websocket.Conn) {
 			log.Error().Msg("Bad message, too short")
 			continue
 		}
-		log.Debug().Uint8("Cm", buf.Bytes[0]).Uint8("Ec", buf.Bytes[1]).Msg("Recived response")
+		//log.Debug().Uint8("Cm", buf.Bytes[0]).Uint8("Ec", buf.Bytes[1]).Msg("Recived response")
 
 		clientMark := buf.Bytes[0]
 		s.responses[clientMark] <- buf

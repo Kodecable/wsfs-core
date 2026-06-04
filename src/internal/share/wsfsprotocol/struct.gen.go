@@ -72,6 +72,10 @@ func GetCmdReadAtStructRequiredSize(d CmdReadAtStruct) int {
 	return 20
 }
 
+func GetCmdReadDirPlusStructRequiredSize(d CmdReadDirPlusStruct) int {
+	return len(d.Path) + 1
+}
+
 func GetCmdReadDirStructRequiredSize(d CmdReadDirStruct) int {
 	return len(d.Path) + 1
 }
@@ -114,10 +118,6 @@ func GetCmdSymLinkStructRequiredSize(d CmdSymLinkStruct) int {
 
 func GetCmdSyncStructRequiredSize(d CmdSyncStruct) int {
 	return 4
-}
-
-func GetCmdTreeDirStructRequiredSize(d CmdTreeDirStruct) int {
-	return len(d.Path) + len(d.Hint) + 3
 }
 
 func GetCmdWriteAtStructRequiredSize(d CmdWriteAtStruct) int {
@@ -222,10 +222,6 @@ func GetRspSymLinkRequiredSize(d RspSymLink) int {
 
 func GetRspSyncRequiredSize(d RspSync) int {
 	return 0
-}
-
-func GetRspTreeDirRequiredSize(d RspTreeDir) int {
-	return len(d.Data) + 0
 }
 
 func GetRspWriteRequiredSize(d RspWrite) int {
@@ -351,6 +347,17 @@ func WriteCmdReadAtStructToWriter(d CmdReadAtStruct, w io.Writer) error {
 	// Size uint64
 	binary.LittleEndian.PutUint64(buf[12:], uint64(d.Size))
 	if _, err := w.Write(buf[:20]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdReadDirPlusStructToWriter(d CmdReadDirPlusStruct, w io.Writer) error {
+	// Path string
+	if _, err := w.Write([]byte(d.Path)); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte{0}); err != nil {
 		return err
 	}
 	return nil
@@ -510,30 +517,6 @@ func WriteCmdSyncStructToWriter(d CmdSyncStruct, w io.Writer) error {
 	// FD uint32
 	binary.LittleEndian.PutUint32(buf[0:], uint32(d.FD))
 	if _, err := w.Write(buf[:4]); err != nil {
-		return err
-	}
-	return nil
-}
-
-func WriteCmdTreeDirStructToWriter(d CmdTreeDirStruct, w io.Writer) error {
-	var buf [1]byte
-	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
-		return err
-	}
-	// Depth uint8
-	buf[0] = byte(d.Depth)
-	// Hint string
-	if _, err := w.Write(buf[:1]); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte(d.Hint)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
 		return err
 	}
 	return nil
@@ -776,14 +759,6 @@ func WriteRspSyncToWriter(d RspSync, w io.Writer) error {
 	return nil
 }
 
-func WriteRspTreeDirToWriter(d RspTreeDir, w io.Writer) error {
-	// Data []byte
-	if _, err := w.Write(d.Data); err != nil {
-		return err
-	}
-	return nil
-}
-
 func WriteRspWriteToWriter(d RspWrite, w io.Writer) error {
 	var buf [8]byte
 	// Written uint64
@@ -918,6 +893,14 @@ func ReadCmdReadAtStructFromReader(d *CmdReadAtStruct, r io.Reader) error {
 	return nil
 }
 
+func ReadCmdReadDirPlusStructFromReader(d *CmdReadDirPlusStruct, r io.Reader) error {
+	// Path string
+	if err := CopyStrFromReader(r, &d.Path); err != nil {
+		return err
+	}
+	return nil
+}
+
 func ReadCmdReadDirStructFromReader(d *CmdReadDirStruct, r io.Reader) error {
 	// Path string
 	if err := CopyStrFromReader(r, &d.Path); err != nil {
@@ -1047,24 +1030,6 @@ func ReadCmdSyncStructFromReader(d *CmdSyncStruct, r io.Reader) error {
 		return err
 	}
 	d.FD = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
-	return nil
-}
-
-func ReadCmdTreeDirStructFromReader(d *CmdTreeDirStruct, r io.Reader) error {
-	var buf [1]byte
-	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
-		return err
-	}
-	// Depth uint8
-	// Hint string
-	if _, err := io.ReadFull(r, buf[:1]); err != nil {
-		return err
-	}
-	d.Depth = (uint8)(buf[0])
-	if err := CopyStrFromReader(r, &d.Hint); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1310,16 +1275,6 @@ func ReadRspSyncFromReader(d *RspSync, r io.Reader) error {
 	return nil
 }
 
-func ReadRspTreeDirFromReader(d *RspTreeDir, r io.Reader) error {
-	// Data []byte
-	var err error
-	d.Data, err = io.ReadAll(r)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func ReadRspWriteFromReader(d *RspWrite, r io.Reader) error {
 	var buf [8]byte
 	// Written uint64
@@ -1439,16 +1394,6 @@ func ReadRspReadAtFromReaderWithBuffer(d *RspReadAt, r io.Reader, dataBuf []byte
 }
 
 func ReadRspReadDirFromReaderWithBuffer(d *RspReadDir, r io.Reader, dataBuf []byte) error {
-	// Data []byte
-	var err error
-	d.Data, err = readAllToBuffer(r, dataBuf)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func ReadRspTreeDirFromReaderWithBuffer(d *RspTreeDir, r io.Reader, dataBuf []byte) error {
 	// Data []byte
 	var err error
 	d.Data, err = readAllToBuffer(r, dataBuf)

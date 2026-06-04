@@ -63,11 +63,13 @@ The current suite focuses on high-value mount semantics:
 - truncate shrink and expand
 - `ReadAt` and `WriteAt`
 - large file reads and writes across message boundaries
+- interleaved random reads and writes across 8 x 64 MiB files
 - root and nested directory visibility
 - rename and remove visibility
 - `getattr` after write and rename
 - symlink creation, `readlink`, and reading through symlinks
 - many small random writes
+- random directory walks across 6-level deep trees with 16 to 1600 entries per level
 
 These cases are designed to detect regressions in:
 

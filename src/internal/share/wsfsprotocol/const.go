@@ -6,6 +6,7 @@ const (
 	MaxMsgSize        int = 8192
 	MaxCommandLength  int = MaxMsgSize
 	MaxResponseLength int = MaxMsgSize
+	WSSubprotocol         = "WSFS/draft.3"
 )
 
 const (
@@ -30,7 +31,7 @@ const (
 	CmdCopyFileRange   uint8 = 19
 	CmdRename          uint8 = 20
 	CmdSetAttrByFD     uint8 = 21
-	CmdTreeDir         uint8 = 22
+	CmdReadDirPlus     uint8 = 22
 	CmdWriteStreamOpen uint8 = 23
 	CmdWriteStreamData uint8 = 24
 )
@@ -98,9 +99,7 @@ const (
 )
 
 const (
-	TREEDIR_INDICATOR_FILE              uint8 = 0
-	TREEDIR_INDICATOR_FILE_WITH_DATA    uint8 = 1
-	TREEDIR_INDICATOR_ENTER_DIR         uint8 = 2
-	TREEDIR_INDICATOR_END_DIR           uint8 = 3
-	TREEDIR_INDICATOR_END_DIR_WITH_FAIL uint8 = 4
+	READDIRPLUS_INDICATOR_CONTINUE      uint8 = 1
+	READDIRPLUS_INDICATOR_PREFETCH      uint8 = 2
+	READDIRPLUS_INDICATOR_PREFETCH_SKIP uint8 = 3
 )

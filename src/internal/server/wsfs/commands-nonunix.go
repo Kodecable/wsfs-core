@@ -55,7 +55,7 @@ func (s *session) cmdClose(clientMark uint8, req wsfsprotocol.CmdCloseStruct) {
 
 func (s *session) readAndSend(clientMark uint8, fd *os.File, size uint64, okCode uint8) bool {
 	buf := bufPool.Get().(*util.Buffer)
-	defer bufPool.Put(buf)
+	defer putBuf(buf)
 	buf.Write([]byte{clientMark, okCode})
 	readed, err := fd.Read(buf.Bytes[buf.Writted():][:int(size)])
 	buf.Grow(readed)
@@ -236,7 +236,7 @@ func (s *session) cmdRmDir(clientMark uint8, req wsfsprotocol.CmdRmDirStruct) {
 
 func (s *session) readAtAndSend(clientMark uint8, fd *os.File, off uint64, size uint64, okCode uint8) (uint64, bool) {
 	buf := bufPool.Get().(*util.Buffer)
-	defer bufPool.Put(buf)
+	defer putBuf(buf)
 	buf.Write([]byte{clientMark, okCode})
 	readed, err := fd.ReadAt(buf.Bytes[buf.Writted():][:int(size)], int64(off))
 	buf.Grow(readed)

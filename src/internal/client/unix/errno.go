@@ -5,10 +5,13 @@ package unix
 import (
 	"syscall"
 	"wsfs-core/internal/share/wsfsprotocol"
+
+	"github.com/rs/zerolog/log"
 )
 
 var errorCodeMap = map[uint8]syscall.Errno{
 	wsfsprotocol.ErrorOK:         syscall.Errno(0),
+	wsfsprotocol.ErrorUnknown:    syscall.EIO,
 	wsfsprotocol.ErrorAccess:     syscall.EACCES,
 	wsfsprotocol.ErrorBusy:       syscall.EBUSY,
 	wsfsprotocol.ErrorExists:     syscall.EEXIST,
@@ -23,4 +26,12 @@ var errorCodeMap = map[uint8]syscall.Errno{
 	wsfsprotocol.ErrorIO:         syscall.EIO,
 	wsfsprotocol.ErrorNotSupport: syscall.ENOTSUP,
 	//syscall.EMLINK:       wsfsprotocol.ErrorLinkMax,
+}
+
+func errnoFromCode(code uint8) syscall.Errno {
+	if errno, ok := errorCodeMap[code]; ok {
+		return errno
+	}
+	log.Error().Uint8("Code", code).Msg("Unknown WSFS error code")
+	return syscall.EIO
 }

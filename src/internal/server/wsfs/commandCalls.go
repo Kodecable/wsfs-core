@@ -245,14 +245,14 @@ func (s *session) doCommandCall(clientMark, cmd uint8, r io.Reader) {
 			return nil
 		})
 		return
-	case wsfsprotocol.CmdTreeDir:
-		var req wsfsprotocol.CmdTreeDirStruct
-		err := wsfsprotocol.ReadCmdTreeDirStructFromReader(&req, r)
+	case wsfsprotocol.CmdReadDirPlus:
+		var req wsfsprotocol.CmdReadDirPlusStruct
+		err := wsfsprotocol.ReadCmdReadDirPlusStructFromReader(&req, r)
 		if err != nil {
 			goto BadCmdFormat
 		}
 		s.cmdGroup.Go(func() error {
-			s.cmdTreeDir(clientMark, req)
+			s.cmdReadDirPlus(clientMark, req)
 			return nil
 		})
 		return

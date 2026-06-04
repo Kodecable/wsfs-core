@@ -32,13 +32,18 @@ var (
 	}
 )
 
+func putBuf(buf *util.Buffer) {
+	buf.Reset()
+	bufPool.Put(buf)
+}
+
 func (s *session) dispatchCommand(r io.Reader) (err error) {
 	var header [2]byte
 	_, err = io.ReadFull(r, header[:])
 	if err != nil {
 		return fmt.Errorf("bad command header: %e", err)
 	}
-	log.Debug().Uint8("Cm", header[0]).Uint8("Op", header[1]).Msg("Recived commnad")
+	//log.Debug().Uint8("Cm", header[0]).Uint8("Op", header[1]).Msg("Recived commnad")
 	s.doCommandCall(header[0], header[1], r)
 	// coder/websocket requires the current message reader to be drained to EOF
 	// before Reader can be called for the next message.
@@ -150,7 +155,7 @@ func (s *session) cmdReadDir(clientMark uint8, req wsfsprotocol.CmdReadDirStruct
 	}()
 
 	rsp := bufPool.Get().(*util.Buffer)
-	defer bufPool.Put(rsp)
+	defer putBuf(rsp)
 	rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
 	for {
 		dirents, readdirerr := f.ReadDir(16)
@@ -211,41 +216,137 @@ BAD:
 	s.writeRspError(clientMark, osErrCode(err), "syscall error")
 }
 
-func (s *session) treeADir(depth uint8, path string, hint string,
-	writeEntry func(base string, entry fs.DirEntry, hint string),
-	writeIndicator func(status uint8)) {
-	f, err := os.Open(path)
+func (s *session) lookupDirentSafe(apath string, entry fs.DirEntry) wsfsprotocol.Dirent {
+	wdirent, err := s.lookupDirent(apath, entry)
 	if err != nil {
-		return
-	}
-
-	dirents, err := f.ReadDir(-1)
-	if err != nil {
-		f.Close()
-		return
-	}
-
-	writeIndicator(wsfsprotocol.TREEDIR_INDICATOR_ENTER_DIR)
-	if len(dirents) == 0 {
-		writeIndicator(wsfsprotocol.TREEDIR_INDICATOR_END_DIR)
-		return
-	}
-
-	for _, dirent := range dirents {
-		writeEntry(path, dirent, hint)
-		if dirent.IsDir() && depth > 0 {
-			s.treeADir(depth-1, path+dirent.Name()+"/", hint, writeEntry, writeIndicator)
+		return wsfsprotocol.Dirent{
+			Name:  entry.Name(),
+			Mode:  uint32(os.ModeIrregular),
+			Owner: wsfsprotocol.OWNER_NN,
 		}
 	}
-	writeIndicator(wsfsprotocol.TREEDIR_INDICATOR_END_DIR)
+	return wdirent
+}
 
-	if f.Close() != nil {
-		log.Error().Err(err).Str("Path", path).Msg("close dir failed")
+func (s *session) writeDirentChunk(rsp *util.Buffer, clientMark uint8, wdirent wsfsprotocol.Dirent) {
+	requiredSize := 1 + wsfsprotocol.GetDirentRequiredSize(wdirent)
+	if rsp.Writted()+requiredSize > MaxMsgSize {
+		s.write(rsp.Done())
+		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
+	}
+	rsp.Write([]byte{wsfsprotocol.READDIRPLUS_INDICATOR_CONTINUE})
+	wsfsprotocol.WriteDirentToWriter(wdirent, rsp)
+}
+
+func (s *session) writePrefetchFirstDirentChunk(rsp *util.Buffer, clientMark uint8, childName string, wdirent wsfsprotocol.Dirent) {
+	requiredSize := 1 + len(childName) + 1 + wsfsprotocol.GetDirentRequiredSize(wdirent)
+	if rsp.Writted()+requiredSize > MaxMsgSize {
+		s.write(rsp.Done())
+		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
+	}
+	rsp.Write([]byte{wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH})
+	rsp.Write([]byte(childName))
+	rsp.Write([]byte{0})
+	wsfsprotocol.WriteDirentToWriter(wdirent, rsp)
+}
+
+func (s *session) writePrefetchSkipFirstDirentChunk(rsp *util.Buffer, clientMark uint8, childName string, wdirent wsfsprotocol.Dirent) {
+	requiredSize := 1 + len(childName) + 1 + wsfsprotocol.GetDirentRequiredSize(wdirent)
+	if rsp.Writted()+requiredSize > MaxMsgSize {
+		s.write(rsp.Done())
+		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
+	}
+	rsp.Write([]byte{wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH_SKIP})
+	rsp.Write([]byte(childName))
+	rsp.Write([]byte{0})
+	wsfsprotocol.WriteDirentToWriter(wdirent, rsp)
+}
+
+type prefetchDirState struct {
+	name        string
+	absPath     string
+	file        *os.File
+	pending     []fs.DirEntry
+	count       int
+	firstDirent wsfsprotocol.Dirent
+}
+
+func (s *session) preparePrefetchDir(basePath string, entry fs.DirEntry) (*prefetchDirState, error) {
+	childAbsPath := basePath + entry.Name() + "/"
+	cf, err := os.Open(childAbsPath)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, readErr := cf.ReadDir(16)
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		cf.Close()
+		return nil, readErr
+	}
+	if len(entries) == 0 {
+		cf.Close()
+		return nil, nil
+	}
+
+	return &prefetchDirState{
+		name:        entry.Name(),
+		absPath:     childAbsPath,
+		file:        cf,
+		pending:     entries[1:],
+		count:       1,
+		firstDirent: s.lookupDirentSafe(childAbsPath, entries[0]),
+	}, nil
+}
+
+func (s *session) nextPrefetchDir(first []fs.DirEntry, basePath string, start int, used *int) (*prefetchDirState, int, error) {
+	for i := start; i < len(first); i++ {
+		if *used >= maxPrefetchDirs {
+			return nil, i, nil
+		}
+		if !first[i].IsDir() {
+			continue
+		}
+		*used++
+		state, err := s.preparePrefetchDir(basePath, first[i])
+		if err != nil || state == nil {
+			continue
+		}
+		return state, i + 1, nil
+	}
+	return nil, len(first), nil
+}
+
+func (s *session) streamPrefetchDir(rsp *util.Buffer, clientMark uint8, state *prefetchDirState) (failed bool) {
+	defer state.file.Close()
+
+	for {
+		for _, entry := range state.pending {
+			state.count++
+			if state.count > maxPrefetchDirEntries {
+				return true
+			}
+			s.writeDirentChunk(rsp, clientMark, s.lookupDirentSafe(state.absPath, entry))
+		}
+
+		entries, err := state.file.ReadDir(16)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return false
+			}
+			return true
+		}
+		state.pending = entries
 	}
 }
 
-func (s *session) cmdTreeDir(clientMark uint8, req wsfsprotocol.CmdTreeDirStruct) {
-	path, depth, hint := req.Path, req.Depth, req.Hint
+const (
+	maxRootEntriesForPrefetch = 500
+	maxPrefetchDirEntries     = 1000
+	maxPrefetchDirs           = 32
+)
+
+func (s *session) cmdReadDirPlus(clientMark uint8, req wsfsprotocol.CmdReadDirPlusStruct) {
+	path := req.Path
 
 	if !util.IsUrlValid(path) {
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
@@ -253,74 +354,89 @@ func (s *session) cmdTreeDir(clientMark uint8, req wsfsprotocol.CmdTreeDirStruct
 	}
 	apath := s.storage.Path + path
 
+	f, err := os.Open(apath)
+	if err != nil {
+		s.writeRspError(clientMark, osErrCode(err), "open dir failed")
+		return
+	}
+	defer f.Close()
+
+	// 探测根目录是否超出 prefetch 门槛；ROOT 结果始终完整返回。
+	first, err := f.ReadDir(maxRootEntriesForPrefetch + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		s.writeRspError(clientMark, osErrCode(err), "read dir failed")
+		return
+	}
+	disablePrefetch := len(first) > maxRootEntriesForPrefetch
+
+	// 发送第一批 ROOT 条目
 	rsp := bufPool.Get().(*util.Buffer)
 	rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
-	sendRsp := func() {
-		s.write(rsp.Done())
-		bufPool.Put(rsp)
-		rsp = bufPool.Get().(*util.Buffer)
-		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
+	for _, entry := range first {
+		s.writeDirentChunk(rsp, clientMark, s.lookupDirentSafe(apath, entry))
 	}
 
-	s.treeADir(depth, apath, hint,
-		func(base string, entry fs.DirEntry, hint string) {
-			fi, err := entry.Info()
-			if err == nil && fi.Mode()&fs.ModeSymlink != 0 {
-				fi, err = s.restrictingSymlinkByFileInfo(base, fi)
-			}
+	// 继续读剩余 ROOT 条目
+	for {
+		more, err := f.ReadDir(16)
+		for _, entry := range more {
+			s.writeDirentChunk(rsp, clientMark, s.lookupDirentSafe(apath, entry))
+		}
+		if err != nil && !errors.Is(err, io.EOF) {
+			putBuf(rsp)
+			s.writeRspError(clientMark, osErrCode(err), "read dir failed")
+			return
+		}
+		if errors.Is(err, io.EOF) || len(more) == 0 {
+			break
+		}
+	}
 
-			var fileData []byte = nil
-			if err == nil &&
-				fi.Mode()&fs.ModeSymlink == 0 &&
-				entry.Name() == hint &&
-				int64(2+1+wsfsprotocol.GetDirentRequiredSize(wsfsprotocol.Dirent{Name: entry.Name()}))+fi.Size() <= int64(MaxMsgSize) {
-				fileData, err = os.ReadFile(base + entry.Name())
-				if err != nil {
-					fileData = nil
-					err = nil
-				}
-			}
-
-			n := wsfsprotocol.GetDirentRequiredSize(wsfsprotocol.Dirent{Name: entry.Name()})
-			if fileData != nil {
-				if rsp.Writted()+1+n+len(fileData) > MaxMsgSize {
-					sendRsp()
-				}
-			} else if rsp.Writted()+1+n > MaxMsgSize {
-				sendRsp()
-			}
-
-			if fileData != nil {
-				rsp.Write([]byte{wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA})
-			} else {
-				rsp.Write([]byte{wsfsprotocol.TREEDIR_INDICATOR_FILE})
-			}
-
-			rsp.Write([]byte(entry.Name()))
-			rsp.Write([]byte{0})
-			if err != nil {
-				//log.Error().Err(err).Str("File", dirent.Name()).Str("Dir", base).Msg("get file info failed")
-				wsfsprotocol.WriteFileInfoToWriter(wsfsprotocol.FileInfo{Mode: uint32(os.ModeIrregular), Owner: wsfsprotocol.OWNER_NN}, rsp)
-			} else {
-				wsfsprotocol.WriteFileInfoToWriter(wsfsprotocol.FileInfo{Size: uint64(fi.Size()), MTime: fi.ModTime().Unix(), Mode: uint32(fi.Mode()), Owner: s.convOwner(fi)}, rsp)
-			}
-			if fileData != nil {
-				rsp.Write(fileData)
-			}
-		}, func(status uint8) {
-			if rsp.Writted()+1 > MaxMsgSize {
-				sendRsp()
-			}
-			rsp.Write([]byte{status})
-		})
-
-	if rsp.Writted() != 2 {
+	// 结束 ROOT 段
+	if disablePrefetch {
 		rsp.Bytes[1] = wsfsprotocol.ErrorOK
 		s.write(rsp.Done())
-	} else {
-		rsp.Done()
+		putBuf(rsp)
+		return
 	}
-	bufPool.Put(rsp)
+	s.write(rsp.Done())
+	putBuf(rsp)
+
+	// Prefetch 子目录
+	prefetchCount := 0
+	for idx := 0; idx < len(first) && prefetchCount < maxPrefetchDirs; {
+		state, nextIdx, err := s.nextPrefetchDir(first, apath, idx, &prefetchCount)
+		idx = nextIdx
+		if err != nil || state == nil {
+			continue
+		}
+
+		rsp := bufPool.Get().(*util.Buffer)
+		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
+		s.writePrefetchFirstDirentChunk(rsp, clientMark, state.name, state.firstDirent)
+
+		for {
+			if !s.streamPrefetchDir(rsp, clientMark, state) {
+				s.write(rsp.Done())
+				putBuf(rsp)
+				break
+			}
+
+			nextState, newIdx, err := s.nextPrefetchDir(first, apath, idx, &prefetchCount)
+			idx = newIdx
+			if err != nil || nextState == nil {
+				putBuf(rsp)
+				s.writeRspError(clientMark, wsfsprotocol.ErrorIO, "read prefetch dir failed")
+				return
+			}
+
+			s.writePrefetchSkipFirstDirentChunk(rsp, clientMark, nextState.name, nextState.firstDirent)
+			state = nextState
+		}
+	}
+
+	// 最终 ErrorOK
+	s.writeRspOK(clientMark)
 }
 
 func (s *session) cmdWriteStreamOpen(clientMark uint8, req wsfsprotocol.CmdWriteStreamOpenStruct) {

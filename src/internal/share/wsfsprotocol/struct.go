@@ -127,10 +127,8 @@ type CmdSetAttrByFDStruct struct {
 	FI   FileInfo
 }
 
-type CmdTreeDirStruct struct {
-	Path  string
-	Depth uint8
-	Hint  string
+type CmdReadDirPlusStruct struct {
+	Path string
 }
 
 type CmdWriteStreamOpenStruct struct {
@@ -214,9 +212,6 @@ type RspRename struct{}
 
 type RspSetAttrByFD struct{}
 
-type RspTreeDir struct {
-	Data []byte
-}
 
 type RspWriteStreamClose struct {
 	Written uint64

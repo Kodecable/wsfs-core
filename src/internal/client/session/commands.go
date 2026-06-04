@@ -2,7 +2,7 @@ package session
 
 import (
 	"bytes"
-	"io"
+	"os"
 	"wsfs-core/internal/share/wsfsprotocol"
 
 	"github.com/rs/zerolog/log"
@@ -16,21 +16,44 @@ type DirItem struct {
 	Owner uint8
 	Child []DirItem
 	Data  []byte
+
+	// childReady is non-nil iff this entry has an asynchronous CmdReadDirPlus
+	// prefetch result pending. Readers block on this channel before using
+	// Child; the background goroutine closes it once the final Child state is
+	// known.
+	//
+	// Child semantics after childReady is closed:
+	//   nil             - no cached result, fall back to network
+	//   []DirItem{}     - cached empty directory result
+	//   []DirItem{...}  - cached non-empty directory result
+	childReady chan struct{}
+}
+
+// WaitPrefetch blocks until the background goroutine has finished resolving
+// this entry's prefetched Child state.
+func (d *DirItem) WaitPrefetch() {
+	if d.childReady != nil {
+		<-d.childReady
+	}
+}
+
+// PrefetchReady returns the channel closed when this entry's pending prefetch
+// result is resolved, or nil if there is no pending prefetch.
+func (d DirItem) PrefetchReady() <-chan struct{} {
+	return d.childReady
 }
 
 const maxWritePayload int = maxFrameSize - 6 // header(2) + FD(4)
 
-func readDirents(data []byte) ([]wsfsprotocol.Dirent, error) {
-	r := bytes.NewReader(data)
-	var items []wsfsprotocol.Dirent
+func appendDirItemsFromReader(list []DirItem, r *bytes.Reader) ([]DirItem, error) {
 	for r.Len() > 0 {
 		var ent wsfsprotocol.Dirent
 		if err := wsfsprotocol.ReadDirentFromReader(&ent, r); err != nil {
-			return nil, err
+			return list, err
 		}
-		items = append(items, ent)
+		list = append(list, makeDirItemFromDirent(&ent))
 	}
-	return items, nil
+	return list, nil
 }
 
 func readRspErrorDesc(data []byte) string {
@@ -42,53 +65,251 @@ func readRspErrorDesc(data []byte) string {
 	return rsp.Desc
 }
 
-func readTreeChunk(data []byte, stack *[]*[]DirItem) (ok bool) {
-	r := bytes.NewReader(data)
-	current := (*stack)[len(*stack)-1]
+const (
+	sectionRoot     = 0
+	sectionPrefetch = 1
+)
 
-	for r.Len() > 0 {
-		indicator, err := r.ReadByte()
-		if err != nil {
-			return false
+type readDirPlusResult struct {
+	list []DirItem
+	code uint8
+}
+
+func makeDirItemFromDirent(d *wsfsprotocol.Dirent) DirItem {
+	return DirItem{
+		Name:  d.Name,
+		Size:  d.Size,
+		MTime: d.MTime,
+		Mode:  d.Mode,
+		Owner: d.Owner,
+	}
+}
+
+func isDirMode(mode uint32) bool {
+	return mode&uint32(os.ModeDir) != 0
+}
+
+// setChild populates list[idx].Child with a cached directory result and closes
+// childReady so waiters can observe the final Child value.
+func setChild(list []DirItem, childMap map[string]int, childName string, items []DirItem) {
+	if idx, ok := childMap[childName]; ok {
+		if items == nil {
+			items = []DirItem{}
 		}
+		list[idx].Child = items
+		close(list[idx].childReady)
+		delete(childMap, childName)
+	}
+}
 
-		switch indicator {
-		case wsfsprotocol.TREEDIR_INDICATOR_ENTER_DIR:
-			(*current)[len(*current)-1].Child = []DirItem{}
-			*stack = append(*stack, &(*current)[len(*current)-1].Child)
-			current = (*stack)[len(*stack)-1]
-		case wsfsprotocol.TREEDIR_INDICATOR_END_DIR:
-			*stack = (*stack)[:len(*stack)-1]
-			current = (*stack)[len(*stack)-1]
-		case wsfsprotocol.TREEDIR_INDICATOR_END_DIR_WITH_FAIL:
-			*stack = (*stack)[:len(*stack)-1]
-			*current = nil
-			current = (*stack)[len(*stack)-1]
-		case wsfsprotocol.TREEDIR_INDICATOR_FILE, wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA:
-			var ent wsfsprotocol.Dirent
-			if err := wsfsprotocol.ReadDirentFromReader(&ent, r); err != nil {
-				return false
-			}
-			item := DirItem{
-				Name:  ent.Name,
-				Size:  ent.Size,
-				MTime: ent.MTime,
-				Mode:  ent.Mode,
-				Owner: ent.Owner,
-			}
-			if indicator == wsfsprotocol.TREEDIR_INDICATOR_FILE_WITH_DATA {
-				item.Data = make([]byte, item.Size)
-				if _, err := io.ReadFull(r, item.Data); err != nil {
-					return false
-				}
-			}
-			*current = append(*current, item)
-		default:
-			log.Error().Uint8("Indicator", indicator).Msg("Unknown tree indicator")
-			return false
+// closedChildReady closes the childReady channel for the given entry without
+// populating Child, leaving Child == nil to mean "no cached result".
+func closedChildReady(list []DirItem, childMap map[string]int, childName string) {
+	if idx, ok := childMap[childName]; ok {
+		if list[idx].childReady != nil {
+			close(list[idx].childReady)
+		}
+		delete(childMap, childName)
+	}
+}
+
+// closeAllRemainingChildReady closes every childReady channel that was
+// created for directory entries but never explicitly resolved (neither
+// via setChild nor via closedChildReady).  This must be called once,
+// at the end of the response stream, so that no Lookup goroutine blocks
+// indefinitely.
+//
+// IMPORTANT: The caller (parseReadDirPlus) holds a reference to the
+// backing array of list via the same slice header it already sent
+// through rootCh.  After rootCh delivery the goroutine only *mutates*
+// existing fields (Child, childReady) – it never appends to list, so the
+// backing array is shared safely with the receiver.
+func closeAllRemainingChildReady(list []DirItem, childMap map[string]int) {
+	for _, idx := range childMap {
+		if list[idx].childReady != nil {
+			close(list[idx].childReady)
 		}
 	}
-	return true
+	clear(childMap)
+}
+
+// parseReadDirPlus is a two-phase parser:
+//
+//	Phase 1 — process ROOT-section messages, build list.  As soon as the
+//	  parser leaves the ROOT section (first PREFETCH indicator or
+//	  ErrorOK), it sends list+code through rootCh so that CmdReadDirPlus
+//	  can return immediately.
+//	Phase 2 — continue processing PREFETCH messages in the background.
+//	  For each successfully prefetched directory, Child is populated
+//	  and childReady is closed; for skipped or missing directories only
+//	  childReady is closed.
+func (s *Session) parseReadDirPlus(
+	clientMark uint8,
+	rootCh chan<- readDirPlusResult,
+) {
+	section := sectionRoot
+	var list []DirItem
+	var items []DirItem
+	var childName string
+	rootSent := false
+	childMap := make(map[string]int)
+
+	defer func() {
+		s.marks[clientMark].Unlock()
+	}()
+
+	readDirent := func(r *bytes.Reader) (wsfsprotocol.Dirent, bool) {
+		var d wsfsprotocol.Dirent
+		if err := wsfsprotocol.ReadDirentFromReader(&d, r); err != nil {
+			log.Error().Err(err).Msg("Failed to read dirent in ReadDirPlus")
+			closeAllRemainingChildReady(list, childMap)
+			if !rootSent {
+				rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
+			}
+			return wsfsprotocol.Dirent{}, false
+		}
+		return d, true
+	}
+
+	flushPrefetch := func(commit bool) {
+		if section != sectionPrefetch || childName == "" {
+			return
+		}
+		if commit {
+			setChild(list, childMap, childName, items)
+		} else {
+			closedChildReady(list, childMap, childName)
+		}
+		items = nil
+		childName = ""
+		section = sectionRoot
+	}
+
+	for {
+		rsp := <-s.responses[clientMark]
+		code := rsp.Bytes[1]
+
+		if code != wsfsprotocol.ErrorOK &&
+			code != wsfsprotocol.ErrorPartialResponse {
+			closeAllRemainingChildReady(list, childMap)
+			bufPool.Put(rsp)
+			if !rootSent {
+				rootCh <- readDirPlusResult{list: nil, code: code}
+			}
+			return
+		}
+
+		r := bytes.NewReader(rsp.Bytes[2:rsp.Writted()])
+
+		for r.Len() > 0 {
+			indicator, err := r.ReadByte()
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to read indicator in ReadDirPlus")
+				closeAllRemainingChildReady(list, childMap)
+				bufPool.Put(rsp)
+				if !rootSent {
+					rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
+				}
+				return
+			}
+
+			switch indicator {
+			case wsfsprotocol.READDIRPLUS_INDICATOR_CONTINUE:
+				// continue current section
+			case wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH:
+				if !rootSent {
+					rootCh <- readDirPlusResult{list: list, code: wsfsprotocol.ErrorOK}
+					rootSent = true
+				}
+				flushPrefetch(true)
+				section = sectionPrefetch
+				if err := wsfsprotocol.CopyStrFromReader(r, &childName); err != nil {
+					log.Error().Err(err).Msg("Failed to read prefetch name in ReadDirPlus")
+					closeAllRemainingChildReady(list, childMap)
+					bufPool.Put(rsp)
+					if !rootSent {
+						rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
+					}
+					return
+				}
+				items = nil
+			case wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH_SKIP:
+				if !rootSent {
+					rootCh <- readDirPlusResult{list: list, code: wsfsprotocol.ErrorOK}
+					rootSent = true
+				}
+				flushPrefetch(false)
+				section = sectionPrefetch
+				if err := wsfsprotocol.CopyStrFromReader(r, &childName); err != nil {
+					log.Error().Err(err).Msg("Failed to read prefetch skip name in ReadDirPlus")
+					closeAllRemainingChildReady(list, childMap)
+					bufPool.Put(rsp)
+					if !rootSent {
+						rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
+					}
+					return
+				}
+				items = nil
+			default:
+				log.Error().Uint8("Indicator", indicator).Msg("Unknown ReadDirPlus indicator")
+				closeAllRemainingChildReady(list, childMap)
+				bufPool.Put(rsp)
+				if !rootSent {
+					rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
+				}
+				return
+			}
+
+			d, ok := readDirent(r)
+			if !ok {
+				bufPool.Put(rsp)
+				return
+			}
+			di := makeDirItemFromDirent(&d)
+			if section == sectionRoot {
+				if isDirMode(d.Mode) {
+					di.childReady = make(chan struct{})
+					childMap[d.Name] = len(list)
+				}
+				list = append(list, di)
+			} else {
+				items = append(items, di)
+			}
+		}
+		bufPool.Put(rsp)
+
+		if code == wsfsprotocol.ErrorOK {
+			flushPrefetch(true)
+			closeAllRemainingChildReady(list, childMap)
+			if !rootSent {
+				rootCh <- readDirPlusResult{list: list, code: wsfsprotocol.ErrorOK}
+			}
+			return
+		}
+	}
+}
+
+func (s *Session) CmdReadDirPlus(path string) (list []DirItem, code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdReadDirPlus) {
+		s.marks[clientMark].Unlock()
+		return nil, wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdReadDirPlusStructToWriter(wsfsprotocol.CmdReadDirPlusStruct{Path: path}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return nil, wsfsprotocol.ErrorIO
+	}
+
+	rootCh := make(chan readDirPlusResult, 1)
+	go func() {
+		s.parseReadDirPlus(clientMark, rootCh)
+	}()
+
+	result := <-rootCh
+	return result.list, result.code
 }
 
 func (s *Session) CmdOpen(path string, oflag uint32, fmode uint32) (uint32, uint8) {
@@ -201,22 +422,13 @@ func (s *Session) CmdReadDir(path string) (list []DirItem, code uint8) {
 			return
 		}
 
-		dirents, readErr := readDirents(rsp.Bytes[2:rsp.Writted()])
+		var readErr error
+		list, readErr = appendDirItemsFromReader(list, bytes.NewReader(rsp.Bytes[2:rsp.Writted()]))
 		bufPool.Put(rsp)
 		if readErr != nil {
 			log.Error().Err(readErr).Msg("Failed to read directory entries")
 			s.marks[clientMark].Unlock()
 			return nil, wsfsprotocol.ErrorIO
-		}
-
-		for _, d := range dirents {
-			list = append(list, DirItem{
-				Name:  d.Name,
-				Size:  d.Size,
-				MTime: d.MTime,
-				Mode:  d.Mode,
-				Owner: d.Owner,
-			})
 		}
 
 		if code == wsfsprotocol.ErrorPartialResponse {
@@ -725,56 +937,5 @@ func (s *Session) CmdSetAttrByFD(wfd uint32, flag uint8, fi wsfsprotocol.FileInf
 	s.marks[clientMark].Unlock()
 	code = rspBuf.Bytes[1]
 	bufPool.Put(rspBuf)
-	return
-}
-
-func (s *Session) CmdTreeDir(path string, depth uint8, hint string) (tree []DirItem, code uint8) {
-	clientMark := s.newClientMark()
-
-	if !s.beginRequest(clientMark, wsfsprotocol.CmdTreeDir) {
-		s.marks[clientMark].Unlock()
-		return nil, wsfsprotocol.ErrorIO
-	}
-	err := wsfsprotocol.WriteCmdTreeDirStructToWriter(wsfsprotocol.CmdTreeDirStruct{Path: path, Depth: depth, Hint: hint}, s.writer)
-	s.writeDone(err)
-	if err != nil {
-		s.marks[clientMark].Unlock()
-		return nil, wsfsprotocol.ErrorIO
-	}
-
-	tree = append(tree, DirItem{})
-	stack := []*[]DirItem{&tree}
-
-	for {
-		rsp := <-s.responses[clientMark]
-		code = rsp.Bytes[1]
-
-		if code != wsfsprotocol.ErrorOK &&
-			code != wsfsprotocol.ErrorPartialResponse {
-			bufPool.Put(rsp)
-			s.marks[clientMark].Unlock()
-			return
-		}
-
-		ok := readTreeChunk(rsp.Bytes[2:rsp.Writted()], &stack)
-		bufPool.Put(rsp)
-		if !ok {
-			log.Error().Msg("Failed to read tree response")
-			s.marks[clientMark].Unlock()
-			return nil, wsfsprotocol.ErrorIO
-		}
-
-		if code == wsfsprotocol.ErrorPartialResponse {
-			continue
-		}
-		break
-	}
-
-	if len(tree) != 1 || tree[0].Child == nil {
-		code = wsfsprotocol.ErrorIO
-	}
-	tree = tree[0].Child
-
-	s.marks[clientMark].Unlock()
 	return
 }
