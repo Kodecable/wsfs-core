@@ -36,7 +36,7 @@ type MountOption struct {
 	NobodyGid        uint32
 }
 
-func dial(url, username, password, resumeId string) (conn *websocket.Conn, rsp *http.Response, err error) {
+func dial(url, username, password, resumeId, expectedCertHash string) (conn *websocket.Conn, rsp *http.Response, err error) {
 	header := http.Header{}
 	if username != "" {
 		header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+password)))
@@ -45,7 +45,7 @@ func dial(url, username, password, resumeId string) (conn *websocket.Conn, rsp *
 		header.Set("X-Wsfs-Resume", resumeId)
 	}
 
-	conn, rsp, err = wsdial(url, header)
+	conn, rsp, err = wsdial(url, header, expectedCertHash)
 	if err != nil {
 		return
 	}
@@ -57,13 +57,13 @@ func dial(url, username, password, resumeId string) (conn *websocket.Conn, rsp *
 	return
 }
 
-func reDialFunc(url, username, password, resumeId string) func() (*websocket.Conn, error) {
+func reDialFunc(url, username, password, resumeId, expectedCertHash string) func() (*websocket.Conn, error) {
 	if resumeId == "" {
 		return func() (*websocket.Conn, error) { return nil, errors.New("server do not support session resume") }
 	}
 	return func() (*websocket.Conn, error) {
 		for range sessionRecoveryRetryMaxCount {
-			conn, rsp, err := dial(url, username, password, resumeId)
+			conn, rsp, err := dial(url, username, password, resumeId, expectedCertHash)
 			if err == nil {
 				return conn, nil
 			}
@@ -110,8 +110,8 @@ func logDialError(rsp *http.Response, err error) {
 	log.Error().Err(err).Msg("Uable to connect to server")
 }
 
-func Mount(mountpoint string, url string, username, password string, opt MountOption) error {
-	conn, rsp, err := dial(url, username, password, "")
+func Mount(mountpoint, url, expectedCertHash, username, password string, opt MountOption) error {
+	conn, rsp, err := dial(url, username, password, "", expectedCertHash)
 	if err != nil {
 		logDialError(rsp, err)
 		return err
@@ -122,7 +122,7 @@ func Mount(mountpoint string, url string, username, password string, opt MountOp
 		log.Warn().Msg("Server do not support session resume")
 	}
 
-	s, err := session.NewSession(reDialFunc(url, username, password, resumeId))
+	s, err := session.NewSession(reDialFunc(url, username, password, resumeId, expectedCertHash))
 	if err != nil {
 		log.Error().Err(err).Msg("Uable to create session")
 		return err

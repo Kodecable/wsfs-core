@@ -30,6 +30,7 @@ var (
 	nobodyUid        int64
 	nobodyGid        int64
 	logLevel         zerolog.Level = zerolog.InfoLevel
+	certHash         string
 )
 
 var MountCmd = &cobra.Command{
@@ -96,7 +97,7 @@ var MountCmd = &cobra.Command{
 			opts.EnableFuseLog = true
 		}
 
-		err = client.Mount(args[1], endpoint.String(), inputedEndpoint.User.Username(), passwd, opts)
+		err = client.Mount(args[1], endpoint.String(), certHash, inputedEndpoint.User.Username(), passwd, opts)
 
 		if err != nil {
 			os.Exit(2)
@@ -150,4 +151,5 @@ func init() {
 		enumflag.New(&logLevel, "LEVEL", util.ZerologLevelIds, enumflag.EnumCaseInsensitive),
 		"level", "l",
 		"Sets logging level; can be 'trace', 'debug', 'info', 'warning', 'error', 'fatal', 'panic'")
+	MountCmd.Flags().StringVarP(&certHash, "cert-hash", "", "", "Only verify TLS server cert hash; copy the hash from the connection log")
 }

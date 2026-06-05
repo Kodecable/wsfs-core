@@ -86,6 +86,25 @@ To view all available options and examples:
 $ wsfs mount --help
 ```
 
+When connecting over TLS (`wsfss://` or `wsfss+unix://`), you can use `--cert-hash` to pin the server certificate by hash.
+
+When `--cert-hash` is set, WSFS skips the normal TLS certificate verification and only checks whether the server leaf certificate hash exactly matches the provided value.
+
+WSFS always prints the server certificate hash during TLS connection attempts so operators can copy it directly from the log output instead of formatting it manually.
+
+Typical workflow:
+
+1. Connect once without `--cert-hash` and note the `Server cert received` log line.
+2. Copy the printed hash value, for example `SHA256:0123456789abcdef...`.
+3. Re-run mount with `--cert-hash <copied-hash>`.
+
+Example:
+
+```shell
+$ wsfs mount wsfss://localhost:20001/ /mnt/wsfs
+$ wsfs mount --cert-hash SHA256:0123456789abcdef... wsfss://localhost:20001/ /mnt/wsfs
+```
+
 #### Linux
 
 Although FUSE supports multi-user access, it is very dangerous and not recommended on WSFS. We recommend running WSFS mount as a normal user and only using this user to access the file system.
