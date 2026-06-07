@@ -10,8 +10,6 @@ import (
 	"strings"
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/util"
-
-	"github.com/rs/zerolog/log"
 )
 
 type sfd_t *os.File
@@ -214,23 +212,19 @@ func (s *session) cmdSymLink(clientMark uint8, req wsfsprotocol.CmdSymLinkStruct
 
 func (s *session) cmdRemove(clientMark uint8, req wsfsprotocol.CmdRemoveStruct) {
 	if !util.IsUrlValid(req.Path) {
-		log.Debug().Uint8("Cm", clientMark).Str("Path", req.Path).Msg("Reject remove for invalid path")
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
 	resolvedPath := s.storage.Path + req.Path
-	log.Debug().Uint8("Cm", clientMark).Str("Path", req.Path).Str("ResolvedPath", resolvedPath).Msg("Removing path")
 	if err := os.Remove(resolvedPath); err != nil {
-		log.Debug().Uint8("Cm", clientMark).Str("Path", req.Path).Str("ResolvedPath", resolvedPath).Err(err).Msg("Remove failed")
 		s.writeRspError(clientMark, osErrCode(err), "syscall error")
 		return
 	}
-	log.Debug().Uint8("Cm", clientMark).Str("Path", req.Path).Str("ResolvedPath", resolvedPath).Msg("Remove succeeded")
 	s.writeRspOK(clientMark)
 }
 
 func (s *session) cmdRmDir(clientMark uint8, req wsfsprotocol.CmdRmDirStruct) {
-	log.Debug().Uint8("Cm", clientMark).Str("Path", req.Path).Msg("Removing directory")
+	//log.Debug().Uint8("Cm", clientMark).Str("Path", req.Path).Msg("Removing directory")
 	s.cmdRemove(clientMark, wsfsprotocol.CmdRemoveStruct{Path: req.Path})
 }
 
@@ -320,52 +314,19 @@ func (s *session) cmdCopyFileRange(clientMark uint8, _ wsfsprotocol.CmdCopyFileR
 
 func (s *session) cmdRename(clientMark uint8, req wsfsprotocol.CmdRenameStruct) {
 	if !util.IsUrlValid(req.OldPath) || !util.IsUrlValid(req.NewPath) {
-		log.Debug().
-			Uint8("Cm", clientMark).
-			Str("OldPath", req.OldPath).
-			Str("NewPath", req.NewPath).
-			Msg("Reject rename for invalid path")
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
 	if req.Flag != 0 {
-		log.Debug().
-			Uint8("Cm", clientMark).
-			Str("OldPath", req.OldPath).
-			Str("NewPath", req.NewPath).
-			Uint32("Flag", req.Flag).
-			Msg("Reject rename for unsupported flag")
 		s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "syscall error")
 		return
 	}
 	resolvedOldPath := s.storage.Path + req.OldPath
 	resolvedNewPath := s.storage.Path + req.NewPath
-	log.Debug().
-		Uint8("Cm", clientMark).
-		Str("OldPath", req.OldPath).
-		Str("NewPath", req.NewPath).
-		Str("ResolvedOldPath", resolvedOldPath).
-		Str("ResolvedNewPath", resolvedNewPath).
-		Msg("Renaming path")
 	if err := os.Rename(resolvedOldPath, resolvedNewPath); err != nil {
-		log.Debug().
-			Uint8("Cm", clientMark).
-			Str("OldPath", req.OldPath).
-			Str("NewPath", req.NewPath).
-			Str("ResolvedOldPath", resolvedOldPath).
-			Str("ResolvedNewPath", resolvedNewPath).
-			Err(err).
-			Msg("Rename failed")
 		s.writeRspError(clientMark, osErrCode(err), "syscall error")
 		return
 	}
-	log.Debug().
-		Uint8("Cm", clientMark).
-		Str("OldPath", req.OldPath).
-		Str("NewPath", req.NewPath).
-		Str("ResolvedOldPath", resolvedOldPath).
-		Str("ResolvedNewPath", resolvedNewPath).
-		Msg("Rename succeeded")
 	s.writeRspOK(clientMark)
 }
 

@@ -344,6 +344,14 @@ func (s *fileSystem) Readlink(path string) (int, string) {
 }
 
 func (s *fileSystem) Rename(oldpath string, newpath string) int {
+	return s.rename(oldpath, newpath, 0)
+}
+
+func (s *fileSystem) Rename3(oldpath string, newpath string, flags uint32) int {
+	return s.rename(oldpath, newpath, flags)
+}
+
+func (s *fileSystem) rename(oldpath string, newpath string, flags uint32) int {
 	//log.Warn().Str("OldPath", oldpath).Str("NewPath", newpath).Msg("Rename")
 
 	s.delParentCache(oldpath)
@@ -351,7 +359,7 @@ func (s *fileSystem) Rename(oldpath string, newpath string) int {
 	s.delParentCache(newpath)
 	s.deletePathState(newpath)
 
-	code := s.session.CmdRename(oldpath, newpath, 0)
+	code := s.session.CmdRename(oldpath, newpath, flags)
 	return errnoFromCode(code)
 }
 
