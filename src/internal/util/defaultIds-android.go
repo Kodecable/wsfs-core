@@ -9,22 +9,24 @@ import (
 
 const uidBitSize = 32
 
-func GetDefaultIds() (IdInfo, error) {
+func GetDefaultFsIds() (FsIds, error) {
 	currentuser, err := user.Current()
 	if err != nil {
-		return IdInfo{}, err
+		return FsIds{}, err
 	}
 	uid, err := strconv.ParseUint(currentuser.Uid, 10, uidBitSize)
 	if err != nil {
-		return IdInfo{}, err
+		return FsIds{}, err
 	}
 	gid, err := strconv.ParseUint(currentuser.Gid, 10, uidBitSize)
 	if err != nil {
-		return IdInfo{}, err
+		return FsIds{}, err
 	}
 
-	return IdInfo{CurrentUser: uint32(uid),
-		UserGroup:   uint32(gid),
-		NobodyUser:  uint32(9999),
-		NobodyGroup: uint32(9999)}, nil
+	return FsIds{
+		Uid:      uint32(uid),
+		Gid:      uint32(gid),
+		OtherUid: uint32(9999),
+		OtherGid: uint32(9999),
+	}, nil
 }

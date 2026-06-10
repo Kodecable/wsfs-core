@@ -1,5 +1,7 @@
 package config
 
+import "wsfs-core/internal/util"
+
 type TLS struct {
 	Enable   bool
 	CertFile string
@@ -20,11 +22,7 @@ type Webdav struct {
 }
 
 type WSFS struct {
-	Enable   bool
-	Uid      int64
-	Gid      int64
-	OtherUid int64
-	OtherGid int64
+	Enable bool
 }
 
 type Listener struct {
@@ -43,6 +41,7 @@ type Server struct {
 	Users        []User
 	RealIpHeader string
 	ServerHeader string
+	FsIds        util.OptionalFsIds
 }
 
 type User struct {

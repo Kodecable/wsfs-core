@@ -6,6 +6,7 @@ import (
 	"hash/maphash"
 	"time"
 	"wsfs-core/internal/client/session"
+	"wsfs-core/internal/util"
 
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 )
@@ -19,18 +20,18 @@ type fileSystem struct {
 	session *session.Session
 
 	mountpoint string
-	suser      Suser_t
+	fsIds      util.FsIds
 
 	structTimeout   time.Duration
 	negativeTimeout time.Duration
 }
 
-func NewFS(sesseion *session.Session, suser Suser_t,
+func NewFS(sesseion *session.Session, fsIds util.FsIds,
 	mountpoint string, structTimeout, negativeTimeout time.Duration) *fileSystem {
 	return &fileSystem{
 		session:         sesseion,
 		mountpoint:      mountpoint,
-		suser:           suser,
+		fsIds:           fsIds,
 		structTimeout:   structTimeout,
 		negativeTimeout: negativeTimeout,
 	}

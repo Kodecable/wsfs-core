@@ -27,8 +27,8 @@ var (
 	noLogColor       bool
 	uid              int64
 	gid              int64
-	nobodyUid        int64
-	nobodyGid        int64
+	otherUid         int64
+	otherGid         int64
 	logLevel         zerolog.Level = zerolog.InfoLevel
 	certHash         string
 )
@@ -41,7 +41,11 @@ var MountCmd = &cobra.Command{
   wsfs mount windows.mountponint.like "P:"`,
 	Args: cobra.ExactArgs(2),
 	Run: func(c *cobra.Command, args []string) {
-		setUids(c)
+		fsIds, err := resolveFsIds(c)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		util.SetupZerolog(noLogTime, noLogColor, logLevel)
 
 		urlArg := args[0]
@@ -88,10 +92,7 @@ var MountCmd = &cobra.Command{
 			MasqueradeAsNtfs: masqueradeAsNtfs,
 			EnableFuseLog:    false,
 			FuseFsName:       inputedEndpoint.Host,
-			Uid:              uint32(uid),
-			Gid:              uint32(gid),
-			NobodyUid:        uint32(nobodyUid),
-			NobodyGid:        uint32(nobodyGid),
+			FsIds:            fsIds,
 		}
 		if logLevel == zerolog.TraceLevel {
 			opts.EnableFuseLog = true
@@ -105,31 +106,26 @@ var MountCmd = &cobra.Command{
 	},
 }
 
-func setUids(c *cobra.Command) {
-	if (!c.Flags().Changed("uid")) ||
-		(!c.Flags().Changed("gid")) ||
-		(!c.Flags().Changed("nobody-uid")) ||
-		(!c.Flags().Changed("nobody-gid")) {
-		defaultIds, err := util.GetDefaultIds()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Unable to determine default (nobody) u/gids")
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-
-		if !c.Flags().Changed("uid") {
-			uid = int64(defaultIds.CurrentUser)
-		}
-		if !c.Flags().Changed("gid") {
-			gid = int64(defaultIds.UserGroup)
-		}
-		if !c.Flags().Changed("nobody-uid") {
-			nobodyUid = int64(defaultIds.NobodyUser)
-		}
-		if !c.Flags().Changed("nobody-gid") {
-			nobodyGid = int64(defaultIds.NobodyGroup)
-		}
+func resolveFsIds(c *cobra.Command) (util.FsIds, error) {
+	ids := util.OptionalFsIds{}
+	if c.Flags().Changed("uid") {
+		value := uint32(uid)
+		ids.Uid = &value
 	}
+	if c.Flags().Changed("gid") {
+		value := uint32(gid)
+		ids.Gid = &value
+	}
+	if c.Flags().Changed("other-uid") {
+		value := uint32(otherUid)
+		ids.OtherUid = &value
+	}
+	if c.Flags().Changed("other-gid") {
+		value := uint32(otherGid)
+		ids.OtherGid = &value
+	}
+
+	return ids.Resolve()
 }
 
 func init() {
@@ -139,8 +135,8 @@ func init() {
 
 	MountCmd.Flags().Int64VarP(&uid, "uid", "", 0, "Uid in filesystem (Unix only)")
 	MountCmd.Flags().Int64VarP(&gid, "gid", "", 0, "Gid in filesystem (Unix only)")
-	MountCmd.Flags().Int64VarP(&nobodyUid, "nobody-uid", "", 0, "Nobody uid in filesystem (Unix only)")
-	MountCmd.Flags().Int64VarP(&nobodyGid, "nobody-gid", "", 0, "Nobody gid in filesystem (Unix only)")
+	MountCmd.Flags().Int64VarP(&otherUid, "other-uid", "", 0, "Other uid in filesystem (Unix only)")
+	MountCmd.Flags().Int64VarP(&otherGid, "other-gid", "", 0, "Other gid in filesystem (Unix only)")
 	MountCmd.Flags().StringVarP(&volumeLabel, "volume-label", "", "WSFS Storage", "Volume label (Windows only)")
 	MountCmd.Flags().BoolVarP(&directMount, "direct-mount", "", false, "Use mount syscall instead fusemount, root needed (Unix only)")
 	MountCmd.Flags().Int16VarP(&structTimeout, "struct-timeout", "", 60, "Fuse struct cache timeout in seconds, improves performance and inconsistency")

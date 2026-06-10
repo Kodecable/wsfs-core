@@ -57,35 +57,19 @@ func configStorage(config *serverConfig.Server, c *cobra.Command) {
 }
 
 func configIDs(config *serverConfig.Server, c *cobra.Command) {
-	if (!c.Flags().Changed("uid")) ||
-		(!c.Flags().Changed("gid")) ||
-		(!c.Flags().Changed("other-uid")) ||
-		(!c.Flags().Changed("other-gid")) {
-		defaultIds, err := util.GetDefaultIds()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Unable to determine default (nobody) u/gids")
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-
-		if !c.Flags().Changed("uid") {
-			uid = defaultIds.CurrentUser
-		}
-		if !c.Flags().Changed("gid") {
-			gid = defaultIds.UserGroup
-		}
-		if !c.Flags().Changed("other-uid") {
-			otherUid = defaultIds.NobodyUser
-		}
-		if !c.Flags().Changed("other-gid") {
-			otherGid = defaultIds.NobodyGroup
-		}
+	config.FsIds = util.OptionalFsIds{}
+	if c.Flags().Changed("uid") {
+		config.FsIds.Uid = &uid
 	}
-
-	config.WSFS.Uid = int64(uid)
-	config.WSFS.Gid = int64(gid)
-	config.WSFS.OtherUid = int64(otherUid)
-	config.WSFS.OtherGid = int64(otherGid)
+	if c.Flags().Changed("gid") {
+		config.FsIds.Gid = &gid
+	}
+	if c.Flags().Changed("other-uid") {
+		config.FsIds.OtherUid = &otherUid
+	}
+	if c.Flags().Changed("other-gid") {
+		config.FsIds.OtherGid = &otherGid
+	}
 }
 
 func parseArg(config *serverConfig.Server, args string) {

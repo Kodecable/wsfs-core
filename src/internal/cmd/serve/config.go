@@ -6,7 +6,6 @@ import (
 	"path"
 	"strings"
 	serverConfig "wsfs-core/internal/server/config"
-	"wsfs-core/internal/util"
 )
 
 var defaultConfigPaths = []string{
@@ -59,33 +58,5 @@ func findAndDecodeConfig() serverConfig.Server {
 		fmt.Println("No config file found. Configed as all default.")
 	}
 
-	setUids(&config)
 	return config
-}
-
-func setUids(c *serverConfig.Server) {
-	if c.WSFS.Uid >= 0 && c.WSFS.Gid >= 0 &&
-		c.WSFS.OtherUid >= 0 && c.WSFS.OtherGid >= 0 {
-		return
-	}
-
-	defaultIds, err := util.GetDefaultIds()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to determine default (nobody) u/gids")
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	if c.WSFS.Uid < 0 {
-		c.WSFS.Uid = int64(defaultIds.CurrentUser)
-	}
-	if c.WSFS.Gid < 0 {
-		c.WSFS.Gid = int64(defaultIds.UserGroup)
-	}
-	if c.WSFS.OtherUid < 0 {
-		c.WSFS.OtherUid = int64(defaultIds.NobodyUser)
-	}
-	if c.WSFS.OtherGid < 0 {
-		c.WSFS.OtherGid = int64(defaultIds.NobodyGroup)
-	}
 }

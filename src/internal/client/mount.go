@@ -11,6 +11,7 @@ import (
 	"time"
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/share/wsfsprotocol"
+	"wsfs-core/internal/util"
 
 	"github.com/coder/websocket"
 	"github.com/rs/zerolog/log"
@@ -30,10 +31,7 @@ type MountOption struct {
 	MasqueradeAsNtfs bool
 	EnableFuseLog    bool
 	FuseFsName       string
-	Uid              uint32
-	Gid              uint32
-	NobodyUid        uint32
-	NobodyGid        uint32
+	FsIds            util.FsIds
 }
 
 func dial(url, username, password, resumeId, expectedCertHash string) (conn *websocket.Conn, rsp *http.Response, err error) {

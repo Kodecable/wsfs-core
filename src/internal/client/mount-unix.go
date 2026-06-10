@@ -19,11 +19,7 @@ import (
 
 func fuseMount(mountpoint string, session *session.Session, opt MountOption) error {
 	fsroot := unix.NewFS(session,
-		unix.Suser_t{
-			Uid:       opt.Uid,
-			Gid:       opt.Gid,
-			NobodyUid: opt.NobodyUid,
-			NobodyGid: opt.NobodyGid},
+		opt.FsIds,
 		mountpoint,
 		opt.AttrTimeout,
 		opt.NegativeTimeout)

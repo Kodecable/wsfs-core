@@ -21,11 +21,7 @@ var Default = Server{
 		},
 	},
 	WSFS: WSFS{
-		Enable:   true,
-		Uid:      -1,
-		Gid:      -1,
-		OtherUid: -1,
-		OtherGid: -1,
+		Enable: true,
 	},
 	Anonymous: AnonymousUser{
 		Enable:   false,

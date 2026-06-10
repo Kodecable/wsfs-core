@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/share/wsfsprotocol"
+	"wsfs-core/internal/util"
 
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -78,7 +79,7 @@ func fileMode(mode uint32) (r uint32) {
 	return
 }
 
-func attrFromFileInfo(path string, attr *fuse.Attr, fi *wsfsprotocol.FileInfo, suser *Suser_t) {
+func attrFromFileInfo(path string, attr *fuse.Attr, fi *wsfsprotocol.FileInfo, fsIds *util.FsIds) {
 	attr.Ino = maphash.String(inodeHashSeed, path)
 	attr.Size = fi.Size
 	attr.Atime = uint64(fi.MTime)
@@ -98,27 +99,27 @@ func attrFromFileInfo(path string, attr *fuse.Attr, fi *wsfsprotocol.FileInfo, s
 
 	switch fi.Owner {
 	case wsfsprotocol.OWNER_NN:
-		attr.Uid = suser.NobodyUid
-		attr.Gid = suser.NobodyGid
+		attr.Uid = fsIds.OtherUid
+		attr.Gid = fsIds.OtherGid
 	case wsfsprotocol.OWNER_NG:
-		attr.Uid = suser.NobodyUid
-		attr.Gid = suser.Gid
+		attr.Uid = fsIds.OtherUid
+		attr.Gid = fsIds.Gid
 	case wsfsprotocol.OWNER_UN:
-		attr.Uid = suser.Uid
-		attr.Gid = suser.NobodyGid
+		attr.Uid = fsIds.Uid
+		attr.Gid = fsIds.OtherGid
 	case wsfsprotocol.OWNER_UG:
-		attr.Uid = suser.Uid
-		attr.Gid = suser.Gid
+		attr.Uid = fsIds.Uid
+		attr.Gid = fsIds.Gid
 	}
 }
 
-func attrFromDirItem(path string, attr *fuse.Attr, di *session.DirItem, suser *Suser_t) {
+func attrFromDirItem(path string, attr *fuse.Attr, di *session.DirItem, fsIds *util.FsIds) {
 	attrFromFileInfo(path, attr, &wsfsprotocol.FileInfo{
 		Size:  di.Size,
 		MTime: di.MTime,
 		Mode:  di.Mode,
 		Owner: di.Owner,
-	}, suser)
+	}, fsIds)
 }
 
 func idFromStat(attr *fuse.Attr) fusefs.StableAttr {
@@ -140,7 +141,7 @@ func (n *fsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*
 		out.SetAttrTimeout(timeoutDelta)
 		out.SetEntryTimeout(timeoutDelta)
 		if item != nil {
-			attrFromDirItem(p, &out.Attr, item, &n.fsdata.suser)
+			attrFromDirItem(p, &out.Attr, item, &n.fsdata.fsIds)
 		} else {
 			return nil, syscall.ENOENT
 		}
@@ -150,7 +151,7 @@ func (n *fsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*
 		if code != wsfsprotocol.ErrorOK {
 			return nil, errnoFromCode(code)
 		}
-		attrFromFileInfo(p, &out.Attr, &fi, &n.fsdata.suser)
+		attrFromFileInfo(p, &out.Attr, &fi, &n.fsdata.fsIds)
 	}
 
 	node := n.fsdata.NewNode()
@@ -328,7 +329,7 @@ func (n *fsNode) Getattr(_ context.Context, _ fusefs.FileHandle, out *fuse.AttrO
 
 	fi, ok := getAttrCache(&n.attrCache)
 	if ok {
-		attrFromFileInfo(p, &out.Attr, &fi, &n.fsdata.suser)
+		attrFromFileInfo(p, &out.Attr, &fi, &n.fsdata.fsIds)
 		return fusefs.OK
 	}
 
@@ -336,7 +337,7 @@ func (n *fsNode) Getattr(_ context.Context, _ fusefs.FileHandle, out *fuse.AttrO
 	if code != wsfsprotocol.ErrorOK {
 		return errnoFromCode(code)
 	}
-	attrFromFileInfo(p, &out.Attr, &fi, &n.fsdata.suser)
+	attrFromFileInfo(p, &out.Attr, &fi, &n.fsdata.fsIds)
 	saveAttrCache(&n.attrCache, fi, n.fsdata.structTimeout)
 
 	return fusefs.OK
@@ -449,17 +450,17 @@ func (n *fsNode) Setattr(ctx context.Context, f fusefs.FileHandle, in *fuse.SetA
 
 	flag |= wsfsprotocol.SETATTR_OWNER
 	if uid, ok := in.GetUID(); ok {
-		if uid == n.fsdata.suser.Uid {
+		if uid == n.fsdata.fsIds.Uid {
 			fi.Owner += 1
 		}
-	} else if orig.Uid == n.fsdata.suser.Uid {
+	} else if orig.Uid == n.fsdata.fsIds.Uid {
 		fi.Owner += 1
 	}
 	if gid, ok := in.GetGID(); ok {
-		if gid == n.fsdata.suser.Gid {
+		if gid == n.fsdata.fsIds.Gid {
 			fi.Owner += 2
 		}
-	} else if orig.Gid == n.fsdata.suser.Gid {
+	} else if orig.Gid == n.fsdata.fsIds.Gid {
 		fi.Owner += 2
 	}
 

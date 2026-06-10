@@ -46,6 +46,12 @@ Enable = true
 
 #[WSFS]
 #Enable = true
+#
+#[FsIds]
+#Uid = 1000
+#Gid = 1000
+#OtherUid = 65534
+#OtherGid = 65534
 
 [Anonymous]
 Enable = false

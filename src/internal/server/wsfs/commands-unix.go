@@ -92,10 +92,10 @@ func wsfsErrCode(err error) uint8 {
 
 func (s *session) convOwner(fi os.FileInfo) (ownerInfo uint8) {
 	stat := fi.Sys().(*syscall.Stat_t)
-	if stat.Uid == s.handler.suser.Uid {
+	if stat.Uid == s.handler.fsIds.Uid {
 		ownerInfo += 1
 	}
-	if stat.Gid == s.handler.suser.Gid {
+	if stat.Gid == s.handler.fsIds.Gid {
 		ownerInfo += 2
 	}
 	return
@@ -323,13 +323,13 @@ func (s *session) cmdSetAttr(clientMark uint8, req wsfsprotocol.CmdSetAttrStruct
 		}
 	}
 	if req.Flag&wsfsprotocol.SETATTR_OWNER != 0 {
-		uid := s.handler.suser.OtherUid
-		gid := s.handler.suser.OtherGid
+		uid := s.handler.fsIds.OtherUid
+		gid := s.handler.fsIds.OtherGid
 		if req.FI.Owner&wsfsprotocol.OWNER_UN != 0 {
-			uid = s.handler.suser.Uid
+			uid = s.handler.fsIds.Uid
 		}
 		if req.FI.Owner&wsfsprotocol.OWNER_NG != 0 {
-			gid = s.handler.suser.Gid
+			gid = s.handler.fsIds.Gid
 		}
 		err := syscall.Chown(apath, int(uid), int(gid))
 		if err != nil {
@@ -627,13 +627,13 @@ func (s *session) cmdSetAttrByFD(clientMark uint8, req wsfsprotocol.CmdSetAttrBy
 		}
 	}
 	if req.Flag&wsfsprotocol.SETATTR_OWNER != 0 {
-		uid := s.handler.suser.OtherUid
-		gid := s.handler.suser.OtherGid
+		uid := s.handler.fsIds.OtherUid
+		gid := s.handler.fsIds.OtherGid
 		if req.FI.Owner&wsfsprotocol.OWNER_UN != 0 {
-			uid = s.handler.suser.Uid
+			uid = s.handler.fsIds.Uid
 		}
 		if req.FI.Owner&wsfsprotocol.OWNER_NG != 0 {
-			gid = s.handler.suser.Gid
+			gid = s.handler.fsIds.Gid
 		}
 		err := syscall.Fchown(int(sfd), int(uid), int(gid))
 		if err != nil {

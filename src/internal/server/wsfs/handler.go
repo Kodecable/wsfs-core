@@ -11,6 +11,7 @@ import (
 	"wsfs-core/internal/server/config"
 	internalerror "wsfs-core/internal/server/internalError"
 	"wsfs-core/internal/server/storage"
+	"wsfs-core/internal/util"
 
 	"github.com/rs/zerolog/log"
 	"github.com/sqids/sqids-go"
@@ -25,35 +26,25 @@ const (
 	sessionInactiveMaxCount   = 5
 )
 
-type Suser struct {
-	Uid      uint32
-	Gid      uint32
-	OtherUid uint32
-	OtherGid uint32
-}
-
 type Handler struct {
 	ider         *sqids.Sqids
 	errorHandler internalerror.ErrorHandler
 	sessions     sync.Map
 	sessionLast  atomic.Uint64
-	suser        Suser
+	fsIds        util.FsIds
 	ctx          context.Context
 
 	Stop context.CancelFunc
 }
 
-func NewHandler(errorHandler internalerror.ErrorHandler, c config.WSFS) (h *Handler, err error) {
+func NewHandler(errorHandler internalerror.ErrorHandler, fsIds util.FsIds, c config.WSFS) (h *Handler, err error) {
 	h = &Handler{
 		errorHandler: errorHandler,
+		fsIds:        fsIds,
 	}
 	h.ctx, h.Stop = context.WithCancel(context.Background())
 
 	h.ider, err = setupIder()
-	h.suser.Uid = uint32(c.Uid)
-	h.suser.Gid = uint32(c.Gid)
-	h.suser.OtherUid = uint32(c.OtherUid)
-	h.suser.OtherGid = uint32(c.OtherGid)
 	return
 }
 

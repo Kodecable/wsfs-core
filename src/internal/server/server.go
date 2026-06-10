@@ -33,6 +33,7 @@ type Server struct {
 	webdavHandler *webdav.Handler
 	wsfsHandler   *wsfs.Handler
 
+	fsIds     util.FsIds
 	users     storage.Users
 	anonymous *storage.User
 
@@ -74,7 +75,11 @@ func NewServer(c config.Server) (s *Server, err error) {
 	}
 
 	if c.WSFS.Enable {
-		s.wsfsHandler, err = wsfs.NewHandler(s, c.WSFS)
+		s.fsIds, err = c.FsIds.Resolve()
+		if err != nil {
+			return
+		}
+		s.wsfsHandler, err = wsfs.NewHandler(s, s.fsIds, c.WSFS)
 		if err != nil {
 			return
 		}
