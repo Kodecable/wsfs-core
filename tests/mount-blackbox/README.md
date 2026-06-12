@@ -65,6 +65,7 @@ The current suite focuses on high-value mount semantics:
 - large file reads and writes across message boundaries
 - interleaved random reads and writes across 8 x 64 MiB files
 - root and nested directory visibility
+- empty child directory visibility after parent readdir prefetch
 - rename and remove visibility
 - `getattr` after write and rename
 - symlink creation, `readlink`, and reading through symlinks

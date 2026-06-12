@@ -6,7 +6,7 @@ const (
 	MaxMsgSize        int = 8192
 	MaxCommandLength  int = MaxMsgSize
 	MaxResponseLength int = MaxMsgSize
-	WSSubprotocol         = "WSFS/draft.3"
+	WSSubprotocol         = "WSFS/draft.4"
 )
 
 const (

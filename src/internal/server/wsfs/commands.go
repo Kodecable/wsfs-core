@@ -238,37 +238,20 @@ func (s *session) writeDirentChunk(rsp *util.Buffer, clientMark uint8, wdirent w
 	wsfsprotocol.WriteDirentToWriter(wdirent, rsp)
 }
 
-func (s *session) writePrefetchFirstDirentChunk(rsp *util.Buffer, clientMark uint8, childName string, wdirent wsfsprotocol.Dirent) {
-	requiredSize := 1 + len(childName) + 1 + wsfsprotocol.GetDirentRequiredSize(wdirent)
+func (s *session) writePrefetchIndicator(rsp *util.Buffer, clientMark uint8, indicator uint8) {
+	requiredSize := 1
 	if rsp.Writted()+requiredSize > MaxMsgSize {
 		s.write(rsp.Done())
 		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
 	}
-	rsp.Write([]byte{wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH})
-	rsp.Write([]byte(childName))
-	rsp.Write([]byte{0})
-	wsfsprotocol.WriteDirentToWriter(wdirent, rsp)
-}
-
-func (s *session) writePrefetchSkipFirstDirentChunk(rsp *util.Buffer, clientMark uint8, childName string, wdirent wsfsprotocol.Dirent) {
-	requiredSize := 1 + len(childName) + 1 + wsfsprotocol.GetDirentRequiredSize(wdirent)
-	if rsp.Writted()+requiredSize > MaxMsgSize {
-		s.write(rsp.Done())
-		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
-	}
-	rsp.Write([]byte{wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH_SKIP})
-	rsp.Write([]byte(childName))
-	rsp.Write([]byte{0})
-	wsfsprotocol.WriteDirentToWriter(wdirent, rsp)
+	rsp.Write([]byte{indicator})
 }
 
 type prefetchDirState struct {
-	name        string
 	absPath     string
 	file        *os.File
 	pending     []fs.DirEntry
 	count       int
-	firstDirent wsfsprotocol.Dirent
 }
 
 func (s *session) preparePrefetchDir(basePath string, entry fs.DirEntry) (*prefetchDirState, error) {
@@ -283,18 +266,11 @@ func (s *session) preparePrefetchDir(basePath string, entry fs.DirEntry) (*prefe
 		cf.Close()
 		return nil, readErr
 	}
-	if len(entries) == 0 {
-		cf.Close()
-		return nil, nil
-	}
-
 	return &prefetchDirState{
-		name:        entry.Name(),
 		absPath:     childAbsPath,
 		file:        cf,
-		pending:     entries[1:],
-		count:       1,
-		firstDirent: s.lookupDirentSafe(childAbsPath, entries[0]),
+		pending:     entries,
+		count:       0,
 	}, nil
 }
 
@@ -308,8 +284,8 @@ func (s *session) nextPrefetchDir(first []fs.DirEntry, basePath string, start in
 		}
 		*used++
 		state, err := s.preparePrefetchDir(basePath, first[i])
-		if err != nil || state == nil {
-			continue
+		if err != nil {
+			return nil, i + 1, err
 		}
 		return state, i + 1, nil
 	}
@@ -402,18 +378,34 @@ func (s *session) cmdReadDirPlus(clientMark uint8, req wsfsprotocol.CmdReadDirPl
 	s.write(rsp.Done())
 	putBuf(rsp)
 
-	// Prefetch 子目录
+	// Prefetch child directories.
+	//
+	// Response framing semantics:
+	// - ROOT entries are streamed first as CONTINUE records.
+	// - PREFETCH starts a new child-directory prefetch section for the next
+	//   directory entry from the ROOT result, in ROOT order.
+	// - PREFETCH_SKIP means the current prefetch section is invalid and must be
+	//   discarded; the next prefetch section starts immediately for the next
+	//   directory entry from the ROOT result, again in ROOT order.
+	// - PREFETCH and PREFETCH_SKIP are pure section markers. They do not carry a
+	//   directory name or an implicit first dirent.
+	// - An empty directory is represented naturally: PREFETCH begins its section,
+	//   then the next indicator arrives without any CONTINUE records in between.
 	prefetchCount := 0
 	for idx := 0; idx < len(first) && prefetchCount < maxPrefetchDirs; {
 		state, nextIdx, err := s.nextPrefetchDir(first, apath, idx, &prefetchCount)
 		idx = nextIdx
-		if err != nil || state == nil {
+		if err != nil {
+			s.writeRspError(clientMark, wsfsprotocol.ErrorIO, "read prefetch dir failed")
+			return
+		}
+		if state == nil {
 			continue
 		}
 
 		rsp := bufPool.Get().(*util.Buffer)
 		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
-		s.writePrefetchFirstDirentChunk(rsp, clientMark, state.name, state.firstDirent)
+		s.writePrefetchIndicator(rsp, clientMark, wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH)
 
 		for {
 			if !s.streamPrefetchDir(rsp, clientMark, state) {
@@ -430,7 +422,7 @@ func (s *session) cmdReadDirPlus(clientMark uint8, req wsfsprotocol.CmdReadDirPl
 				return
 			}
 
-			s.writePrefetchSkipFirstDirentChunk(rsp, clientMark, nextState.name, nextState.firstDirent)
+			s.writePrefetchIndicator(rsp, clientMark, wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH_SKIP)
 			state = nextState
 		}
 	}

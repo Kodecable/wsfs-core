@@ -85,31 +85,23 @@ func makeDirItemFromDirent(d *wsfsprotocol.Dirent) DirItem {
 	}
 }
 
-func isDirMode(mode uint32) bool {
-	return mode&uint32(os.ModeDir) != 0
-}
-
 // setChild populates list[idx].Child with a cached directory result and closes
 // childReady so waiters can observe the final Child value.
-func setChild(list []DirItem, childMap map[string]int, childName string, items []DirItem) {
-	if idx, ok := childMap[childName]; ok {
-		if items == nil {
-			items = []DirItem{}
-		}
-		list[idx].Child = items
+func setChild(list []DirItem, idx int, items []DirItem) {
+	if items == nil {
+		items = []DirItem{}
+	}
+	list[idx].Child = items
+	if list[idx].childReady != nil {
 		close(list[idx].childReady)
-		delete(childMap, childName)
 	}
 }
 
-// closedChildReady closes the childReady channel for the given entry without
+// closeChildReady closes the childReady channel for the given entry without
 // populating Child, leaving Child == nil to mean "no cached result".
-func closedChildReady(list []DirItem, childMap map[string]int, childName string) {
-	if idx, ok := childMap[childName]; ok {
-		if list[idx].childReady != nil {
-			close(list[idx].childReady)
-		}
-		delete(childMap, childName)
+func closeChildReady(list []DirItem, idx int) {
+	if list[idx].childReady != nil {
+		close(list[idx].childReady)
 	}
 }
 
@@ -124,13 +116,10 @@ func closedChildReady(list []DirItem, childMap map[string]int, childName string)
 // through rootCh.  After rootCh delivery the goroutine only *mutates*
 // existing fields (Child, childReady) – it never appends to list, so the
 // backing array is shared safely with the receiver.
-func closeAllRemainingChildReady(list []DirItem, childMap map[string]int) {
-	for _, idx := range childMap {
-		if list[idx].childReady != nil {
-			close(list[idx].childReady)
-		}
+func closeAllRemainingChildReady(list []DirItem, pendingDirs []int) {
+	for _, idx := range pendingDirs {
+		closeChildReady(list, idx)
 	}
-	clear(childMap)
 }
 
 // parseReadDirPlus is a two-phase parser:
@@ -150,9 +139,9 @@ func (s *Session) parseReadDirPlus(
 	section := sectionRoot
 	var list []DirItem
 	var items []DirItem
-	var childName string
+	currentPrefetchIdx := -1
 	rootSent := false
-	childMap := make(map[string]int)
+	pendingDirs := make([]int, 0)
 
 	defer func() {
 		s.marks[clientMark].Unlock()
@@ -162,7 +151,10 @@ func (s *Session) parseReadDirPlus(
 		var d wsfsprotocol.Dirent
 		if err := wsfsprotocol.ReadDirentFromReader(&d, r); err != nil {
 			log.Error().Err(err).Msg("Failed to read dirent in ReadDirPlus")
-			closeAllRemainingChildReady(list, childMap)
+			if currentPrefetchIdx >= 0 {
+				closeChildReady(list, currentPrefetchIdx)
+			}
+			closeAllRemainingChildReady(list, pendingDirs)
 			if !rootSent {
 				rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
 			}
@@ -171,18 +163,26 @@ func (s *Session) parseReadDirPlus(
 		return d, true
 	}
 
+	nextPendingDir := func() int {
+		if len(pendingDirs) == 0 {
+			return -1
+		}
+		idx := pendingDirs[0]
+		pendingDirs = pendingDirs[1:]
+		return idx
+	}
+
 	flushPrefetch := func(commit bool) {
-		if section != sectionPrefetch || childName == "" {
+		if section != sectionPrefetch || currentPrefetchIdx < 0 {
 			return
 		}
 		if commit {
-			setChild(list, childMap, childName, items)
+			setChild(list, currentPrefetchIdx, items)
 		} else {
-			closedChildReady(list, childMap, childName)
+			closeChildReady(list, currentPrefetchIdx)
 		}
 		items = nil
-		childName = ""
-		section = sectionRoot
+		currentPrefetchIdx = -1
 	}
 
 	for {
@@ -191,7 +191,8 @@ func (s *Session) parseReadDirPlus(
 
 		if code != wsfsprotocol.ErrorOK &&
 			code != wsfsprotocol.ErrorPartialResponse {
-			closeAllRemainingChildReady(list, childMap)
+			flushPrefetch(false)
+			closeAllRemainingChildReady(list, pendingDirs)
 			bufPool.Put(rsp)
 			if !rootSent {
 				rootCh <- readDirPlusResult{list: nil, code: code}
@@ -205,7 +206,8 @@ func (s *Session) parseReadDirPlus(
 			indicator, err := r.ReadByte()
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to read indicator in ReadDirPlus")
-				closeAllRemainingChildReady(list, childMap)
+				flushPrefetch(false)
+				closeAllRemainingChildReady(list, pendingDirs)
 				bufPool.Put(rsp)
 				if !rootSent {
 					rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
@@ -215,7 +217,21 @@ func (s *Session) parseReadDirPlus(
 
 			switch indicator {
 			case wsfsprotocol.READDIRPLUS_INDICATOR_CONTINUE:
-				// continue current section
+				d, ok := readDirent(r)
+				if !ok {
+					bufPool.Put(rsp)
+					return
+				}
+				di := makeDirItemFromDirent(&d)
+				if section == sectionRoot {
+					if d.Mode&uint32(os.ModeDir) != 0 {
+						di.childReady = make(chan struct{})
+						pendingDirs = append(pendingDirs, len(list))
+					}
+					list = append(list, di)
+				} else {
+					items = append(items, di)
+				}
 			case wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH:
 				if !rootSent {
 					rootCh <- readDirPlusResult{list: list, code: wsfsprotocol.ErrorOK}
@@ -223,16 +239,16 @@ func (s *Session) parseReadDirPlus(
 				}
 				flushPrefetch(true)
 				section = sectionPrefetch
-				if err := wsfsprotocol.CopyStrFromReader(r, &childName); err != nil {
-					log.Error().Err(err).Msg("Failed to read prefetch name in ReadDirPlus")
-					closeAllRemainingChildReady(list, childMap)
+				currentPrefetchIdx = nextPendingDir()
+				if currentPrefetchIdx < 0 {
+					log.Error().Msg("ReadDirPlus prefetch ordering mismatch")
+					closeAllRemainingChildReady(list, pendingDirs)
 					bufPool.Put(rsp)
 					if !rootSent {
 						rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
 					}
 					return
 				}
-				items = nil
 			case wsfsprotocol.READDIRPLUS_INDICATOR_PREFETCH_SKIP:
 				if !rootSent {
 					rootCh <- readDirPlusResult{list: list, code: wsfsprotocol.ErrorOK}
@@ -240,47 +256,32 @@ func (s *Session) parseReadDirPlus(
 				}
 				flushPrefetch(false)
 				section = sectionPrefetch
-				if err := wsfsprotocol.CopyStrFromReader(r, &childName); err != nil {
-					log.Error().Err(err).Msg("Failed to read prefetch skip name in ReadDirPlus")
-					closeAllRemainingChildReady(list, childMap)
+				currentPrefetchIdx = nextPendingDir()
+				if currentPrefetchIdx < 0 {
+					log.Error().Msg("ReadDirPlus prefetch skip ordering mismatch")
+					closeAllRemainingChildReady(list, pendingDirs)
 					bufPool.Put(rsp)
 					if !rootSent {
 						rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
 					}
 					return
 				}
-				items = nil
 			default:
 				log.Error().Uint8("Indicator", indicator).Msg("Unknown ReadDirPlus indicator")
-				closeAllRemainingChildReady(list, childMap)
+				flushPrefetch(false)
+				closeAllRemainingChildReady(list, pendingDirs)
 				bufPool.Put(rsp)
 				if !rootSent {
 					rootCh <- readDirPlusResult{list: nil, code: wsfsprotocol.ErrorIO}
 				}
 				return
 			}
-
-			d, ok := readDirent(r)
-			if !ok {
-				bufPool.Put(rsp)
-				return
-			}
-			di := makeDirItemFromDirent(&d)
-			if section == sectionRoot {
-				if isDirMode(d.Mode) {
-					di.childReady = make(chan struct{})
-					childMap[d.Name] = len(list)
-				}
-				list = append(list, di)
-			} else {
-				items = append(items, di)
-			}
 		}
 		bufPool.Put(rsp)
 
 		if code == wsfsprotocol.ErrorOK {
 			flushPrefetch(true)
-			closeAllRemainingChildReady(list, childMap)
+			closeAllRemainingChildReady(list, pendingDirs)
 			if !rootSent {
 				rootCh <- readDirPlusResult{list: list, code: wsfsprotocol.ErrorOK}
 			}

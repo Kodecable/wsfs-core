@@ -47,6 +47,7 @@ func All() []harness.Case {
 		testCase{name: "write_at_offsets", run: writeAtOffsets},
 		testCase{name: "read_large_file_cross_message_boundary", prepare: prepareReadLargeFile, run: readLargeFileCrossMessageBoundary},
 		testCase{name: "readdir_root", prepare: prepareReaddirRoot, run: readdirRoot},
+		testCase{name: "readdir_root_prefetch_empty_child", prepare: prepareReaddirRootPrefetchEmptyChild, run: readdirRootPrefetchEmptyChild},
 		testCase{name: "create_many_entries", run: createManyEntries},
 		testCase{name: "mkdir_then_readdir", run: mkdirThenReaddir},
 		testCase{name: "rename_file_cross_dir", run: renameFileCrossDir},
@@ -340,6 +341,64 @@ func prepareReaddirRoot(env *harness.Env) error {
 		}
 	}
 	return os.Mkdir(filepath.Join(env.BackendDir, "dir"), 0o755)
+}
+
+func prepareReaddirRootPrefetchEmptyChild(env *harness.Env) error {
+	if err := os.WriteFile(filepath.Join(env.BackendDir, "a.txt"), []byte("a"), 0o644); err != nil {
+		return err
+	}
+	if err := os.Mkdir(filepath.Join(env.BackendDir, "empty"), 0o755); err != nil {
+		return err
+	}
+	if err := os.Mkdir(filepath.Join(env.BackendDir, "filled"), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(env.BackendDir, "filled", "child.txt"), []byte("child"), 0o644)
+}
+
+func readdirRootPrefetchEmptyChild(_ context.Context, env *harness.Env) error {
+	rootNames, err := harness.SortedNames(env.MountDir)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(rootNames, []string{"a.txt", "empty", "filled"}) {
+		return fmt.Errorf("root dir mismatch: %v", rootNames)
+	}
+
+	emptyPath := filepath.Join(env.MountDir, "empty")
+	emptyInfo, err := os.Stat(emptyPath)
+	if err != nil {
+		return err
+	}
+	if !emptyInfo.IsDir() {
+		return fmt.Errorf("empty path is not a directory")
+	}
+
+	emptyNames, err := harness.SortedNames(emptyPath)
+	if err != nil {
+		return err
+	}
+	if len(emptyNames) != 0 {
+		return fmt.Errorf("empty child dir mismatch: %v", emptyNames)
+	}
+
+	filledNames, err := harness.SortedNames(filepath.Join(env.MountDir, "filled"))
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(filledNames, []string{"child.txt"}) {
+		return fmt.Errorf("filled child dir mismatch: %v", filledNames)
+	}
+
+	backendEmptyNames, err := harness.SortedNames(filepath.Join(env.BackendDir, "empty"))
+	if err != nil {
+		return err
+	}
+	if len(backendEmptyNames) != 0 {
+		return fmt.Errorf("backend empty child dir mismatch: %v", backendEmptyNames)
+	}
+
+	return nil
 }
 
 func readLargeFileCrossMessageBoundary(_ context.Context, env *harness.Env) error {
