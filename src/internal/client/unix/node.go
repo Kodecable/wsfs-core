@@ -12,11 +12,13 @@ import (
 	"syscall"
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/share/wsfsprotocol"
+	"wsfs-core/internal/share/wsfsunixconv"
 	"wsfs-core/internal/util"
 
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sys/unix"
 )
 
 type fsNode struct {
@@ -214,8 +216,48 @@ func (n *fsNode) Rename(_ context.Context, name string, newParent fusefs.InodeEm
 	wipeDirCache(&n.dirCache)
 	p1 := filepath.Join(n.path(), name)
 	p2 := filepath.Join("/"+newParent.EmbeddedInode().Path(nil), newName)
-	code := n.fsdata.session.CmdRename(p1, p2, flags)
+
+	if flags & ^wsfsunixconv.AcceptedUnixRenameFlags != 0 {
+		return syscall.ENOTSUP
+	}
+
+	var wsfsFlags uint32 = 0
+	for unixFlag, wsfsFlag := range wsfsunixconv.RenameFlagFromUnix {
+		if flags&unixFlag != 0 {
+			wsfsFlags |= wsfsFlag
+		}
+	}
+
+	code := n.fsdata.session.CmdRename(p1, p2, wsfsFlags)
 	return errnoFromCode(code)
+}
+
+func OpenFlagFromSys(in int) (out uint32, ok bool) {
+	in &= ^wsfsunixconv.IgnoredUnixOpenFlagBits
+	if in & ^wsfsunixconv.AcceptdUnixOpenFlagBits != 0 {
+		return 0, false
+	}
+
+	switch in & unix.O_ACCMODE {
+	case unix.O_RDONLY:
+		out |= wsfsprotocol.O_RDONLY
+	case unix.O_WRONLY:
+		out |= wsfsprotocol.O_WRONLY
+	case unix.O_RDWR:
+		out |= wsfsprotocol.O_RDWR
+	default:
+		return 0, false
+	}
+
+	for unixFlag, wsfsFlag := range wsfsunixconv.OpenFlagFromUnix {
+		if unixFlag&unix.O_ACCMODE != 0 {
+			continue
+		}
+		if in&unixFlag != 0 {
+			out |= wsfsFlag
+		}
+	}
+	return out, true
 }
 
 var _ = (fusefs.NodeCreater)((*fsNode)(nil))
@@ -223,7 +265,13 @@ var _ = (fusefs.NodeCreater)((*fsNode)(nil))
 func (n *fsNode) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (inode *fusefs.Inode, fh fusefs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	wipeDirCache(&n.dirCache)
 	p := filepath.Join(n.path(), name)
-	fd, code := n.fsdata.session.CmdOpen(p, flags|uint32(os.O_CREATE), mode)
+
+	wsfsFlag, ok := OpenFlagFromSys(int(flags))
+	if !ok {
+		return nil, nil, 0, syscall.ENOTSUP
+	}
+
+	fd, code := n.fsdata.session.CmdOpen(p, wsfsFlag|wsfsprotocol.O_CREAT, mode)
 	if code != wsfsprotocol.ErrorOK {
 		return nil, nil, 0, errnoFromCode(code)
 	}
@@ -284,7 +332,12 @@ func (n *fsNode) Open(_ context.Context, flags uint32) (fh fusefs.FileHandle, fu
 	}
 	//log.Debug().Str("Path", n.path()).Msg("Open")
 
-	fd, code := n.fsdata.session.CmdOpen(n.path(), flags, 0o644)
+	wsfsFlag, ok := OpenFlagFromSys(int(flags))
+	if !ok {
+		return nil, 0, syscall.ENOTSUP
+	}
+
+	fd, code := n.fsdata.session.CmdOpen(n.path(), wsfsFlag, 0o644)
 	return fd, 0, errnoFromCode(code)
 }
 
@@ -415,7 +468,12 @@ func (n *fsNode) Lseek(_ context.Context, f fusefs.FileHandle, Off uint64, whenc
 		return 0, fusefs.OK
 	}
 
-	off, code := n.fsdata.session.CmdSeek(f.(uint32), whence, int64(Off))
+	wsfsWhence, ok := wsfsunixconv.WhenceFromUnix[int(whence)]
+	if !ok {
+		return 0, syscall.ENOTSUP
+	}
+
+	off, code := n.fsdata.session.CmdSeek(f.(uint32), wsfsWhence, int64(Off))
 	return off, errnoFromCode(code)
 }
 
@@ -485,24 +543,6 @@ func (n *fsNode) Setattr(ctx context.Context, f fusefs.FileHandle, in *fuse.SetA
 		wipeAttrCache(&n.attrCache)
 	}
 	return errnoFromCode(code)
-}
-
-var _ = (fusefs.NodeGetlker)((*fsNode)(nil))
-
-func (n *fsNode) Getlk(_ context.Context, _ fusefs.FileHandle, _ uint64, _ *fuse.FileLock, _ uint32, _ *fuse.FileLock) syscall.Errno {
-	return syscall.ENOTSUP
-}
-
-var _ = (fusefs.NodeSetlker)((*fsNode)(nil))
-
-func (n *fsNode) Setlk(_ context.Context, _ fusefs.FileHandle, _ uint64, _ *fuse.FileLock, _ uint32) syscall.Errno {
-	return syscall.ENOTSUP
-}
-
-var _ = (fusefs.NodeSetlkwer)((*fsNode)(nil))
-
-func (n *fsNode) Setlkw(_ context.Context, _ fusefs.FileHandle, _ uint64, _ *fuse.FileLock, _ uint32) syscall.Errno {
-	return syscall.ENOTSUP
 }
 
 var _ = (fusefs.NodeGetxattrer)((*fsNode)(nil))

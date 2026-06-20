@@ -124,6 +124,14 @@ func (s *session) clearWriteStreams() {
 	})
 }
 
+func (s *session) clearFDs() {
+	s.fds.Range(func(key, value any) bool {
+		s.fds.Delete(key)
+		closeSFD(value.(sfd_t))
+		return true
+	})
+}
+
 type writeStreamState struct {
 	fd           sfd_t
 	offset       uint64

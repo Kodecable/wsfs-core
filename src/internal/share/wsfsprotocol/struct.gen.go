@@ -44,6 +44,10 @@ func GetCmdAllocateStructRequiredSize(d CmdAllocateStruct) int {
 	return 24
 }
 
+func GetCmdCloneFileRangeStructRequiredSize(d CmdCloneFileRangeStruct) int {
+	return 32
+}
+
 func GetCmdCloseStructRequiredSize(d CmdCloseStruct) int {
 	return 4
 }
@@ -58,6 +62,10 @@ func GetCmdFsStatStructRequiredSize(d CmdFsStatStruct) int {
 
 func GetCmdGetAttrStructRequiredSize(d CmdGetAttrStruct) int {
 	return len(d.Path) + 1
+}
+
+func GetCmdGetFileLockStructRequiredSize(d CmdGetFileLockStruct) int {
+	return GetFileLockInfoRequiredSize(d.FileLock) + 4
 }
 
 func GetCmdMkdirStructRequiredSize(d CmdMkdirStruct) int {
@@ -101,7 +109,7 @@ func GetCmdRmDirStructRequiredSize(d CmdRmDirStruct) int {
 }
 
 func GetCmdSeekStructRequiredSize(d CmdSeekStruct) int {
-	return 16
+	return 13
 }
 
 func GetCmdSetAttrByFDStructRequiredSize(d CmdSetAttrByFDStruct) int {
@@ -110,6 +118,14 @@ func GetCmdSetAttrByFDStructRequiredSize(d CmdSetAttrByFDStruct) int {
 
 func GetCmdSetAttrStructRequiredSize(d CmdSetAttrStruct) int {
 	return len(d.Path) + GetFileInfoRequiredSize(d.FI) + 2
+}
+
+func GetCmdSetFileLockStructRequiredSize(d CmdSetFileLockStruct) int {
+	return GetFileLockInfoRequiredSize(d.FileLock) + 4
+}
+
+func GetCmdSetFileLockWaitStructRequiredSize(d CmdSetFileLockWaitStruct) int {
+	return GetFileLockInfoRequiredSize(d.FileLock) + 4
 }
 
 func GetCmdSymLinkStructRequiredSize(d CmdSymLinkStruct) int {
@@ -144,7 +160,15 @@ func GetFileInfoRequiredSize(d FileInfo) int {
 	return 21
 }
 
+func GetFileLockInfoRequiredSize(d FileLockInfo) int {
+	return 18
+}
+
 func GetRspAllocateRequiredSize(d RspAllocate) int {
+	return 0
+}
+
+func GetRspCloneFileRangeRequiredSize(d RspCloneFileRange) int {
 	return 0
 }
 
@@ -166,6 +190,10 @@ func GetRspFsStatRequiredSize(d RspFsStat) int {
 
 func GetRspGetAttrRequiredSize(d RspGetAttr) int {
 	return GetFileInfoRequiredSize(d.FI) + 0
+}
+
+func GetRspGetFileLockRequiredSize(d RspGetFileLock) int {
+	return GetFileLockInfoRequiredSize(d.FileLock) + 0
 }
 
 func GetRspMkdirRequiredSize(d RspMkdir) int {
@@ -216,6 +244,14 @@ func GetRspSetAttrByFDRequiredSize(d RspSetAttrByFD) int {
 	return 0
 }
 
+func GetRspSetFileLockRequiredSize(d RspSetFileLock) int {
+	return 0
+}
+
+func GetRspSetFileLockWaitRequiredSize(d RspSetFileLockWait) int {
+	return 0
+}
+
 func GetRspSymLinkRequiredSize(d RspSymLink) int {
 	return 0
 }
@@ -247,6 +283,24 @@ func WriteCmdAllocateStructToWriter(d CmdAllocateStruct, w io.Writer) error {
 	// Size uint64
 	binary.LittleEndian.PutUint64(buf[16:], uint64(d.Size))
 	if _, err := w.Write(buf[:24]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdCloneFileRangeStructToWriter(d CmdCloneFileRangeStruct, w io.Writer) error {
+	var buf [32]byte
+	// SrcFD uint32
+	binary.LittleEndian.PutUint32(buf[0:], uint32(d.SrcFD))
+	// DstFD uint32
+	binary.LittleEndian.PutUint32(buf[4:], uint32(d.DstFD))
+	// SrcOffset uint64
+	binary.LittleEndian.PutUint64(buf[8:], uint64(d.SrcOffset))
+	// DstOffset uint64
+	binary.LittleEndian.PutUint64(buf[16:], uint64(d.DstOffset))
+	// Size uint64
+	binary.LittleEndian.PutUint64(buf[24:], uint64(d.Size))
+	if _, err := w.Write(buf[:32]); err != nil {
 		return err
 	}
 	return nil
@@ -297,6 +351,20 @@ func WriteCmdGetAttrStructToWriter(d CmdGetAttrStruct, w io.Writer) error {
 		return err
 	}
 	if _, err := w.Write([]byte{0}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdGetFileLockStructToWriter(d CmdGetFileLockStruct, w io.Writer) error {
+	var buf [4]byte
+	// FD uint32
+	binary.LittleEndian.PutUint32(buf[0:], uint32(d.FD))
+	// FileLock FileLockInfo
+	if _, err := w.Write(buf[:4]); err != nil {
+		return err
+	}
+	if err := WriteFileLockInfoToWriter(d.FileLock, w); err != nil {
 		return err
 	}
 	return nil
@@ -444,14 +512,14 @@ func WriteCmdRmDirStructToWriter(d CmdRmDirStruct, w io.Writer) error {
 }
 
 func WriteCmdSeekStructToWriter(d CmdSeekStruct, w io.Writer) error {
-	var buf [16]byte
+	var buf [13]byte
 	// FD uint32
 	binary.LittleEndian.PutUint32(buf[0:], uint32(d.FD))
-	// Flag uint32
-	binary.LittleEndian.PutUint32(buf[4:], uint32(d.Flag))
+	// Whence uint8
+	buf[4] = byte(d.Whence)
 	// Offset int64
-	binary.LittleEndian.PutUint64(buf[8:], uint64(d.Offset))
-	if _, err := w.Write(buf[:16]); err != nil {
+	binary.LittleEndian.PutUint64(buf[5:], uint64(d.Offset))
+	if _, err := w.Write(buf[:13]); err != nil {
 		return err
 	}
 	return nil
@@ -489,6 +557,34 @@ func WriteCmdSetAttrStructToWriter(d CmdSetAttrStruct, w io.Writer) error {
 		return err
 	}
 	if err := WriteFileInfoToWriter(d.FI, w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdSetFileLockStructToWriter(d CmdSetFileLockStruct, w io.Writer) error {
+	var buf [4]byte
+	// FD uint32
+	binary.LittleEndian.PutUint32(buf[0:], uint32(d.FD))
+	// FileLock FileLockInfo
+	if _, err := w.Write(buf[:4]); err != nil {
+		return err
+	}
+	if err := WriteFileLockInfoToWriter(d.FileLock, w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdSetFileLockWaitStructToWriter(d CmdSetFileLockWaitStruct, w io.Writer) error {
+	var buf [4]byte
+	// FD uint32
+	binary.LittleEndian.PutUint32(buf[0:], uint32(d.FD))
+	// FileLock FileLockInfo
+	if _, err := w.Write(buf[:4]); err != nil {
+		return err
+	}
+	if err := WriteFileLockInfoToWriter(d.FileLock, w); err != nil {
 		return err
 	}
 	return nil
@@ -621,7 +717,27 @@ func WriteFileInfoToWriter(d FileInfo, w io.Writer) error {
 	return nil
 }
 
+func WriteFileLockInfoToWriter(d FileLockInfo, w io.Writer) error {
+	var buf [18]byte
+	// Type uint8
+	buf[0] = byte(d.Type)
+	// Whence uint8
+	buf[1] = byte(d.Whence)
+	// Start uint64
+	binary.LittleEndian.PutUint64(buf[2:], uint64(d.Start))
+	// Size uint64
+	binary.LittleEndian.PutUint64(buf[10:], uint64(d.Size))
+	if _, err := w.Write(buf[:18]); err != nil {
+		return err
+	}
+	return nil
+}
+
 func WriteRspAllocateToWriter(d RspAllocate, w io.Writer) error {
+	return nil
+}
+
+func WriteRspCloneFileRangeToWriter(d RspCloneFileRange, w io.Writer) error {
 	return nil
 }
 
@@ -667,6 +783,14 @@ func WriteRspFsStatToWriter(d RspFsStat, w io.Writer) error {
 func WriteRspGetAttrToWriter(d RspGetAttr, w io.Writer) error {
 	// FI FileInfo
 	if err := WriteFileInfoToWriter(d.FI, w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteRspGetFileLockToWriter(d RspGetFileLock, w io.Writer) error {
+	// FileLock FileLockInfo
+	if err := WriteFileLockInfoToWriter(d.FileLock, w); err != nil {
 		return err
 	}
 	return nil
@@ -751,6 +875,14 @@ func WriteRspSetAttrByFDToWriter(d RspSetAttrByFD, w io.Writer) error {
 	return nil
 }
 
+func WriteRspSetFileLockToWriter(d RspSetFileLock, w io.Writer) error {
+	return nil
+}
+
+func WriteRspSetFileLockWaitToWriter(d RspSetFileLockWait, w io.Writer) error {
+	return nil
+}
+
 func WriteRspSymLinkToWriter(d RspSymLink, w io.Writer) error {
 	return nil
 }
@@ -805,6 +937,24 @@ func ReadCmdAllocateStructFromReader(d *CmdAllocateStruct, r io.Reader) error {
 	return nil
 }
 
+func ReadCmdCloneFileRangeStructFromReader(d *CmdCloneFileRangeStruct, r io.Reader) error {
+	var buf [32]byte
+	// SrcFD uint32
+	// DstFD uint32
+	// SrcOffset uint64
+	// DstOffset uint64
+	// Size uint64
+	if _, err := io.ReadFull(r, buf[:32]); err != nil {
+		return err
+	}
+	d.SrcFD = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
+	d.DstFD = (uint32)(binary.LittleEndian.Uint32(buf[4:]))
+	d.SrcOffset = (uint64)(binary.LittleEndian.Uint64(buf[8:]))
+	d.DstOffset = (uint64)(binary.LittleEndian.Uint64(buf[16:]))
+	d.Size = (uint64)(binary.LittleEndian.Uint64(buf[24:]))
+	return nil
+}
+
 func ReadCmdCloseStructFromReader(d *CmdCloseStruct, r io.Reader) error {
 	var buf [4]byte
 	// FD uint32
@@ -844,6 +994,20 @@ func ReadCmdFsStatStructFromReader(d *CmdFsStatStruct, r io.Reader) error {
 func ReadCmdGetAttrStructFromReader(d *CmdGetAttrStruct, r io.Reader) error {
 	// Path string
 	if err := CopyStrFromReader(r, &d.Path); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdGetFileLockStructFromReader(d *CmdGetFileLockStruct, r io.Reader) error {
+	var buf [4]byte
+	// FD uint32
+	// FileLock FileLockInfo
+	if _, err := io.ReadFull(r, buf[:4]); err != nil {
+		return err
+	}
+	d.FD = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
+	if err := ReadFileLockInfoFromReader(&d.FileLock, r); err != nil {
 		return err
 	}
 	return nil
@@ -964,16 +1128,16 @@ func ReadCmdRmDirStructFromReader(d *CmdRmDirStruct, r io.Reader) error {
 }
 
 func ReadCmdSeekStructFromReader(d *CmdSeekStruct, r io.Reader) error {
-	var buf [16]byte
+	var buf [13]byte
 	// FD uint32
-	// Flag uint32
+	// Whence uint8
 	// Offset int64
-	if _, err := io.ReadFull(r, buf[:16]); err != nil {
+	if _, err := io.ReadFull(r, buf[:13]); err != nil {
 		return err
 	}
 	d.FD = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
-	d.Flag = (uint32)(binary.LittleEndian.Uint32(buf[4:]))
-	d.Offset = (int64)(binary.LittleEndian.Uint64(buf[8:]))
+	d.Whence = (uint8)(buf[4])
+	d.Offset = (int64)(binary.LittleEndian.Uint64(buf[5:]))
 	return nil
 }
 
@@ -1006,6 +1170,34 @@ func ReadCmdSetAttrStructFromReader(d *CmdSetAttrStruct, r io.Reader) error {
 	}
 	d.Flag = (uint8)(buf[0])
 	if err := ReadFileInfoFromReader(&d.FI, r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdSetFileLockStructFromReader(d *CmdSetFileLockStruct, r io.Reader) error {
+	var buf [4]byte
+	// FD uint32
+	// FileLock FileLockInfo
+	if _, err := io.ReadFull(r, buf[:4]); err != nil {
+		return err
+	}
+	d.FD = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
+	if err := ReadFileLockInfoFromReader(&d.FileLock, r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdSetFileLockWaitStructFromReader(d *CmdSetFileLockWaitStruct, r io.Reader) error {
+	var buf [4]byte
+	// FD uint32
+	// FileLock FileLockInfo
+	if _, err := io.ReadFull(r, buf[:4]); err != nil {
+		return err
+	}
+	d.FD = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
+	if err := ReadFileLockInfoFromReader(&d.FileLock, r); err != nil {
 		return err
 	}
 	return nil
@@ -1137,7 +1329,27 @@ func ReadFileInfoFromReader(d *FileInfo, r io.Reader) error {
 	return nil
 }
 
+func ReadFileLockInfoFromReader(d *FileLockInfo, r io.Reader) error {
+	var buf [18]byte
+	// Type uint8
+	// Whence uint8
+	// Start uint64
+	// Size uint64
+	if _, err := io.ReadFull(r, buf[:18]); err != nil {
+		return err
+	}
+	d.Type = (uint8)(buf[0])
+	d.Whence = (uint8)(buf[1])
+	d.Start = (uint64)(binary.LittleEndian.Uint64(buf[2:]))
+	d.Size = (uint64)(binary.LittleEndian.Uint64(buf[10:]))
+	return nil
+}
+
 func ReadRspAllocateFromReader(d *RspAllocate, r io.Reader) error {
+	return nil
+}
+
+func ReadRspCloneFileRangeFromReader(d *RspCloneFileRange, r io.Reader) error {
 	return nil
 }
 
@@ -1180,6 +1392,14 @@ func ReadRspFsStatFromReader(d *RspFsStat, r io.Reader) error {
 func ReadRspGetAttrFromReader(d *RspGetAttr, r io.Reader) error {
 	// FI FileInfo
 	if err := ReadFileInfoFromReader(&d.FI, r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadRspGetFileLockFromReader(d *RspGetFileLock, r io.Reader) error {
+	// FileLock FileLockInfo
+	if err := ReadFileLockInfoFromReader(&d.FileLock, r); err != nil {
 		return err
 	}
 	return nil
@@ -1264,6 +1484,14 @@ func ReadRspSetAttrFromReader(d *RspSetAttr, r io.Reader) error {
 }
 
 func ReadRspSetAttrByFDFromReader(d *RspSetAttrByFD, r io.Reader) error {
+	return nil
+}
+
+func ReadRspSetFileLockFromReader(d *RspSetFileLock, r io.Reader) error {
+	return nil
+}
+
+func ReadRspSetFileLockWaitFromReader(d *RspSetFileLockWait, r io.Reader) error {
 	return nil
 }
 

@@ -9,3 +9,4 @@ release/work
 .directory
 .*.swp
 __debug_bin*
+__pycache__

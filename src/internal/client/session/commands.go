@@ -535,14 +535,14 @@ func (s *Session) CmdWrite(fd uint32, data []byte) (written uint64, code uint8) 
 	return uint64(off), wsfsprotocol.ErrorOK
 }
 
-func (s *Session) CmdSeek(fd uint32, flag uint32, off int64) (pos uint64, code uint8) {
+func (s *Session) CmdSeek(fd uint32, whence uint8, off int64) (pos uint64, code uint8) {
 	clientMark := s.newClientMark()
 
 	if !s.beginRequest(clientMark, wsfsprotocol.CmdSeek) {
 		s.marks[clientMark].Unlock()
 		return
 	}
-	err := wsfsprotocol.WriteCmdSeekStructToWriter(wsfsprotocol.CmdSeekStruct{FD: fd, Flag: flag, Offset: off}, s.writer)
+	err := wsfsprotocol.WriteCmdSeekStructToWriter(wsfsprotocol.CmdSeekStruct{FD: fd, Whence: whence, Offset: off}, s.writer)
 	s.writeDone(err)
 	if err != nil {
 		s.marks[clientMark].Unlock()
@@ -918,6 +918,103 @@ func (s *Session) CmdCopyFileRange(wfd1 uint32, wfd2 uint32, off1 uint64, off2 u
 		return 0, wsfsprotocol.ErrorIO
 	}
 	return rsp.Copied, code
+}
+
+func (s *Session) CmdCloneFileRange(wfd1 uint32, wfd2 uint32, off1 uint64, off2 uint64, size uint64) (code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdCloneFileRange) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdCloneFileRangeStructToWriter(wsfsprotocol.CmdCloneFileRangeStruct{
+		SrcFD: wfd1, DstFD: wfd2, SrcOffset: off1, DstOffset: off2, Size: size,
+	}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return
+}
+
+func (s *Session) CmdGetFileLock(fd uint32, fileLock wsfsprotocol.FileLockInfo) (out wsfsprotocol.FileLockInfo, code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdGetFileLock) {
+		s.marks[clientMark].Unlock()
+		return out, wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdGetFileLockStructToWriter(wsfsprotocol.CmdGetFileLockStruct{FD: fd, FileLock: fileLock}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return out, wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	if code != wsfsprotocol.ErrorOK {
+		bufPool.Put(rspBuf)
+		return out, code
+	}
+
+	var rsp wsfsprotocol.RspGetFileLock
+	err = wsfsprotocol.ReadRspGetFileLockFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	bufPool.Put(rspBuf)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to decode CmdGetFileLock response")
+		return out, wsfsprotocol.ErrorIO
+	}
+	return rsp.FileLock, code
+}
+
+func (s *Session) CmdSetFileLock(fd uint32, fileLock wsfsprotocol.FileLockInfo) (code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdSetFileLock) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdSetFileLockStructToWriter(wsfsprotocol.CmdSetFileLockStruct{FD: fd, FileLock: fileLock}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return
+}
+
+func (s *Session) CmdSetFileLockWait(fd uint32, fileLock wsfsprotocol.FileLockInfo) (code uint8) {
+	clientMark := s.newClientMark()
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdSetFileLockWait) {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdSetFileLockWaitStructToWriter(wsfsprotocol.CmdSetFileLockWaitStruct{FD: fd, FileLock: fileLock}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		s.marks[clientMark].Unlock()
+		return wsfsprotocol.ErrorIO
+	}
+
+	rspBuf := <-s.responses[clientMark]
+	s.marks[clientMark].Unlock()
+	code = rspBuf.Bytes[1]
+	bufPool.Put(rspBuf)
+	return
 }
 
 func (s *Session) CmdSetAttrByFD(wfd uint32, flag uint8, fi wsfsprotocol.FileInfo) (code uint8) {

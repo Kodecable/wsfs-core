@@ -6,7 +6,7 @@ const (
 	MaxMsgSize        int = 8192
 	MaxCommandLength  int = MaxMsgSize
 	MaxResponseLength int = MaxMsgSize
-	WSSubprotocol         = "WSFS/draft.4"
+	WSSubprotocol         = "WSFS/draft.5"
 )
 
 const (
@@ -34,37 +34,67 @@ const (
 	CmdReadDirPlus     uint8 = 22
 	CmdWriteStreamOpen uint8 = 23
 	CmdWriteStreamData uint8 = 24
+	CmdCloneFileRange  uint8 = 25
+	CmdGetFileLock     uint8 = 26
+	CmdSetFileLock     uint8 = 27
+	CmdSetFileLockWait uint8 = 28
 )
 
 const (
-	ErrorOK              uint8 = 0
-	ErrorPartialResponse uint8 = 1
-	ErrorUnknown         uint8 = 2
-	ErrorBusy            uint8 = 3
-	ErrorExists          uint8 = 4
-	ErrorNotExists       uint8 = 5
-	ErrorLoop            uint8 = 6
-	ErrorNoSpace         uint8 = 7
-	ErrorNotEmpty        uint8 = 8
-	ErrorInvail          uint8 = 9
-	ErrorInvailFD        uint8 = 10
-	ErrorType            uint8 = 11
-	ErrorIO              uint8 = 12
-	ErrorNotSupport      uint8 = 13
-	ErrorAccess          uint8 = 14
-	ErrorTooLoong        uint8 = 15
+	ErrorOK                 uint8 = 0
+	ErrorPartialResponse    uint8 = 1
+	ErrorUnknown            uint8 = 2
+	ErrorBusy               uint8 = 3
+	ErrorExists             uint8 = 4
+	ErrorNotExists          uint8 = 5
+	ErrorLoop               uint8 = 6
+	ErrorNoSpace            uint8 = 7
+	ErrorNotEmpty           uint8 = 8
+	ErrorInvail             uint8 = 9
+	ErrorInvailFD           uint8 = 10
+	ErrorType               uint8 = 11
+	ErrorIO                 uint8 = 12
+	ErrorNotSupport         uint8 = 13
+	ErrorAccessRestricted   uint8 = 14
+	ErrorTooLoong           uint8 = 15
+	ErrorStateBlocked       uint8 = 16
+	ErrorSpecialFileBlocked uint8 = 17
+	ErrorCrossDevice        uint8 = 18
 )
 
 const (
-	O_RDONLY    uint32 = 0x0
-	O_WRONLY    uint32 = 0x1
-	O_RDWR      uint32 = 0x2
+	O_RDONLY  uint32 = 0x0
+	O_WRONLY  uint32 = 0x1
+	O_RDWR    uint32 = 0x2
+	O_ACCMODE uint32 = 0x3
+
 	O_TRUNC     uint32 = 0x200
 	O_EXCL      uint32 = 0x80
 	O_CREAT     uint32 = 0x40
 	O_DIRECTORY uint32 = 0x10000
 	O_APPEND    uint32 = 0x400
+	O_SYNC      uint32 = 0x101000
+	O_DSYNC     uint32 = 0x1000
+	O_NOFOLLOW  uint32 = 0x20000
+	O_NOATIME   uint32 = 0x40000
+	O_DIRECT    uint32 = 0x4000
 )
+
+var OpenFlags = []uint32{
+	O_RDONLY,
+	O_WRONLY,
+	O_RDWR,
+	O_TRUNC,
+	O_EXCL,
+	O_CREAT,
+	O_DIRECTORY,
+	O_APPEND,
+	O_SYNC,
+	O_DSYNC,
+	O_NOFOLLOW,
+	O_NOATIME,
+	O_DIRECT,
+}
 
 const (
 	FALLOC_FL_FALLOCATE      uint32 = 0x00
@@ -77,12 +107,24 @@ const (
 )
 
 const (
-	SEEK_SET  uint8 = 0
-	SEEK_CUR  uint8 = 1
-	SEEK_END  uint8 = 2
-	SEEK_DATA uint8 = 3
-	SEEK_HOLE uint8 = 4
+	WHENCE_SET  uint8 = 0
+	WHENCE_CUR  uint8 = 1
+	WHENCE_END  uint8 = 2
+	WHENCE_DATA uint8 = 3
+	WHENCE_HOLE uint8 = 4
 )
+
+const (
+	RENAME_NOREPLACE uint32 = 0x1
+	RENAME_EXCHANGE  uint32 = 0x2
+	RENAME_WHITEOUT  uint32 = 0x4
+)
+
+var RenameFlags = []uint32{
+	RENAME_NOREPLACE,
+	RENAME_EXCHANGE,
+	RENAME_WHITEOUT,
+}
 
 const (
 	OWNER_NN uint8 = 0
@@ -102,4 +144,10 @@ const (
 	READDIRPLUS_INDICATOR_CONTINUE      uint8 = 1
 	READDIRPLUS_INDICATOR_PREFETCH      uint8 = 2
 	READDIRPLUS_INDICATOR_PREFETCH_SKIP uint8 = 3
+)
+
+const (
+	FILELOCK_UNLOCK    uint8 = 0
+	FILELOCK_READLOCK  uint8 = 1
+	FILELOCK_WRITELOCK uint8 = 2
 )

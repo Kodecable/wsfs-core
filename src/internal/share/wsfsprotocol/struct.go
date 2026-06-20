@@ -18,6 +18,13 @@ type Dirent struct {
 	Owner uint8
 }
 
+type FileLockInfo struct {
+	Type   uint8
+	Whence uint8
+	Start  uint64
+	Size   uint64
+}
+
 type CmdOpenStruct struct {
 	Path  string
 	OFlag uint32
@@ -48,7 +55,7 @@ type CmdWriteStruct struct {
 
 type CmdSeekStruct struct {
 	FD     uint32
-	Flag   uint32
+	Whence uint8
 	Offset int64
 }
 
@@ -121,6 +128,14 @@ type CmdCopyFileRangeStruct struct {
 	Size      uint64
 }
 
+type CmdCloneFileRangeStruct struct {
+	SrcFD     uint32
+	DstFD     uint32
+	SrcOffset uint64
+	DstOffset uint64
+	Size      uint64
+}
+
 type CmdSetAttrByFDStruct struct {
 	FD   uint32
 	Flag uint8
@@ -140,6 +155,21 @@ type CmdWriteStreamOpenStruct struct {
 type CmdWriteStreamDataStruct struct {
 	IsEnd uint8
 	Data  []byte
+}
+
+type CmdGetFileLockStruct struct {
+	FD       uint32
+	FileLock FileLockInfo
+}
+
+type CmdSetFileLockStruct struct {
+	FD       uint32
+	FileLock FileLockInfo
+}
+
+type CmdSetFileLockWaitStruct struct {
+	FD       uint32
+	FileLock FileLockInfo
 }
 
 type RspError struct {
@@ -208,11 +238,20 @@ type RspCopyFileRange struct {
 	Copied uint64
 }
 
+type RspCloneFileRange struct{}
+
 type RspRename struct{}
 
 type RspSetAttrByFD struct{}
 
-
 type RspWriteStreamClose struct {
 	Written uint64
 }
+
+type RspGetFileLock struct {
+	FileLock FileLockInfo
+}
+
+type RspSetFileLock struct{}
+
+type RspSetFileLockWait struct{}

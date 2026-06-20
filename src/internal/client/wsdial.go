@@ -128,13 +128,10 @@ func wsdial(urlStr string, requestHeader http.Header, expectedCertHash string) (
 	}
 	transport.TLSClientConfig = tlsConfig(expectedCertHash)
 
-	conn, rsp, err := websocket.Dial(context.Background(), httpUrl, &websocket.DialOptions{
-		HTTPClient: &http.Client{
-			Transport: transport,
-		},
-		HTTPHeader:   requestHeader,
-		Subprotocols: []string{wsfsprotocol.WSSubprotocol},
-	})
+	dialOpt := httpDialOptions(&http.Client{Transport: transport}, requestHeader)
+	dialOpt.Subprotocols = []string{wsfsprotocol.WSSubprotocol}
+
+	conn, rsp, err := websocket.Dial(context.Background(), httpUrl, dialOpt)
 	logServerCertHash(rsp, err)
 	return conn, rsp, err
 }

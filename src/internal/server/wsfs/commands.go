@@ -70,7 +70,7 @@ func osErrCode(err error) uint8 {
 	} else if os.IsNotExist(err) {
 		return wsfsprotocol.ErrorNotExists
 	} else if os.IsPermission(err) {
-		return wsfsprotocol.ErrorAccess
+		return wsfsprotocol.ErrorAccessRestricted
 	} else {
 		return wsfsprotocol.ErrorUnknown
 	}
@@ -248,10 +248,10 @@ func (s *session) writePrefetchIndicator(rsp *util.Buffer, clientMark uint8, ind
 }
 
 type prefetchDirState struct {
-	absPath     string
-	file        *os.File
-	pending     []fs.DirEntry
-	count       int
+	absPath string
+	file    *os.File
+	pending []fs.DirEntry
+	count   int
 }
 
 func (s *session) preparePrefetchDir(basePath string, entry fs.DirEntry) (*prefetchDirState, error) {
@@ -267,10 +267,10 @@ func (s *session) preparePrefetchDir(basePath string, entry fs.DirEntry) (*prefe
 		return nil, readErr
 	}
 	return &prefetchDirState{
-		absPath:     childAbsPath,
-		file:        cf,
-		pending:     entries,
-		count:       0,
+		absPath: childAbsPath,
+		file:    cf,
+		pending: entries,
+		count:   0,
 	}, nil
 }
 

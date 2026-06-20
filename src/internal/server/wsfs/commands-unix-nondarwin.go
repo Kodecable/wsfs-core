@@ -1,4 +1,4 @@
-//go:build unix && !darwin
+//go:build linux
 
 package wsfs
 
@@ -8,5 +8,5 @@ import (
 )
 
 func init() {
-	errorCodeMap[syscall.EBADFD] = wsfsprotocol.ErrorInvailFD
+	errorCodeMap[syscall.EBADFD] = wsfsprotocol.ErrorIO
 }

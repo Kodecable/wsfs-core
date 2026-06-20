@@ -186,6 +186,9 @@ func (h *Handler) newSession(username string, storage *storage.Storage) (id uint
 }
 
 func (h *Handler) delSession(id uint64) {
+	if session := h.getSession(id); session != nil {
+		session.clearFDs()
+	}
 	log.Info().Uint64("Id", id).Msg("Session destroyed")
 	h.sessions.Delete(id)
 }

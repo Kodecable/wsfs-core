@@ -11,12 +11,19 @@ import (
 	"syscall"
 	"wsfs-core/internal/server/wsfs/copyfilerange"
 	"wsfs-core/internal/server/wsfs/fallocate"
+	"wsfs-core/internal/server/wsfs/ofdlock"
+	"wsfs-core/internal/server/wsfs/reflink"
 	"wsfs-core/internal/server/wsfs/renameat2"
 	"wsfs-core/internal/share/wsfsprotocol"
+	"wsfs-core/internal/share/wsfsunixconv"
 	"wsfs-core/internal/util"
 )
 
 type sfd_t int
+
+func closeSFD(fd sfd_t) {
+	_ = syscall.Close(int(fd))
+}
 
 // copy from src/os/file.go, modifed.
 // Copyright 2009 The Go Authors. All rights reserved.
@@ -54,13 +61,13 @@ func ignoringEINTR(fn func() error) error {
 }
 
 var errorCodeMap map[syscall.Errno]uint8 = map[syscall.Errno]uint8{
-	syscall.EACCES: wsfsprotocol.ErrorAccess,
-	syscall.EROFS:  wsfsprotocol.ErrorAccess,
-	syscall.EFAULT: wsfsprotocol.ErrorAccess,
-	syscall.EPERM:  wsfsprotocol.ErrorAccess,
+	syscall.EACCES: wsfsprotocol.ErrorAccessRestricted,
+	syscall.EROFS:  wsfsprotocol.ErrorAccessRestricted,
+	syscall.EPERM:  wsfsprotocol.ErrorStateBlocked,
 	//syscall.ENOMEM:       CmdErrBusy,
 	syscall.EBUSY:        wsfsprotocol.ErrorBusy,
 	syscall.EEXIST:       wsfsprotocol.ErrorExists,
+	syscall.EXDEV:        wsfsprotocol.ErrorCrossDevice,
 	syscall.ENAMETOOLONG: wsfsprotocol.ErrorTooLoong,
 	syscall.EINVAL:       wsfsprotocol.ErrorInvail,
 	syscall.EBADF:        wsfsprotocol.ErrorInvailFD,
@@ -72,6 +79,7 @@ var errorCodeMap map[syscall.Errno]uint8 = map[syscall.Errno]uint8{
 	syscall.ENOTDIR:      wsfsprotocol.ErrorType,
 	syscall.EIO:          wsfsprotocol.ErrorIO,
 	syscall.ENOTSUP:      wsfsprotocol.ErrorNotSupport,
+	syscall.ETXTBSY:      wsfsprotocol.ErrorSpecialFileBlocked,
 	//syscall.EMLINK:       wsfsprotocol.ErrorLinkMax,
 }
 
@@ -102,17 +110,42 @@ func (s *session) convOwner(fi os.FileInfo) (ownerInfo uint8) {
 }
 
 func (s *session) cmdOpen(clientMark uint8, req wsfsprotocol.CmdOpenStruct) {
-
 	if !util.IsUrlValid(req.Path) {
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
 	apath := s.storage.Path + req.Path
 
+	oflag := 0
+	switch req.OFlag & wsfsprotocol.O_ACCMODE {
+	case wsfsprotocol.O_RDONLY:
+		oflag |= wsfsunixconv.OpenFlagToUnix[wsfsprotocol.O_RDONLY]
+	case wsfsprotocol.O_WRONLY:
+		oflag |= wsfsunixconv.OpenFlagToUnix[wsfsprotocol.O_WRONLY]
+	case wsfsprotocol.O_RDWR:
+		oflag |= wsfsunixconv.OpenFlagToUnix[wsfsprotocol.O_RDWR]
+	default:
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad open access mode")
+		return
+	}
+	for _, proctocolFlag := range wsfsprotocol.OpenFlags {
+		if proctocolFlag&wsfsprotocol.O_ACCMODE != 0 {
+			continue
+		}
+		if req.OFlag&proctocolFlag != 0 {
+			unixFlag, ok := wsfsunixconv.OpenFlagToUnix[proctocolFlag]
+			if !ok {
+				s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "not supported open flag")
+				return
+			}
+			oflag |= unixFlag
+		}
+	}
+
 	var sfd int
 	var err error
 	ignoringEINTR(func() error {
-		sfd, err = syscall.Open(apath, int(req.OFlag), syscallMode(fs.FileMode(req.FMode)))
+		sfd, err = syscall.Open(apath, oflag, syscallMode(fs.FileMode(req.FMode)))
 		return err
 	})
 
@@ -236,8 +269,14 @@ func (s *session) cmdSeek(clientMark uint8, req wsfsprotocol.CmdSeekStruct) {
 	}
 	sfd := rsfd.(sfd_t)
 
+	whence, ok := wsfsunixconv.WhenceToUnix[req.Whence]
+	if !ok {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "whence not supported")
+		return
+	}
+
 	// syscall lseek will not return EINTR
-	offset, err := syscall.Seek(int(sfd), req.Offset, int(req.Flag))
+	offset, err := syscall.Seek(int(sfd), req.Offset, whence)
 
 	if err != nil {
 		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
@@ -563,6 +602,29 @@ func (s *session) cmdCopyFileRange(clientMark uint8, req wsfsprotocol.CmdCopyFil
 	}
 }
 
+func (s *session) cmdCloneFileRange(clientMark uint8, req wsfsprotocol.CmdCloneFileRangeStruct) {
+	rsfd1, ok := s.fds.Load(req.SrcFD)
+	if !ok {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		return
+	}
+	sfd1 := rsfd1.(sfd_t)
+
+	rsfd2, ok := s.fds.Load(req.DstFD)
+	if !ok {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		return
+	}
+	sfd2 := rsfd2.(sfd_t)
+
+	err := reflink.CloneFileRange(int(sfd2), int(sfd1), req.DstOffset, req.SrcOffset, req.Size)
+	if err != nil {
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
+		return
+	}
+	s.writeRspOK(clientMark)
+}
+
 func (s *session) cmdRename(clientMark uint8, req wsfsprotocol.CmdRenameStruct) {
 	if !util.IsUrlValid(req.OldPath) || !util.IsUrlValid(req.NewPath) {
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
@@ -640,6 +702,46 @@ func (s *session) cmdSetAttrByFD(clientMark uint8, req wsfsprotocol.CmdSetAttrBy
 			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 			return
 		}
+	}
+	s.writeRspOK(clientMark)
+}
+
+func (s *session) cmdGetFileLock(clientMark uint8, req wsfsprotocol.CmdGetFileLockStruct) {
+	rsfd, ok := s.fds.Load(req.FD)
+	if !ok {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		return
+	}
+
+	outLock, err := ofdlock.GetLock(int(rsfd.(sfd_t)), req.FileLock)
+	if err != nil {
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
+		return
+	}
+
+	if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
+		err = wsfsprotocol.WriteRspGetFileLockToWriter(wsfsprotocol.RspGetFileLock{FileLock: outLock}, s.writer)
+		s.writeDone(err)
+	}
+}
+
+func (s *session) cmdSetFileLock(clientMark uint8, req wsfsprotocol.CmdSetFileLockStruct) {
+	s.cmdSetFileLockCommon(clientMark, req.FD, req.FileLock, false)
+}
+
+func (s *session) cmdSetFileLockWait(clientMark uint8, req wsfsprotocol.CmdSetFileLockWaitStruct) {
+	s.cmdSetFileLockCommon(clientMark, req.FD, req.FileLock, true)
+}
+
+func (s *session) cmdSetFileLockCommon(clientMark uint8, fd uint32, lock wsfsprotocol.FileLockInfo, blocking bool) {
+	rsfd, ok := s.fds.Load(fd)
+	if !ok {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		return
+	}
+	if err := ofdlock.SetLock(int(rsfd.(sfd_t)), lock, blocking); err != nil {
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
+		return
 	}
 	s.writeRspOK(clientMark)
 }

@@ -278,6 +278,50 @@ func (s *session) doCommandCall(clientMark, cmd uint8, r io.Reader) {
 		s.cmdWriteStreamData(clientMark, req)
 		s.releaseFastBuffer(dataBuf)
 		return
+	case wsfsprotocol.CmdCloneFileRange:
+		var req wsfsprotocol.CmdCloneFileRangeStruct
+		err := wsfsprotocol.ReadCmdCloneFileRangeStructFromReader(&req, r)
+		if err != nil {
+			goto BadCmdFormat
+		}
+		s.cmdGroup.Go(func() error {
+			s.cmdCloneFileRange(clientMark, req)
+			return nil
+		})
+		return
+	case wsfsprotocol.CmdGetFileLock:
+		var req wsfsprotocol.CmdGetFileLockStruct
+		err := wsfsprotocol.ReadCmdGetFileLockStructFromReader(&req, r)
+		if err != nil {
+			goto BadCmdFormat
+		}
+		s.cmdGroup.Go(func() error {
+			s.cmdGetFileLock(clientMark, req)
+			return nil
+		})
+		return
+	case wsfsprotocol.CmdSetFileLock:
+		var req wsfsprotocol.CmdSetFileLockStruct
+		err := wsfsprotocol.ReadCmdSetFileLockStructFromReader(&req, r)
+		if err != nil {
+			goto BadCmdFormat
+		}
+		s.cmdGroup.Go(func() error {
+			s.cmdSetFileLock(clientMark, req)
+			return nil
+		})
+		return
+	case wsfsprotocol.CmdSetFileLockWait:
+		var req wsfsprotocol.CmdSetFileLockWaitStruct
+		err := wsfsprotocol.ReadCmdSetFileLockWaitStructFromReader(&req, r)
+		if err != nil {
+			goto BadCmdFormat
+		}
+		s.cmdGroup.Go(func() error {
+			s.cmdSetFileLockWait(clientMark, req)
+			return nil
+		})
+		return
 	default:
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "Unknown command")
 	}

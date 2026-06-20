@@ -459,8 +459,7 @@ func (s *fileSystem) Fsync(_ string, _ bool, fh uint64) int {
 
 /*
 func (s *fileSystem) Opendir(path string) (int, uint64) {
-	const O_DIRECTORY = 0x10000
-	fd, code := s.session.CmdOpen(path, uint32(os.O_RDONLY|O_DIRECTORY), 0)
+	fd, code := s.session.CmdOpen(path, wsfsprotocol.O_RDONLY|wsfsprotocol.O_DIRECTORY, 0)
 	return errnoFromCode(code), uint64(fd)
 }
 

@@ -9,10 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 	"wsfs-core/internal/share/wsfsprotocol"
+	"wsfs-core/internal/share/wsfsstdconv"
 	"wsfs-core/internal/util"
 )
 
 type sfd_t *os.File
+
+func closeSFD(fd sfd_t) {
+	_ = (*os.File)(fd).Close()
+}
 
 func (s *session) convOwner(_ os.FileInfo) (ownerInfo uint8) {
 	return wsfsprotocol.OWNER_UG
@@ -24,7 +29,33 @@ func (s *session) cmdOpen(clientMark uint8, req wsfsprotocol.CmdOpenStruct) {
 		return
 	}
 
-	sfd, err := os.OpenFile(s.storage.Path+req.Path, int(req.OFlag), fs.FileMode(req.FMode))
+	oflag := 0
+	switch req.OFlag & wsfsprotocol.O_ACCMODE {
+	case wsfsprotocol.O_RDONLY:
+		oflag |= wsfsstdconv.OpenFlagToStd[wsfsprotocol.O_RDONLY]
+	case wsfsprotocol.O_WRONLY:
+		oflag |= wsfsstdconv.OpenFlagToStd[wsfsprotocol.O_WRONLY]
+	case wsfsprotocol.O_RDWR:
+		oflag |= wsfsstdconv.OpenFlagToStd[wsfsprotocol.O_RDWR]
+	default:
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad open access mode")
+		return
+	}
+	for _, proctocolFlag := range wsfsprotocol.OpenFlags {
+		if proctocolFlag&wsfsprotocol.O_ACCMODE != 0 {
+			continue
+		}
+		if req.OFlag&proctocolFlag != 0 {
+			unixFlag, ok := wsfsstdconv.OpenFlagToStd[proctocolFlag]
+			if !ok {
+				s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "not supported open flag")
+				return
+			}
+			oflag |= unixFlag
+		}
+	}
+
+	sfd, err := os.OpenFile(s.storage.Path+req.Path, oflag, fs.FileMode(req.FMode))
 	if err != nil {
 		s.writeRspError(clientMark, osErrCode(err), "syscall error")
 		return
@@ -122,12 +153,14 @@ func (s *session) cmdSeek(clientMark uint8, req wsfsprotocol.CmdSeekStruct) {
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
 		return
 	}
-	if req.Flag > 2 {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "syscall error")
+
+	whence, ok := wsfsstdconv.WhenceToStd[req.Whence]
+	if !ok {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "whence not supported")
 		return
 	}
 
-	offset, err := (*os.File)(rsfd.(sfd_t)).Seek(req.Offset, int(req.Flag))
+	offset, err := (*os.File)(rsfd.(sfd_t)).Seek(req.Offset, whence)
 	if err != nil {
 		s.writeRspError(clientMark, osErrCode(err), "syscall error")
 		return
@@ -309,6 +342,22 @@ func (s *session) writeStreamChunk(clientMark uint8, stream *writeStreamState, d
 }
 
 func (s *session) cmdCopyFileRange(clientMark uint8, _ wsfsprotocol.CmdCopyFileRangeStruct) {
+	s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "syscall error")
+}
+
+func (s *session) cmdCloneFileRange(clientMark uint8, _ wsfsprotocol.CmdCloneFileRangeStruct) {
+	s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "syscall error")
+}
+
+func (s *session) cmdGetFileLock(clientMark uint8, _ wsfsprotocol.CmdGetFileLockStruct) {
+	s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "syscall error")
+}
+
+func (s *session) cmdSetFileLock(clientMark uint8, _ wsfsprotocol.CmdSetFileLockStruct) {
+	s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "syscall error")
+}
+
+func (s *session) cmdSetFileLockWait(clientMark uint8, _ wsfsprotocol.CmdSetFileLockWaitStruct) {
 	s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "syscall error")
 }
 
