@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"wsfs-core/internal/server/wsfs/timeval"
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/util"
 
@@ -76,11 +77,20 @@ func osErrCode(err error) uint8 {
 	}
 }
 
+func makeWSFSFileInfo(fi fs.FileInfo, mtime wsfsprotocol.Timespec, owner uint8) wsfsprotocol.FileInfo {
+	return wsfsprotocol.FileInfo{
+		Size:  uint64(fi.Size()),
+		MTime: mtime,
+		Mode:  uint32(fi.Mode()),
+		Owner: owner,
+	}
+}
+
 // base ends with "/"
-func (s *session) restrictingSymlinkByFileInfo(base string, fi fs.FileInfo) (fs.FileInfo, error) {
+func (s *session) restrictingSymlinkByFileInfo(base string, fi fs.FileInfo) (fs.FileInfo, wsfsprotocol.Timespec, error) {
 	target, err := os.Readlink(base + fi.Name())
 	if err != nil {
-		return fi, err
+		return fi, wsfsprotocol.Timespec{}, err
 	}
 
 	if target[0] != '/' {
@@ -88,7 +98,7 @@ func (s *session) restrictingSymlinkByFileInfo(base string, fi fs.FileInfo) (fs.
 	}
 
 	if strings.HasPrefix(target, s.storage.Path) {
-		return fi, nil
+		return fi, timeval.MTimeFromFileInfo(fi), nil
 	} else {
 		// We stat(base + fi.Name()) here ranther stat(target)
 		// Consider this situation:
@@ -100,36 +110,37 @@ func (s *session) restrictingSymlinkByFileInfo(base string, fi fs.FileInfo) (fs.
 		//   └─ E
 		// If base is B and fi is D, var target will point to /A/B/E which not exists,
 		// but this file is actually /E which do exists.
-		return os.Stat(base + fi.Name())
+		return timeval.Stat(base+fi.Name(), true)
 	}
 }
 
 func (s *session) lookupDirent(base string, dirent fs.DirEntry) (wdirent wsfsprotocol.Dirent, err error) {
 	wdirent.Name = dirent.Name()
-	fi, err := dirent.Info()
+	entryPath := base + dirent.Name()
+	fi, mtime, err := timeval.Stat(entryPath, false)
 	if err != nil {
 		return
 	}
 	if fi.Mode()&fs.ModeSymlink != 0 {
-		fi, err = s.restrictingSymlinkByFileInfo(base, fi)
+		fi, mtime, err = s.restrictingSymlinkByFileInfo(base, fi)
 		if err != nil {
 			return
 		}
 	}
 	wdirent.Size = uint64(fi.Size())
-	wdirent.MTime = fi.ModTime().Unix()
+	wdirent.MTime = mtime
 	wdirent.Mode = uint32(fi.Mode())
 	wdirent.Owner = s.convOwner(fi)
 	return
 }
 
-func (s *session) getAttrFileInfo(apath string) (fs.FileInfo, error) {
-	fi, err := os.Lstat(apath)
+func (s *session) getAttr(apath string) (fs.FileInfo, wsfsprotocol.Timespec, error) {
+	fi, mtime, err := timeval.Stat(apath, false)
 	if err != nil {
-		return nil, err
+		return nil, wsfsprotocol.Timespec{}, err
 	}
 	if fi.Mode()&fs.ModeSymlink == 0 {
-		return fi, nil
+		return fi, mtime, nil
 	}
 	return s.restrictingSymlinkByFileInfo(filepath.Dir(apath)+"/", fi)
 }
@@ -198,17 +209,14 @@ func (s *session) cmdGetAttr(clientMark uint8, req wsfsprotocol.CmdGetAttrStruct
 	}
 	apath := s.storage.Path + lpath
 
-	fi, err := s.getAttrFileInfo(apath)
+	fi, mtime, err := s.getAttr(apath)
 	if err != nil {
 		goto BAD
 	}
 	if s.beginRsp(clientMark, wsfsprotocol.ErrorOK) {
-		err = wsfsprotocol.WriteRspGetAttrToWriter(wsfsprotocol.RspGetAttr{FI: wsfsprotocol.FileInfo{
-			Size:  uint64(fi.Size()),
-			MTime: fi.ModTime().Unix(),
-			Mode:  uint32(fi.Mode()),
-			Owner: s.convOwner(fi),
-		}}, s.writer)
+		err = wsfsprotocol.WriteRspGetAttrToWriter(wsfsprotocol.RspGetAttr{
+			FI: makeWSFSFileInfo(fi, mtime, s.convOwner(fi)),
+		}, s.writer)
 		s.writeDone(err)
 	}
 	return

@@ -11,7 +11,7 @@ import (
 type DirItem struct {
 	Name  string
 	Size  uint64
-	MTime int64
+	MTime wsfsprotocol.Timespec
 	Mode  uint32
 	Owner uint8
 	Child []DirItem

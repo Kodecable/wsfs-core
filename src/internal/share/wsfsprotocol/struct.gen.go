@@ -153,11 +153,11 @@ func GetCmdWriteStructRequiredSize(d CmdWriteStruct) int {
 }
 
 func GetDirentRequiredSize(d Dirent) int {
-	return len(d.Name) + 22
+	return len(d.Name) + GetTimespecRequiredSize(d.MTime) + 14
 }
 
 func GetFileInfoRequiredSize(d FileInfo) int {
-	return 21
+	return GetTimespecRequiredSize(d.MTime) + 13
 }
 
 func GetFileLockInfoRequiredSize(d FileLockInfo) int {
@@ -270,6 +270,10 @@ func GetRspWriteAtRequiredSize(d RspWriteAt) int {
 
 func GetRspWriteStreamCloseRequiredSize(d RspWriteStreamClose) int {
 	return 8
+}
+
+func GetTimespecRequiredSize(d Timespec) int {
+	return 16
 }
 
 func WriteCmdAllocateStructToWriter(d CmdAllocateStruct, w io.Writer) error {
@@ -679,7 +683,7 @@ func WriteCmdWriteStructToWriter(d CmdWriteStruct, w io.Writer) error {
 }
 
 func WriteDirentToWriter(d Dirent, w io.Writer) error {
-	var buf [21]byte
+	var buf [8]byte
 	// Name string
 	if _, err := w.Write([]byte(d.Name)); err != nil {
 		return err
@@ -689,29 +693,39 @@ func WriteDirentToWriter(d Dirent, w io.Writer) error {
 	}
 	// Size uint64
 	binary.LittleEndian.PutUint64(buf[0:], uint64(d.Size))
-	// MTime int64
-	binary.LittleEndian.PutUint64(buf[8:], uint64(d.MTime))
+	// MTime Timespec
+	if _, err := w.Write(buf[:8]); err != nil {
+		return err
+	}
+	if err := WriteTimespecToWriter(d.MTime, w); err != nil {
+		return err
+	}
 	// Mode uint32
-	binary.LittleEndian.PutUint32(buf[16:], uint32(d.Mode))
+	binary.LittleEndian.PutUint32(buf[0:], uint32(d.Mode))
 	// Owner uint8
-	buf[20] = byte(d.Owner)
-	if _, err := w.Write(buf[:21]); err != nil {
+	buf[4] = byte(d.Owner)
+	if _, err := w.Write(buf[:5]); err != nil {
 		return err
 	}
 	return nil
 }
 
 func WriteFileInfoToWriter(d FileInfo, w io.Writer) error {
-	var buf [21]byte
+	var buf [8]byte
 	// Size uint64
 	binary.LittleEndian.PutUint64(buf[0:], uint64(d.Size))
-	// MTime int64
-	binary.LittleEndian.PutUint64(buf[8:], uint64(d.MTime))
+	// MTime Timespec
+	if _, err := w.Write(buf[:8]); err != nil {
+		return err
+	}
+	if err := WriteTimespecToWriter(d.MTime, w); err != nil {
+		return err
+	}
 	// Mode uint32
-	binary.LittleEndian.PutUint32(buf[16:], uint32(d.Mode))
+	binary.LittleEndian.PutUint32(buf[0:], uint32(d.Mode))
 	// Owner uint8
-	buf[20] = byte(d.Owner)
-	if _, err := w.Write(buf[:21]); err != nil {
+	buf[4] = byte(d.Owner)
+	if _, err := w.Write(buf[:5]); err != nil {
 		return err
 	}
 	return nil
@@ -916,6 +930,18 @@ func WriteRspWriteStreamCloseToWriter(d RspWriteStreamClose, w io.Writer) error 
 	// Written uint64
 	binary.LittleEndian.PutUint64(buf[0:], uint64(d.Written))
 	if _, err := w.Write(buf[:8]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteTimespecToWriter(d Timespec, w io.Writer) error {
+	var buf [16]byte
+	// Seconds int64
+	binary.LittleEndian.PutUint64(buf[0:], uint64(d.Seconds))
+	// Nanoseconds int64
+	binary.LittleEndian.PutUint64(buf[8:], uint64(d.Nanoseconds))
+	if _, err := w.Write(buf[:16]); err != nil {
 		return err
 	}
 	return nil
@@ -1294,38 +1320,48 @@ func ReadCmdWriteStructFromReader(d *CmdWriteStruct, r io.Reader) error {
 }
 
 func ReadDirentFromReader(d *Dirent, r io.Reader) error {
-	var buf [21]byte
+	var buf [8]byte
 	// Name string
 	if err := CopyStrFromReader(r, &d.Name); err != nil {
 		return err
 	}
 	// Size uint64
-	// MTime int64
-	// Mode uint32
-	// Owner uint8
-	if _, err := io.ReadFull(r, buf[:21]); err != nil {
+	// MTime Timespec
+	if _, err := io.ReadFull(r, buf[:8]); err != nil {
 		return err
 	}
 	d.Size = (uint64)(binary.LittleEndian.Uint64(buf[0:]))
-	d.MTime = (int64)(binary.LittleEndian.Uint64(buf[8:]))
-	d.Mode = (uint32)(binary.LittleEndian.Uint32(buf[16:]))
-	d.Owner = (uint8)(buf[20])
+	if err := ReadTimespecFromReader(&d.MTime, r); err != nil {
+		return err
+	}
+	// Mode uint32
+	// Owner uint8
+	if _, err := io.ReadFull(r, buf[:5]); err != nil {
+		return err
+	}
+	d.Mode = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
+	d.Owner = (uint8)(buf[4])
 	return nil
 }
 
 func ReadFileInfoFromReader(d *FileInfo, r io.Reader) error {
-	var buf [21]byte
+	var buf [8]byte
 	// Size uint64
-	// MTime int64
-	// Mode uint32
-	// Owner uint8
-	if _, err := io.ReadFull(r, buf[:21]); err != nil {
+	// MTime Timespec
+	if _, err := io.ReadFull(r, buf[:8]); err != nil {
 		return err
 	}
 	d.Size = (uint64)(binary.LittleEndian.Uint64(buf[0:]))
-	d.MTime = (int64)(binary.LittleEndian.Uint64(buf[8:]))
-	d.Mode = (uint32)(binary.LittleEndian.Uint32(buf[16:]))
-	d.Owner = (uint8)(buf[20])
+	if err := ReadTimespecFromReader(&d.MTime, r); err != nil {
+		return err
+	}
+	// Mode uint32
+	// Owner uint8
+	if _, err := io.ReadFull(r, buf[:5]); err != nil {
+		return err
+	}
+	d.Mode = (uint32)(binary.LittleEndian.Uint32(buf[0:]))
+	d.Owner = (uint8)(buf[4])
 	return nil
 }
 
@@ -1530,6 +1566,18 @@ func ReadRspWriteStreamCloseFromReader(d *RspWriteStreamClose, r io.Reader) erro
 		return err
 	}
 	d.Written = (uint64)(binary.LittleEndian.Uint64(buf[0:]))
+	return nil
+}
+
+func ReadTimespecFromReader(d *Timespec, r io.Reader) error {
+	var buf [16]byte
+	// Seconds int64
+	// Nanoseconds int64
+	if _, err := io.ReadFull(r, buf[:16]); err != nil {
+		return err
+	}
+	d.Seconds = (int64)(binary.LittleEndian.Uint64(buf[0:]))
+	d.Nanoseconds = (int64)(binary.LittleEndian.Uint64(buf[8:]))
 	return nil
 }
 

@@ -290,6 +290,7 @@ func genReadFromReader(buf *bytes.Buffer) error {
 				buf.WriteRune('\n')
 			}
 			bufOffset = 0
+			bufStmts = nil
 		}
 
 		for i, field := range info.Fields {
@@ -363,6 +364,7 @@ func genReadWithBufferFromReader(buf *bytes.Buffer) error {
 				buf.WriteRune('\n')
 			}
 			bufOffset = 0
+			bufStmts = nil
 		}
 
 		for i, field := range info.Fields {

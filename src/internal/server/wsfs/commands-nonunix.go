@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"wsfs-core/internal/server/wsfs/timeval"
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/share/wsfsstdconv"
 	"wsfs-core/internal/util"
@@ -197,8 +198,15 @@ func (s *session) cmdSetAttr(clientMark uint8, req wsfsprotocol.CmdSetAttrStruct
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
 		return
 	}
+	apath := s.storage.Path + req.Path
 	if req.Flag&wsfsprotocol.SETATTR_SIZE != 0 {
-		if err := os.Truncate(s.storage.Path+req.Path, int64(req.FI.Size)); err != nil {
+		if err := os.Truncate(apath, int64(req.FI.Size)); err != nil {
+			s.writeRspError(clientMark, osErrCode(err), "syscall error")
+			return
+		}
+	}
+	if req.Flag&wsfsprotocol.SETATTR_MTIME != 0 {
+		if err := timeval.SetPathMTime(apath, req.FI.MTime); err != nil {
 			s.writeRspError(clientMark, osErrCode(err), "syscall error")
 			return
 		}

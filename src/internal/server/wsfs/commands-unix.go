@@ -14,6 +14,7 @@ import (
 	"wsfs-core/internal/server/wsfs/ofdlock"
 	"wsfs-core/internal/server/wsfs/reflink"
 	"wsfs-core/internal/server/wsfs/renameat2"
+	"wsfs-core/internal/server/wsfs/timeval"
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/share/wsfsunixconv"
 	"wsfs-core/internal/util"
@@ -345,10 +346,7 @@ func (s *session) cmdSetAttr(clientMark uint8, req wsfsprotocol.CmdSetAttrStruct
 		}
 	}
 	if req.Flag&wsfsprotocol.SETATTR_MTIME != 0 {
-		err := syscall.Utimes(apath, []syscall.Timeval{
-			{Sec: timeval(req.FI.MTime), Usec: 0}, // mtime is int32 in 32 bit arch
-			{Sec: timeval(req.FI.MTime), Usec: 0},
-		})
+		err := timeval.SetPathMTime(apath, req.FI.MTime)
 		if err != nil {
 			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 			return
@@ -672,10 +670,7 @@ func (s *session) cmdSetAttrByFD(clientMark uint8, req wsfsprotocol.CmdSetAttrBy
 		}
 	}
 	if req.Flag&wsfsprotocol.SETATTR_MTIME != 0 {
-		err := syscall.Futimes(int(sfd), []syscall.Timeval{
-			{Sec: timeval(req.FI.MTime), Usec: 0},
-			{Sec: timeval(req.FI.MTime), Usec: 0},
-		})
+		err := timeval.SetFDMTime(int(sfd), req.FI.MTime)
 		if err != nil {
 			s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 			return

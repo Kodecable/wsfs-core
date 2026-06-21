@@ -3,9 +3,14 @@ package wsfsprotocol
 //go:generate go run genStructHelper.go 0 "!amd64" "struct.go" "struct.gen.go"
 //go:generate go run genStructHelper.go 1 "amd64" "struct.go" "struct_amd64.gen.go"
 
+type Timespec struct {
+	Seconds     int64
+	Nanoseconds int64
+}
+
 type FileInfo struct {
 	Size  uint64
-	MTime int64
+	MTime Timespec
 	Mode  uint32
 	Owner uint8
 }
@@ -13,7 +18,7 @@ type FileInfo struct {
 type Dirent struct {
 	Name  string
 	Size  uint64
-	MTime int64
+	MTime Timespec
 	Mode  uint32
 	Owner uint8
 }

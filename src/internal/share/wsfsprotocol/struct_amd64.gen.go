@@ -158,11 +158,11 @@ func GetCmdWriteStructRequiredSize(d CmdWriteStruct) int {
 }
 
 func GetDirentRequiredSize(d Dirent) int {
-	return len(d.Name) + 22
+	return len(d.Name) + GetTimespecRequiredSize(d.MTime) + 14
 }
 
 func GetFileInfoRequiredSize(d FileInfo) int {
-	return 21
+	return GetTimespecRequiredSize(d.MTime) + 13
 }
 
 func GetFileLockInfoRequiredSize(d FileLockInfo) int {
@@ -275,6 +275,10 @@ func GetRspWriteAtRequiredSize(d RspWriteAt) int {
 
 func GetRspWriteStreamCloseRequiredSize(d RspWriteStreamClose) int {
 	return 8
+}
+
+func GetTimespecRequiredSize(d Timespec) int {
+	return 16
 }
 
 func WriteCmdAllocateStructToWriter(d CmdAllocateStruct, w io.Writer) error {
@@ -695,8 +699,8 @@ func WriteDirentToWriter(d Dirent, w io.Writer) error {
 	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Size)), 8)); err != nil {
 		return err
 	}
-	// MTime int64
-	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.MTime)), 8)); err != nil {
+	// MTime Timespec
+	if err := WriteTimespecToWriter(d.MTime, w); err != nil {
 		return err
 	}
 	// Mode uint32
@@ -715,8 +719,8 @@ func WriteFileInfoToWriter(d FileInfo, w io.Writer) error {
 	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Size)), 8)); err != nil {
 		return err
 	}
-	// MTime int64
-	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.MTime)), 8)); err != nil {
+	// MTime Timespec
+	if err := WriteTimespecToWriter(d.MTime, w); err != nil {
 		return err
 	}
 	// Mode uint32
@@ -923,6 +927,18 @@ func WriteRspWriteAtToWriter(d RspWriteAt, w io.Writer) error {
 func WriteRspWriteStreamCloseToWriter(d RspWriteStreamClose, w io.Writer) error {
 	// Written uint64
 	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Written)), 8)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteTimespecToWriter(d Timespec, w io.Writer) error {
+	// Seconds int64
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Seconds)), 8)); err != nil {
+		return err
+	}
+	// Nanoseconds int64
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Nanoseconds)), 8)); err != nil {
 		return err
 	}
 	return nil
@@ -1309,8 +1325,8 @@ func ReadDirentFromReader(d *Dirent, r io.Reader) error {
 	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Size)), 8)); err != nil {
 		return err
 	}
-	// MTime int64
-	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.MTime)), 8)); err != nil {
+	// MTime Timespec
+	if err := ReadTimespecFromReader(&d.MTime, r); err != nil {
 		return err
 	}
 	// Mode uint32
@@ -1329,8 +1345,8 @@ func ReadFileInfoFromReader(d *FileInfo, r io.Reader) error {
 	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Size)), 8)); err != nil {
 		return err
 	}
-	// MTime int64
-	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.MTime)), 8)); err != nil {
+	// MTime Timespec
+	if err := ReadTimespecFromReader(&d.MTime, r); err != nil {
 		return err
 	}
 	// Mode uint32
@@ -1537,6 +1553,18 @@ func ReadRspWriteAtFromReader(d *RspWriteAt, r io.Reader) error {
 func ReadRspWriteStreamCloseFromReader(d *RspWriteStreamClose, r io.Reader) error {
 	// Written uint64
 	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Written)), 8)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadTimespecFromReader(d *Timespec, r io.Reader) error {
+	// Seconds int64
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Seconds)), 8)); err != nil {
+		return err
+	}
+	// Nanoseconds int64
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Nanoseconds)), 8)); err != nil {
 		return err
 	}
 	return nil

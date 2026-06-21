@@ -52,9 +52,9 @@ func fileMode(mode uint32) (r uint32) {
 
 func statFromFileInfo(stat *fuse.Stat_t, fi *wsfsprotocol.FileInfo) {
 	stat.Size = int64(fi.Size)
-	stat.Atim = fuse.Timespec{Sec: fi.MTime, Nsec: 0}
-	stat.Ctim = fuse.Timespec{Sec: fi.MTime, Nsec: 0}
-	stat.Mtim = fuse.Timespec{Sec: fi.MTime, Nsec: 0}
+	stat.Atim = fuse.Timespec{Sec: fi.MTime.Seconds, Nsec: fi.MTime.Nanoseconds}
+	stat.Ctim = fuse.Timespec{Sec: fi.MTime.Seconds, Nsec: fi.MTime.Nanoseconds}
+	stat.Mtim = fuse.Timespec{Sec: fi.MTime.Seconds, Nsec: fi.MTime.Nanoseconds}
 	stat.Mode = fileMode(fi.Mode)
 	stat.Nlink = 1
 	stat.Blksize = fsBlockSize

@@ -84,12 +84,12 @@ func fileMode(mode uint32) (r uint32) {
 func attrFromFileInfo(path string, attr *fuse.Attr, fi *wsfsprotocol.FileInfo, fsIds *util.FsIds) {
 	attr.Ino = maphash.String(inodeHashSeed, path)
 	attr.Size = fi.Size
-	attr.Atime = uint64(fi.MTime)
-	attr.Ctime = uint64(fi.MTime)
-	attr.Mtime = uint64(fi.MTime)
-	attr.Atimensec = 0
-	attr.Ctimensec = 0
-	attr.Mtimensec = 0
+	attr.Atime = uint64(fi.MTime.Seconds)
+	attr.Ctime = uint64(fi.MTime.Seconds)
+	attr.Mtime = uint64(fi.MTime.Seconds)
+	attr.Atimensec = uint32(fi.MTime.Nanoseconds)
+	attr.Ctimensec = uint32(fi.MTime.Nanoseconds)
+	attr.Mtimensec = uint32(fi.MTime.Nanoseconds)
 	attr.Mode = fileMode(fi.Mode)
 	attr.Nlink = 1
 	attr.Blksize = fsBlockSize
@@ -524,7 +524,10 @@ func (n *fsNode) Setattr(ctx context.Context, f fusefs.FileHandle, in *fuse.SetA
 
 	if mtime, ok := in.GetMTime(); ok {
 		flag |= wsfsprotocol.SETATTR_MTIME
-		fi.MTime = mtime.Unix()
+		fi.MTime = wsfsprotocol.Timespec{
+			Seconds:     mtime.Unix(),
+			Nanoseconds: int64(mtime.Nanosecond()),
+		}
 	}
 
 	if size, ok := in.GetSize(); ok {
