@@ -886,6 +886,25 @@ func (s *Session) CmdRename(old string, new string, mode uint32) (code uint8) {
 }
 
 func (s *Session) CmdCopyFileRange(wfd1 uint32, wfd2 uint32, off1 uint64, off2 uint64, size uint64) (copied uint64, code uint8) {
+	var total uint64
+	for size > 0 {
+		chunk := min(size, wsfsprotocol.MaxCopyFileRangeChunk)
+		n, c := s.cmdCopyFileRangeOnce(wfd1, wfd2, off1, off2, chunk)
+		total += n
+		if c != wsfsprotocol.ErrorOK {
+			return total, c
+		}
+		if n == 0 || n < chunk {
+			break
+		}
+		off1 += n
+		off2 += n
+		size -= n
+	}
+	return total, wsfsprotocol.ErrorOK
+}
+
+func (s *Session) cmdCopyFileRangeOnce(wfd1 uint32, wfd2 uint32, off1 uint64, off2 uint64, size uint64) (copied uint64, code uint8) {
 	clientMark := s.newClientMark()
 
 	if !s.beginRequest(clientMark, wsfsprotocol.CmdCopyFileRange) {

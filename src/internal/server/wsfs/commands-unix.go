@@ -572,6 +572,11 @@ func (s *session) writeStreamChunk(clientMark uint8, stream *writeStreamState, d
 }
 
 func (s *session) cmdCopyFileRange(clientMark uint8, req wsfsprotocol.CmdCopyFileRangeStruct) {
+	if req.Size > wsfsprotocol.MaxCopyFileRangeChunk {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "copy_file_range size exceeds limit")
+		return
+	}
+
 	rsfd1, ok := s.fds.Load(req.SrcFD)
 	if !ok {
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")

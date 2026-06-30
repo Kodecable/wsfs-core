@@ -151,3 +151,13 @@ const (
 	FILELOCK_READLOCK  uint8 = 1
 	FILELOCK_WRITELOCK uint8 = 2
 )
+
+const (
+	// MaxCopyFileRangeChunk is the maximum number of bytes a single
+	// CmdCopyFileRange request may ask the server to copy. Larger copies
+	// must be split into multiple requests by the client. This bounds the
+	// per-call syscall work (DoS protection) and keeps the length within
+	// int32 on 32-bit platforms so it can be passed to copy_file_range
+	// without truncation.
+	MaxCopyFileRangeChunk uint64 = 32 << 20 // 32 MiB
+)
