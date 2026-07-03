@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"wsfs-core/internal/client"
+	cmdpassword "wsfs-core/internal/cmd/password"
 	"wsfs-core/internal/util"
 	"wsfs-core/version"
 
@@ -31,6 +32,7 @@ var (
 	otherGid         int64
 	logLevel         zerolog.Level = zerolog.InfoLevel
 	certHash         string
+	passwordSource   string
 )
 
 var MountCmd = &cobra.Command{
@@ -68,7 +70,16 @@ var MountCmd = &cobra.Command{
 			Fragment:    inputedEndpoint.RawFragment,
 			RawFragment: inputedEndpoint.RawFragment,
 		}
-		passwd, _ := inputedEndpoint.User.Password()
+		username := inputedEndpoint.User.Username()
+		passwd, hasURLPassword := inputedEndpoint.User.Password()
+		passwd, err = cmdpassword.Resolve(passwd, hasURLPassword, username != "", passwordSource, c.Flags().Changed("password"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if username != "" && passwd == "" {
+			fmt.Fprintln(os.Stderr, "Warning: password is empty")
+		}
 		switch strings.ToLower(inputedEndpoint.Scheme) {
 		case "wsfs", "http", "":
 			endpoint.Scheme = "ws"
@@ -81,6 +92,7 @@ var MountCmd = &cobra.Command{
 		default:
 			fmt.Fprintln(os.Stderr, "Bad endpoint url: unknown scheme")
 			fmt.Fprintln(os.Stderr, "Want: 'wsfs' or 'wsfss', have: "+inputedEndpoint.Scheme)
+			os.Exit(1)
 		}
 
 		opts := client.MountOption{
@@ -98,7 +110,7 @@ var MountCmd = &cobra.Command{
 			opts.EnableFuseLog = true
 		}
 
-		err = client.Mount(args[1], endpoint.String(), certHash, inputedEndpoint.User.Username(), passwd, opts)
+		err = client.Mount(args[1], endpoint.String(), certHash, username, passwd, opts)
 
 		if err != nil {
 			os.Exit(2)
@@ -148,4 +160,5 @@ func init() {
 		"level", "l",
 		"Sets logging level; can be 'trace', 'debug', 'info', 'warning', 'error', 'fatal', 'panic'")
 	MountCmd.Flags().StringVarP(&certHash, "cert-hash", "", "", "Only verify TLS server cert hash; copy the hash from the connection log")
+	MountCmd.Flags().StringVarP(&passwordSource, "password", "", "", cmdpassword.FlagUsage)
 }

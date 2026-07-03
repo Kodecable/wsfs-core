@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	cmdpassword "wsfs-core/internal/cmd/password"
 	"wsfs-core/internal/server"
 	serverConfig "wsfs-core/internal/server/config"
 	"wsfs-core/internal/util"
@@ -22,14 +23,15 @@ import (
 var randomPasswordRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*")
 
 var (
-	uid        uint32
-	gid        uint32
-	otherUid   uint32
-	otherGid   uint32
-	storage    string
-	noLogTime  bool
-	noLogColor bool
-	logLevel   zerolog.Level = zerolog.InfoLevel
+	uid            uint32
+	gid            uint32
+	otherUid       uint32
+	otherGid       uint32
+	storage        string
+	noLogTime      bool
+	noLogColor     bool
+	passwordSource string
+	logLevel       zerolog.Level = zerolog.InfoLevel
 )
 
 func exitWithError(code int, msg string, err error) {
@@ -72,10 +74,13 @@ func configIDs(config *serverConfig.Server, c *cobra.Command) {
 	}
 }
 
-func parseArg(config *serverConfig.Server, args string) {
+func parseArg(config *serverConfig.Server, c *cobra.Command, args string) {
 	arg := strings.TrimSpace(args)
 
 	if _, err := strconv.ParseUint(arg, 10, 16); err == nil {
+		if c.Flags().Changed("password") {
+			exitWithError(2, "Resolve password failed", cmdpassword.ErrMissingUsername)
+		}
 		config.Listener.Address = ":" + arg
 	} else {
 		if ok, _ := regexp.MatchString(`.*:?\/\/`, arg); !ok {
@@ -97,10 +102,19 @@ func parseArg(config *serverConfig.Server, args string) {
 			os.Exit(2)
 		}
 
-		if username := parsedUrl.User.Username(); username != "" {
-			var password string
+		username := parsedUrl.User.Username()
+		if username == "" && c.Flags().Changed("password") {
+			exitWithError(2, "Resolve password failed", cmdpassword.ErrMissingUsername)
+		}
+		if username != "" {
+			password, hasURLPassword := parsedUrl.User.Password()
 			var hash []byte
-			if password, _ = parsedUrl.User.Password(); password == "" {
+			password, err = cmdpassword.Resolve(password, hasURLPassword, true, passwordSource, c.Flags().Changed("password"))
+			if err != nil {
+				exitWithError(2, "Resolve password failed", err)
+			}
+			if password == "" {
+				fmt.Fprintln(os.Stderr, "Warning: password is empty; generating a random password")
 				password = util.RandomString(10, randomPasswordRunes)
 				fmt.Fprintln(os.Stdout, "Password for user '"+username+"' is '"+password+"'")
 			}
@@ -146,7 +160,9 @@ var QuickServeCmd = &cobra.Command{
 		configIDs(&config, c)
 
 		if len(args) != 0 {
-			parseArg(&config, args[0])
+			parseArg(&config, c, args[0])
+		} else if c.Flags().Changed("password") {
+			exitWithError(2, "Resolve password failed", cmdpassword.ErrMissingUsername)
 		}
 
 		if len(config.Users) == 0 {
@@ -188,4 +204,5 @@ func init() {
 	QuickServeCmd.Flags().StringVarP(&storage, "storage", "s", "", "Storage path")
 	QuickServeCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
 	QuickServeCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
+	QuickServeCmd.Flags().StringVarP(&passwordSource, "password", "", "", cmdpassword.FlagUsage)
 }
