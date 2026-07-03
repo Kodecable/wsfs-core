@@ -26,7 +26,7 @@ func (s *session) convOwner(_ os.FileInfo) (ownerInfo uint8) {
 
 func (s *session) cmdOpen(clientMark uint8, req wsfsprotocol.CmdOpenStruct) {
 	if !util.IsUrlValid(req.Path) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 
@@ -39,7 +39,7 @@ func (s *session) cmdOpen(clientMark uint8, req wsfsprotocol.CmdOpenStruct) {
 	case wsfsprotocol.O_RDWR:
 		oflag |= wsfsstdconv.OpenFlagToStd[wsfsprotocol.O_RDWR]
 	default:
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad open access mode")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad open access mode")
 		return
 	}
 	for _, proctocolFlag := range wsfsprotocol.OpenFlags {
@@ -71,7 +71,7 @@ func (s *session) cmdOpen(clientMark uint8, req wsfsprotocol.CmdOpenStruct) {
 func (s *session) cmdClose(clientMark uint8, req wsfsprotocol.CmdCloseStruct) {
 	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalidFD, "bad fd")
 		return
 	}
 	s.fds.Delete(req.FD)
@@ -87,7 +87,7 @@ func (s *session) readAndSend(clientMark uint8, fd *os.File, size uint64, okCode
 	buf := bufPool.Get().(*util.Buffer)
 	defer putBuf(buf)
 	buf.Write([]byte{clientMark, okCode})
-	readed, err := fd.Read(buf.Bytes[buf.Writted():][:int(size)])
+	readed, err := fd.Read(buf.Bytes[buf.Written():][:int(size)])
 	buf.Grow(readed)
 
 	if err != nil && err != io.EOF {
@@ -101,7 +101,7 @@ func (s *session) readAndSend(clientMark uint8, fd *os.File, size uint64, okCode
 func (s *session) cmdRead(clientMark uint8, req wsfsprotocol.CmdReadStruct) {
 	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalidFD, "bad fd")
 		return
 	}
 	sfd := (*os.File)(rsfd.(sfd_t))
@@ -124,7 +124,7 @@ func (s *session) cmdRead(clientMark uint8, req wsfsprotocol.CmdReadStruct) {
 
 func (s *session) cmdReadLink(clientMark uint8, req wsfsprotocol.CmdReadLinkStruct) {
 	if !util.IsUrlValid(req.Path) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	apath := s.storage.Path + req.Path
@@ -151,7 +151,7 @@ func (s *session) cmdReadLink(clientMark uint8, req wsfsprotocol.CmdReadLinkStru
 func (s *session) cmdSeek(clientMark uint8, req wsfsprotocol.CmdSeekStruct) {
 	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalidFD, "bad fd")
 		return
 	}
 
@@ -175,7 +175,7 @@ func (s *session) cmdSeek(clientMark uint8, req wsfsprotocol.CmdSeekStruct) {
 func (s *session) cmdWrite(clientMark uint8, req wsfsprotocol.CmdWriteStruct) {
 	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalidFD, "bad fd")
 		return
 	}
 	count, err := (*os.File)(rsfd.(sfd_t)).Write(req.Data)
@@ -195,7 +195,7 @@ func (s *session) cmdAllocate(clientMark uint8, _ wsfsprotocol.CmdAllocateStruct
 
 func (s *session) cmdSetAttr(clientMark uint8, req wsfsprotocol.CmdSetAttrStruct) {
 	if !util.IsUrlValid(req.Path) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	apath := s.storage.Path + req.Path
@@ -217,7 +217,7 @@ func (s *session) cmdSetAttr(clientMark uint8, req wsfsprotocol.CmdSetAttrStruct
 func (s *session) cmdSync(clientMark uint8, req wsfsprotocol.CmdSyncStruct) {
 	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalidFD, "bad fd")
 		return
 	}
 	if err := (*os.File)(rsfd.(sfd_t)).Sync(); err != nil {
@@ -229,7 +229,7 @@ func (s *session) cmdSync(clientMark uint8, req wsfsprotocol.CmdSyncStruct) {
 
 func (s *session) cmdMkdir(clientMark uint8, req wsfsprotocol.CmdMkdirStruct) {
 	if !util.IsUrlValid(req.Path) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	if err := os.Mkdir(s.storage.Path+req.Path, fs.FileMode(req.Mode)); err != nil {
@@ -241,7 +241,7 @@ func (s *session) cmdMkdir(clientMark uint8, req wsfsprotocol.CmdMkdirStruct) {
 
 func (s *session) cmdSymLink(clientMark uint8, req wsfsprotocol.CmdSymLinkStruct) {
 	if !util.IsUrlValid(req.TargetPath) || !util.IsUrlValid(req.FilePath) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	if err := os.Symlink(s.storage.Path+req.TargetPath, s.storage.Path+req.FilePath); err != nil {
@@ -253,7 +253,7 @@ func (s *session) cmdSymLink(clientMark uint8, req wsfsprotocol.CmdSymLinkStruct
 
 func (s *session) cmdRemove(clientMark uint8, req wsfsprotocol.CmdRemoveStruct) {
 	if !util.IsUrlValid(req.Path) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	resolvedPath := s.storage.Path + req.Path
@@ -273,7 +273,7 @@ func (s *session) readAtAndSend(clientMark uint8, fd *os.File, off uint64, size 
 	buf := bufPool.Get().(*util.Buffer)
 	defer putBuf(buf)
 	buf.Write([]byte{clientMark, okCode})
-	readed, err := fd.ReadAt(buf.Bytes[buf.Writted():][:int(size)], int64(off))
+	readed, err := fd.ReadAt(buf.Bytes[buf.Written():][:int(size)], int64(off))
 	buf.Grow(readed)
 
 	if err != nil && err != io.EOF {
@@ -287,7 +287,7 @@ func (s *session) readAtAndSend(clientMark uint8, fd *os.File, off uint64, size 
 func (s *session) cmdReadAt(clientMark uint8, req wsfsprotocol.CmdReadAtStruct) {
 	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalidFD, "bad fd")
 		return
 	}
 	sfd := (*os.File)(rsfd.(sfd_t))
@@ -314,7 +314,7 @@ func (s *session) cmdReadAt(clientMark uint8, req wsfsprotocol.CmdReadAtStruct) 
 func (s *session) cmdWriteAt(clientMark uint8, req wsfsprotocol.CmdWriteAtStruct) {
 	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalidFD, "bad fd")
 		return
 	}
 	count, err := (*os.File)(rsfd.(sfd_t)).WriteAt(req.Data, int64(req.Offset))
@@ -371,7 +371,7 @@ func (s *session) cmdSetFileLockWait(clientMark uint8, _ wsfsprotocol.CmdSetFile
 
 func (s *session) cmdRename(clientMark uint8, req wsfsprotocol.CmdRenameStruct) {
 	if !util.IsUrlValid(req.OldPath) || !util.IsUrlValid(req.NewPath) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	if req.Flag != 0 {
@@ -390,7 +390,7 @@ func (s *session) cmdRename(clientMark uint8, req wsfsprotocol.CmdRenameStruct) 
 func (s *session) cmdSetAttrByFD(clientMark uint8, req wsfsprotocol.CmdSetAttrByFDStruct) {
 	rsfd, ok := s.fds.Load(req.FD)
 	if !ok {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalidFD, "bad fd")
 		return
 	}
 	if req.Flag&wsfsprotocol.SETATTR_SIZE != 0 {
@@ -404,7 +404,7 @@ func (s *session) cmdSetAttrByFD(clientMark uint8, req wsfsprotocol.CmdSetAttrBy
 
 func (s *session) cmdFsStat(clientMark uint8, req wsfsprotocol.CmdFsStatStruct) {
 	if !util.IsUrlValid(req.Path) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	total, free, avail, err := util.FsSize(s.storage.Path + req.Path)

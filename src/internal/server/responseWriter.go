@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-const statusUnwrited = -1
+const statusUnwritten = -1
 
 type responseWriter struct {
 	http.ResponseWriter
@@ -14,7 +14,7 @@ type responseWriter struct {
 }
 
 func newResponseWriter(w http.ResponseWriter) *responseWriter {
-	return &responseWriter{w, statusUnwrited}
+	return &responseWriter{w, statusUnwritten}
 }
 
 func (rsp *responseWriter) WriteHeader(status int) {

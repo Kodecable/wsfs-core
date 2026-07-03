@@ -212,7 +212,7 @@ func (s *Session) readLoop(conn *websocket.Conn) {
 			return
 		}
 
-		if buf.Writted() < 2 {
+		if buf.Written() < 2 {
 			bufPool.Put(buf)
 			log.Error().Msg("Bad message, too short")
 			continue

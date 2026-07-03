@@ -22,7 +22,7 @@ help() {
     echo "   -m MODE    'release' or 'debug'"
     echo "   -v VERSION Version string; if not set, use tag or commit id"
     echo ""
-    echo "Configed BuildName: '$BuildName'"
+    echo "Configured BuildName: '$BuildName'"
 }
 
 if command -v "git" >/dev/null 2>&1 && [ -d ".git" ]; then

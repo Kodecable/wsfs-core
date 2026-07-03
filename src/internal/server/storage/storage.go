@@ -7,7 +7,7 @@ import (
 )
 
 type Storage struct {
-	Path string // abdsouted, end with no '/'
+	Path string // absolute, end with no '/'
 }
 
 func NewStorage(c *config.Storage) (s *Storage, err error) {

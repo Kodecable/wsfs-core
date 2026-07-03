@@ -48,7 +48,7 @@ func NewHandler(errorHandler internalerror.ErrorHandler, fsIds util.FsIds, c con
 	return
 }
 
-func (h *Handler) CollecteInactivedSession() {
+func (h *Handler) CollectInactiveSessions() {
 	for {
 		time.Sleep(sessionInactiveScanPeriod)
 		existsSession := false
@@ -147,9 +147,9 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 	}
 
 	// in case of panic
-	var sucessed = false
+	var succeeded = false
 	defer func() {
-		if !sucessed {
+		if !succeeded {
 			session.Lock.Unlock()
 		}
 	}()
@@ -159,7 +159,7 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 		log.Error().Err(err).Msg("Upgrade websocket connection failed")
 		return
 	}
-	sucessed = true
+	succeeded = true
 
 	log.Info().Str("From", req.RemoteAddr).Str("User", user.Name).Uint64("Id", id).Msg("Session running")
 	session.takeConn(conn, req.RemoteAddr)
@@ -181,7 +181,7 @@ func (h *Handler) newSession(username string, storage *storage.Storage) (id uint
 		}
 	}
 	h.sessions.Store(id, newSession(h, username, storage))
-	log.Info().Uint64("Id", id).Msg("Seesion created")
+	log.Info().Uint64("Id", id).Msg("Session created")
 	return
 }
 

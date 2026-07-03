@@ -152,11 +152,11 @@ func genCommandCalls(commands []command, packageName string) ([]byte, error) {
 		}
 	}
 	fmt.Fprintf(&buf, "default:\n")
-	fmt.Fprintf(&buf, "s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, \"Unknown command\")\n")
+	fmt.Fprintf(&buf, "s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, \"Unknown command\")\n")
 	fmt.Fprintf(&buf, "}\n")
 	fmt.Fprintf(&buf, "return\n")
 	fmt.Fprintf(&buf, "BadCmdFormat:\n")
-	fmt.Fprintf(&buf, "s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, \"Bad command format\")\n")
+	fmt.Fprintf(&buf, "s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, \"Bad command format\")\n")
 	fmt.Fprintf(&buf, "return\n")
 	fmt.Fprintf(&buf, "}\n")
 

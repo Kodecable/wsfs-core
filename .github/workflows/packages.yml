@@ -145,7 +145,7 @@ jobs:
           name: packaging-resources
           path: |
             LICENSE
-            doc/server-config-exmaple.toml
+            doc/server-config-example.toml
 
   package-debian:
     runs-on: ubuntu-latest
@@ -174,7 +174,7 @@ jobs:
         run: |
           bash release/debian/package.sh \
             -v "${{ needs.build.outputs.version }}" \
-            -e packaging-resources/doc/server-config-exmaple.toml \
+            -e packaging-resources/doc/server-config-example.toml \
             -l packaging-resources/LICENSE
 
       - uses: actions/upload-artifact@v4
@@ -209,7 +209,7 @@ jobs:
       - name: Package Arch Artifact
         shell: bash
         run: |
-          su builder -c "cd '${GITHUB_WORKSPACE}' && bash release/arch/package.sh -v '${{ needs.build.outputs.version }}' -a amd64 -e packaging-resources/doc/server-config-exmaple.toml -l packaging-resources/LICENSE"
+          su builder -c "cd '${GITHUB_WORKSPACE}' && bash release/arch/package.sh -v '${{ needs.build.outputs.version }}' -a amd64 -e packaging-resources/doc/server-config-example.toml -l packaging-resources/LICENSE"
 
       - uses: actions/upload-artifact@v4
         with:

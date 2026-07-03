@@ -9,7 +9,7 @@ import (
 
 type Buffer struct {
 	Bytes   []byte
-	writted int
+	written int
 }
 
 func NewBuffer(size int) *Buffer {
@@ -22,29 +22,29 @@ var _ = (io.Writer)((*Buffer)(nil))
 
 func (b *Buffer) Write(d []byte) (n int, err error) {
 	size := len(d)
-	if avail := len(b.Bytes) - b.writted; size > avail {
+	if avail := len(b.Bytes) - b.written; size > avail {
 		size = avail
 		err = io.ErrShortWrite
 	}
-	n = copy(b.Bytes[b.writted:], d[:size])
-	b.writted += n
+	n = copy(b.Bytes[b.written:], d[:size])
+	b.written += n
 	return
 }
 
-func (b *Buffer) Writted() int {
-	return b.writted
+func (b *Buffer) Written() int {
+	return b.written
 }
 
 func (b *Buffer) Done() []byte {
-	n := b.writted
-	b.writted = 0
+	n := b.written
+	b.written = 0
 	return b.Bytes[:n]
 }
 
 func (b *Buffer) Grow(n int) {
-	b.writted += n
+	b.written += n
 }
 
 func (b *Buffer) Reset() {
-	b.writted = 0
+	b.written = 0
 }

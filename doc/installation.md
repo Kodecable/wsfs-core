@@ -6,7 +6,7 @@
 
 ### Arch Linux
 
-A pre-built package for x86_64 is available in the [releases](https://github.com/Kodecable/wsfs-core/releases). You can download it, than install it using the following command:
+A pre-built package for x86_64 is available in the [releases](https://github.com/Kodecable/wsfs-core/releases). You can download it, then install it using the following command:
 
 ```shell
 $ sudo pacman -U /path/to/file.pkg.tar.zst

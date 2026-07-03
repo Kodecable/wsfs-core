@@ -11,7 +11,7 @@ var rangeExp = regexp.MustCompile(`bytes=(-?\d+)(-\d+)?`)
 // Parse X-Update-Range header.
 //
 // RETURN:
-//  1. if err is not nil: start and end are invaild
+//  1. if err is not nil: start and end are invalid
 //  2. if end < 0: append
 //
 // REFERS:
@@ -31,7 +31,7 @@ func parseRange(s string) (start, end int64, err error) {
 		start, err1 = strconv.ParseInt(rr[0][1], 10, 64)
 		end, err2 = strconv.ParseInt(rr[0][2][1:], 10, 64)
 		if err1 != nil || err2 != nil || start > end || start < 0 {
-			return 0, 0, errors.New("range invaild")
+			return 0, 0, errors.New("range invalid")
 		}
 	} else {
 		start, _ = strconv.ParseInt(rr[0][1], 10, 64)

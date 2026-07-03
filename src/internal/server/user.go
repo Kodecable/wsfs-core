@@ -45,7 +45,7 @@ func authUser(users map[string]*storage.User, username, password string) (*stora
 	return user, checkPassword(user, []byte(password))
 }
 
-func httpBasciAuth(users map[string]*storage.User, req *http.Request) (*storage.User, error) {
+func httpBasicAuth(users map[string]*storage.User, req *http.Request) (*storage.User, error) {
 	if req.Header.Get("Authorization") == "" {
 		return nil, ErrAuthHeaderNotExists
 	}

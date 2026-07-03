@@ -37,8 +37,8 @@ wsfs mount wsfs://localhost:20001 /mnt/wsfs
 - [Installation Guide](doc/installation.md)
 - [Usage Guide](doc/usage.md)
 - [Technical Details](doc/technical.md)
-- [Configuration Example](doc/server-config-exmaple.toml)
-- [Systemd Service](doc/server-config-exmaple.service)
+- [Configuration Example](doc/server-config-example.toml)
+- [Systemd Service](doc/server-config-example.service)
 
 ## License
 

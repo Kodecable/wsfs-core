@@ -54,7 +54,7 @@ var ServeCmd = &cobra.Command{
 		err = hub.Run(config)
 
 		if err != nil && err != http.ErrServerClosed {
-			fmt.Fprintln(os.Stderr, "Server stoped for error")
+			fmt.Fprintln(os.Stderr, "Server stopped for error")
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -66,7 +66,7 @@ func init() {
 		logLevel = zerolog.DebugLevel // default debug level in debug mode
 	}
 
-	ServeCmd.Flags().StringVarP(&configPath, "config", "c", iternalDefaultConfigPath, "Path to config file")
+	ServeCmd.Flags().StringVarP(&configPath, "config", "c", internalDefaultConfigPath, "Path to config file")
 	ServeCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
 	ServeCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
 	ServeCmd.Flags().VarP(

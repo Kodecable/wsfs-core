@@ -54,7 +54,7 @@ func (w *Handler) ServeList(rsp http.ResponseWriter, req *http.Request, user *st
 		} else if os.IsPermission(err) {
 			err = internalerror.ErrInternalForbidden
 		} else {
-			err = internalerror.Warp(err)
+			err = internalerror.Wrap(err)
 		}
 		w.ServeError(rsp, req, err)
 		return

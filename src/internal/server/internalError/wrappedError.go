@@ -5,13 +5,13 @@ import (
 	"wsfs-core/version"
 )
 
-// WarpedError be used in some http response.
+// WrappedError be used in some http response.
 // It will hide specific error msg in release mode to client for security.
-type WarpedError struct {
+type WrappedError struct {
 	origin error
 }
 
-func (w *WarpedError) Error() string {
+func (w *WrappedError) Error() string {
 	if version.IsDebug() {
 		return w.origin.Error()
 	} else {
@@ -19,14 +19,14 @@ func (w *WarpedError) Error() string {
 	}
 }
 
-func (w *WarpedError) Unwarp() error {
+func (w *WrappedError) Unwrap() error {
 	return w.origin
 }
 
-func Warp(obj any) error {
+func Wrap(obj any) error {
 	if err, ok := obj.(error); ok {
-		return &WarpedError{err}
+		return &WrappedError{err}
 	} else {
-		return &WarpedError{fmt.Errorf("wsfs-core.interlnalError: Unknown error: %v", obj)}
+		return &WrappedError{fmt.Errorf("wsfs-core.internalError: Unknown error: %v", obj)}
 	}
 }

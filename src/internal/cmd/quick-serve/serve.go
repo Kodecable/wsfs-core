@@ -105,7 +105,7 @@ func parseArg(config *serverConfig.Server, args string) {
 				fmt.Fprintln(os.Stdout, "Password for user '"+username+"' is '"+password+"'")
 			}
 			if hash, err = bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost); err != nil {
-				exitWithError(2, "Uable to generate password hash", err)
+				exitWithError(2, "Unable to generate password hash", err)
 			}
 			config.Users = append(config.Users, serverConfig.User{Name: username, SecretHash: string(hash), Storage: storageId})
 		}
@@ -135,7 +135,7 @@ var QuickServeCmd = &cobra.Command{
   wsfs quick-serve username@:20001
   wsfs quick-serve username:password@:20001
   wsfs quick-serve http://username:password@[fe80::12:34]:20001
-  wsfs qucik-serve unix://username:password@/run/unix.sock`,
+  wsfs quick-serve unix://username:password@/run/unix.sock`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(c *cobra.Command, args []string) {
 		util.SetupZerolog(noLogTime, noLogColor, logLevel)
@@ -165,7 +165,7 @@ var QuickServeCmd = &cobra.Command{
 		err = hub.Run(config)
 
 		if err != nil && err != http.ErrServerClosed {
-			fmt.Fprintln(os.Stderr, "Server stoped for error")
+			fmt.Fprintln(os.Stderr, "Server stopped for error")
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

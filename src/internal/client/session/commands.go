@@ -200,7 +200,7 @@ func (s *Session) parseReadDirPlus(
 			return
 		}
 
-		r := bytes.NewReader(rsp.Bytes[2:rsp.Writted()])
+		r := bytes.NewReader(rsp.Bytes[2:rsp.Written()])
 
 		for r.Len() > 0 {
 			indicator, err := r.ReadByte()
@@ -337,7 +337,7 @@ func (s *Session) CmdOpen(path string, oflag uint32, fmode uint32) (uint32, uint
 	}
 
 	var rsp wsfsprotocol.RspOpen
-	err = wsfsprotocol.ReadRspOpenFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	err = wsfsprotocol.ReadRspOpenFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Written()]))
 	bufPool.Put(rspBuf)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decode CmdOpen response")
@@ -385,7 +385,7 @@ func (s *Session) CmdRead(fd uint32, dest []byte) (uint64, uint8) {
 	for {
 		rsp := <-s.responses[clientMark]
 		code := rsp.Bytes[1]
-		data := rsp.Bytes[2:rsp.Writted()]
+		data := rsp.Bytes[2:rsp.Written()]
 		copy(dest[off:], data)
 		bufPool.Put(rsp)
 
@@ -424,7 +424,7 @@ func (s *Session) CmdReadDir(path string) (list []DirItem, code uint8) {
 		}
 
 		var readErr error
-		list, readErr = appendDirItemsFromReader(list, bytes.NewReader(rsp.Bytes[2:rsp.Writted()]))
+		list, readErr = appendDirItemsFromReader(list, bytes.NewReader(rsp.Bytes[2:rsp.Written()]))
 		bufPool.Put(rsp)
 		if readErr != nil {
 			log.Error().Err(readErr).Msg("Failed to read directory entries")
@@ -466,7 +466,7 @@ func (s *Session) CmdReadLink(lpath string) (tpath string, code uint8) {
 	}
 
 	var rsp wsfsprotocol.RspReadLink
-	err = wsfsprotocol.ReadRspReadLinkFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	err = wsfsprotocol.ReadRspReadLinkFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Written()]))
 	bufPool.Put(rspBuf)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decode CmdReadLink response")
@@ -500,7 +500,7 @@ func (s *Session) CmdWrite(fd uint32, data []byte) (written uint64, code uint8) 
 		}
 
 		var rsp wsfsprotocol.RspWrite
-		err = wsfsprotocol.ReadRspWriteFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+		err = wsfsprotocol.ReadRspWriteFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Written()]))
 		bufPool.Put(rspBuf)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to decode CmdWrite response")
@@ -559,7 +559,7 @@ func (s *Session) CmdSeek(fd uint32, whence uint8, off int64) (pos uint64, code 
 	}
 
 	var rsp wsfsprotocol.RspSeek
-	err = wsfsprotocol.ReadRspSeekFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	err = wsfsprotocol.ReadRspSeekFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Written()]))
 	bufPool.Put(rspBuf)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decode CmdSeek response")
@@ -613,7 +613,7 @@ func (s *Session) CmdGetAttr(fpath string) (fi wsfsprotocol.FileInfo, code uint8
 	}
 
 	var rsp wsfsprotocol.RspGetAttr
-	err = wsfsprotocol.ReadRspGetAttrFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	err = wsfsprotocol.ReadRspGetAttrFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Written()]))
 	bufPool.Put(rspBuf)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decode CmdGetAttr response")
@@ -771,7 +771,7 @@ func (s *Session) CmdFsStat(fpath string) (fsi wsfsprotocol.RspFsStat, code uint
 		return
 	}
 
-	err = wsfsprotocol.ReadRspFsStatFromReader(&fsi, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	err = wsfsprotocol.ReadRspFsStatFromReader(&fsi, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Written()]))
 	bufPool.Put(rspBuf)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decode CmdFsStat response")
@@ -798,7 +798,7 @@ func (s *Session) CmdReadAt(fd uint32, offset uint64, dest []byte) (uint64, uint
 	for {
 		rsp := <-s.responses[clientMark]
 		code := rsp.Bytes[1]
-		data := rsp.Bytes[2:rsp.Writted()]
+		data := rsp.Bytes[2:rsp.Written()]
 		copy(dest[off:], data)
 		bufPool.Put(rsp)
 
@@ -838,7 +838,7 @@ func (s *Session) CmdWriteAt(fd uint32, offset uint64, data []byte) (written uin
 		}
 
 		var rsp wsfsprotocol.RspWriteAt
-		err = wsfsprotocol.ReadRspWriteAtFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+		err = wsfsprotocol.ReadRspWriteAtFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Written()]))
 		bufPool.Put(rspBuf)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to decode CmdWriteAt response")
@@ -930,7 +930,7 @@ func (s *Session) cmdCopyFileRangeOnce(wfd1 uint32, wfd2 uint32, off1 uint64, of
 	}
 
 	var rsp wsfsprotocol.RspCopyFileRange
-	err = wsfsprotocol.ReadRspCopyFileRangeFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	err = wsfsprotocol.ReadRspCopyFileRangeFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Written()]))
 	bufPool.Put(rspBuf)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decode CmdCopyFileRange response")
@@ -985,7 +985,7 @@ func (s *Session) CmdGetFileLock(fd uint32, fileLock wsfsprotocol.FileLockInfo) 
 	}
 
 	var rsp wsfsprotocol.RspGetFileLock
-	err = wsfsprotocol.ReadRspGetFileLockFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Writted()]))
+	err = wsfsprotocol.ReadRspGetFileLockFromReader(&rsp, bytes.NewReader(rspBuf.Bytes[2:rspBuf.Written()]))
 	bufPool.Put(rspBuf)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decode CmdGetFileLock response")

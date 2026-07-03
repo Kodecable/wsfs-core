@@ -26,9 +26,9 @@ If you don't specify a config file option, the server will search for the follow
 
 If no configuration file is found or if the specified path doesn't exist, the server will start with the default settings. In production, we recommend against relying on automatic config file search or the default settings.
 
-For more information about configuration files, see [server-config-exmaple.toml](https://github.com/Kodecable/wsfs-core/blob/main/doc/server-config-exmaple.toml).
+For more information about configuration files, see [server-config-example.toml](https://github.com/Kodecable/wsfs-core/blob/main/doc/server-config-example.toml).
 
-For running the server as a systemd service, see [wsfs-systemd-service-exmaple.service](https://github.com/Kodecable/wsfs-core/blob/main/doc/server-config-exmaple.service).
+For running the server as a systemd service, see [wsfs-systemd-service-example.service](https://github.com/Kodecable/wsfs-core/blob/main/doc/server-config-example.service).
 
 ### Quick Serve Command
 

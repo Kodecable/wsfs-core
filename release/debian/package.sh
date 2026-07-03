@@ -19,7 +19,7 @@ Options:
   -b DIR        Build artifact directory (default ../build)
   -w DIR        Work directory (default release/work/debian)
   -o DIR        Output directory (default release/output)
-  -e FILE       Example config file (default ../doc/server-config-exmaple.toml)
+  -e FILE       Example config file (default ../doc/server-config-example.toml)
   -l FILE       License file (default ../LICENSE)
 EOF
 }
@@ -102,7 +102,7 @@ for build_arch in "${build_arches[@]}"; do
     release_prepare_dir "${stage_dir}"
 
     release_install_file "${binary_path}" "${pkg_root}/usr/bin/wsfs" 0755
-    release_install_file "${example_file}" "${pkg_root}/etc/wsfs/exmaple.toml" 0644
+    release_install_file "${example_file}" "${pkg_root}/etc/wsfs/example.toml" 0644
     release_install_file "${completion_dir}/bash/wsfs" "${pkg_root}/usr/share/bash-completion/completions/wsfs" 0644
 
     mkdir -p "${control_dir}"
@@ -122,7 +122,7 @@ Description: ${PACKAGE_DESCRIPTION}
 EOF
 
     cat > "${control_dir}/conffiles" <<'EOF'
-/etc/wsfs/exmaple.toml
+/etc/wsfs/example.toml
 EOF
 
     chmod 0644 "${control_dir}/control" "${control_dir}/conffiles"

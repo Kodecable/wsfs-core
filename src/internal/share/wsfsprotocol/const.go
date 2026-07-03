@@ -50,13 +50,13 @@ const (
 	ErrorLoop               uint8 = 6
 	ErrorNoSpace            uint8 = 7
 	ErrorNotEmpty           uint8 = 8
-	ErrorInvail             uint8 = 9
-	ErrorInvailFD           uint8 = 10
+	ErrorInvalid            uint8 = 9
+	ErrorInvalidFD          uint8 = 10
 	ErrorType               uint8 = 11
 	ErrorIO                 uint8 = 12
 	ErrorNotSupport         uint8 = 13
 	ErrorAccessRestricted   uint8 = 14
-	ErrorTooLoong           uint8 = 15
+	ErrorTooLong            uint8 = 15
 	ErrorStateBlocked       uint8 = 16
 	ErrorSpecialFileBlocked uint8 = 17
 	ErrorCrossDevice        uint8 = 18

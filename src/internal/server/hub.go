@@ -85,13 +85,13 @@ func (h *Hub) doReload() {
 
 	conf, err := h.GetConfig()
 	if err != nil {
-		log.Error().Err(err).Msg("Reload failed: Uable to decode new config")
+		log.Error().Err(err).Msg("Reload failed: Unable to decode new config")
 		return
 	}
 
 	server, err := NewServer(conf)
 	if err != nil {
-		log.Error().Err(err).Msg("Reload failed: Uable to new server")
+		log.Error().Err(err).Msg("Reload failed: Unable to new server")
 		return
 	}
 
@@ -113,6 +113,6 @@ func (h *Hub) doReload() {
 }
 
 func (h *Hub) IssueShutdown() {
-	log.Warn().Msg("Shutdowning")
+	log.Warn().Msg("Shutting down")
 	h.inst.server.Shutdown(nil)
 }

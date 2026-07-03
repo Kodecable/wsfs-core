@@ -16,14 +16,14 @@ var defaultConfigPaths = []string{
 	"/etc/wsfs/server.toml",
 }
 
-const iternalDefaultConfigPath = "<DEFAULT>"
+const internalDefaultConfigPath = "<DEFAULT>"
 
 func findConfigFile() string {
 	for _, path_ := range defaultConfigPaths {
 		if cpath, found := strings.CutPrefix(path_, "~/"); found {
 			homeDir, err := os.UserHomeDir()
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "Uable to get user home dir")
+				fmt.Fprintln(os.Stderr, "Unable to get user home dir")
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(2)
 			}
@@ -36,18 +36,18 @@ func findConfigFile() string {
 		}
 	}
 
-	return iternalDefaultConfigPath
+	return internalDefaultConfigPath
 }
 
 func findAndDecodeConfig() serverConfig.Server {
 	config := serverConfig.Default
 
-	if configPath == iternalDefaultConfigPath {
+	if configPath == internalDefaultConfigPath {
 		fmt.Println("No config file given, finding...")
 		configPath = findConfigFile()
 	}
 
-	if configPath != iternalDefaultConfigPath {
+	if configPath != internalDefaultConfigPath {
 		err := serverConfig.Decode(&config, configPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Decode config file failed")
@@ -55,7 +55,7 @@ func findAndDecodeConfig() serverConfig.Server {
 			os.Exit(2)
 		}
 	} else {
-		fmt.Println("No config file found. Configed as all default.")
+		fmt.Println("No config file found. Configured as all default.")
 	}
 
 	return config

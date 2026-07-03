@@ -148,7 +148,7 @@ func (h *Handler) handleGetHead(rsp http.ResponseWriter, req *http.Request, st *
 		} else if os.IsPermission(err) {
 			h.errorHandler.ServeError(rsp, req, internalerror.ErrInternalForbidden)
 		} else {
-			h.errorHandler.ServeError(rsp, req, internalerror.Warp(err))
+			h.errorHandler.ServeError(rsp, req, internalerror.Wrap(err))
 		}
 		return 0, nil
 	}
@@ -355,7 +355,7 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 		}
 	}
 	if depth == infiniteDepth && !h.allowPropfindInfDepth {
-		preconditionErrorReponse(rsp, preconditionPropfindFiniteDepth, req.URL.Path, http.StatusForbidden)
+		preconditionErrorResponse(rsp, preconditionPropfindFiniteDepth, req.URL.Path, http.StatusForbidden)
 		return
 	}
 
@@ -378,7 +378,7 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 		if targetIsRoot && (reqPath == "/" || reqPath == "") {
 			total, _, avail, err := util.FsSize(filepath.Join(st.Path, reqPath))
 			if err != nil {
-				log.Warn().Err(err).Str("Path", reqPath).Msg("Uable to get fs size")
+				log.Warn().Err(err).Str("Path", reqPath).Msg("Unable to get fs size")
 			} else {
 				totalBytes = total
 				availBytes = avail
@@ -395,7 +395,7 @@ func (h *Handler) handlePropfind(rsp http.ResponseWriter, req *http.Request, st 
 	return 0, walkErr
 }
 
-func preconditionErrorReponse(rsp http.ResponseWriter, precondition, href string, code int) {
+func preconditionErrorResponse(rsp http.ResponseWriter, precondition, href string, code int) {
 	rsp.Header().Set("Content-Type", "application/xml; charset=\"utf-8\"")
 	rsp.WriteHeader(code)
 	rsp.Write([]byte(preconditionErrorBody(precondition, href)))

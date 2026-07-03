@@ -83,7 +83,7 @@ func NewServer(c config.Server) (s *Server, err error) {
 		if err != nil {
 			return
 		}
-		go s.wsfsHandler.CollecteInactivedSession()
+		go s.wsfsHandler.CollectInactiveSessions()
 	}
 
 	return
@@ -187,14 +187,14 @@ func (s *Server) serveRecover(rsp *responseWriter, req *http.Request, err any) {
 
 	log.Error().Str("From", req.RemoteAddr).Str("Err", fmt.Sprint(err)).Msg("Panic")
 
-	if rsp.status == statusUnwrited {
+	if rsp.status == statusUnwritten {
 		func() {
 			defer func() {
 				if err := recover(); err != nil {
 					log.Warn().Str("From", req.RemoteAddr).Any("Err", err).Msg("Write response failed")
 				}
 			}()
-			s.ServeError(rsp, req, internalerror.Warp(err))
+			s.ServeError(rsp, req, internalerror.Wrap(err))
 		}()
 	}
 }
@@ -212,7 +212,7 @@ func (s *Server) writeMethodNotAllow(rsp http.ResponseWriter, allow string) {
 func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (user *storage.User) {
 	var err error
 
-	user, err = httpBasciAuth(s.users, req)
+	user, err = httpBasicAuth(s.users, req)
 	switch err {
 	case nil:
 		break
@@ -225,8 +225,8 @@ func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (user *stor
 	case ErrBadHttpAuthHeader, ErrUserNotExists, ErrHashMismatch:
 		s.writeAuthRsp(rsp)
 	default:
-		log.Error().Err(err).Msg("Uable to auth user")
-		s.ServeError(rsp, req, internalerror.Warp(err))
+		log.Error().Err(err).Msg("Unable to auth user")
+		s.ServeError(rsp, req, internalerror.Wrap(err))
 	}
 	return
 }

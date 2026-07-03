@@ -323,10 +323,10 @@ func (s *session) doCommandCall(clientMark, cmd uint8, r io.Reader) {
 		})
 		return
 	default:
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "Unknown command")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "Unknown command")
 	}
 	return
 BadCmdFormat:
-	s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "Bad command format")
+	s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "Bad command format")
 	return
 }

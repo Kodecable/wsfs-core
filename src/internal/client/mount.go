@@ -75,10 +75,10 @@ func reDialFunc(url, username, password, resumeId, expectedCertHash string) func
 				case http.StatusPreconditionFailed:
 					log.Info().Msg("Waiting for session to be resumable")
 				default:
-					log.Error().Err(err).Msg("Uable to connect to server")
+					log.Error().Err(err).Msg("Unable to connect to server")
 				}
 			} else {
-				log.Error().Err(err).Msg("Uable to connect to server")
+				log.Error().Err(err).Msg("Unable to connect to server")
 			}
 
 			time.Sleep(sessionRecoveryRetrySeconds * time.Second)
@@ -105,7 +105,7 @@ func logDialError(rsp *http.Response, err error) {
 			}
 		}
 	}
-	log.Error().Err(err).Msg("Uable to connect to server")
+	log.Error().Err(err).Msg("Unable to connect to server")
 }
 
 func Mount(mountpoint, url, expectedCertHash, username, password string, opt MountOption) error {
@@ -122,7 +122,7 @@ func Mount(mountpoint, url, expectedCertHash, username, password string, opt Mou
 
 	s, err := session.NewSession(reDialFunc(url, username, password, resumeId, expectedCertHash))
 	if err != nil {
-		log.Error().Err(err).Msg("Uable to create session")
+		log.Error().Err(err).Msg("Unable to create session")
 		return err
 	}
 

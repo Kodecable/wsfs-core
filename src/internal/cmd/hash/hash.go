@@ -24,7 +24,7 @@ If no password is given as arguments, one will be read from stdin`,
 			password, err := term.ReadPassword(int(os.Stdin.Fd()))
 			fmt.Printf("\n")
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "Uable to read stdin:", err)
+				fmt.Fprintln(os.Stderr, "Unable to read stdin:", err)
 				os.Exit(1)
 			}
 			hash, err := bcrypt.GenerateFromPassword([]byte(password), int(hashCost))

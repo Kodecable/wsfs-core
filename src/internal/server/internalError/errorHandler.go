@@ -7,8 +7,8 @@ import (
 
 // There are fake errors for ErrorHandler to identify specific situation
 var (
-	ErrInternalNotFound  = errors.New("wsfs-core.interlnalError: not found")
-	ErrInternalForbidden = errors.New("wsfs-core.interlnalError: forbidden")
+	ErrInternalNotFound  = errors.New("wsfs-core.internalError: not found")
+	ErrInternalForbidden = errors.New("wsfs-core.internalError: forbidden")
 )
 
 type ErrorHandler interface {

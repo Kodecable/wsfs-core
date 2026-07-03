@@ -100,7 +100,7 @@ func (s *session) restrictingSymlinkByFileInfo(base string, fi fs.FileInfo) (fs.
 	if strings.HasPrefix(target, s.storage.Path) {
 		return fi, timeval.MTimeFromFileInfo(fi), nil
 	} else {
-		// We stat(base + fi.Name()) here ranther stat(target)
+		// We stat(base + fi.Name()) here rather stat(target)
 		// Consider this situation:
 		//   /
 		//   ├─ A
@@ -149,7 +149,7 @@ func (s *session) cmdReadDir(clientMark uint8, req wsfsprotocol.CmdReadDirStruct
 	path := req.Path
 
 	if !util.IsUrlValid(path) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	apath := s.storage.Path + path
@@ -185,7 +185,7 @@ func (s *session) cmdReadDir(clientMark uint8, req wsfsprotocol.CmdReadDirStruct
 				}
 			}
 
-			if rsp.Writted()+wsfsprotocol.GetDirentRequiredSize(wdirent) > wsfsprotocol.MaxMsgSize {
+			if rsp.Written()+wsfsprotocol.GetDirentRequiredSize(wdirent) > wsfsprotocol.MaxMsgSize {
 				s.write(rsp.Done())
 				rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
 			}
@@ -204,7 +204,7 @@ func (s *session) cmdGetAttr(clientMark uint8, req wsfsprotocol.CmdGetAttrStruct
 	lpath := req.Path
 
 	if !util.IsUrlValid(lpath) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	apath := s.storage.Path + lpath
@@ -238,7 +238,7 @@ func (s *session) lookupDirentSafe(apath string, entry fs.DirEntry) wsfsprotocol
 
 func (s *session) writeDirentChunk(rsp *util.Buffer, clientMark uint8, wdirent wsfsprotocol.Dirent) {
 	requiredSize := 1 + wsfsprotocol.GetDirentRequiredSize(wdirent)
-	if rsp.Writted()+requiredSize > MaxMsgSize {
+	if rsp.Written()+requiredSize > MaxMsgSize {
 		s.write(rsp.Done())
 		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
 	}
@@ -248,7 +248,7 @@ func (s *session) writeDirentChunk(rsp *util.Buffer, clientMark uint8, wdirent w
 
 func (s *session) writePrefetchIndicator(rsp *util.Buffer, clientMark uint8, indicator uint8) {
 	requiredSize := 1
-	if rsp.Writted()+requiredSize > MaxMsgSize {
+	if rsp.Written()+requiredSize > MaxMsgSize {
 		s.write(rsp.Done())
 		rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
 	}
@@ -333,7 +333,7 @@ func (s *session) cmdReadDirPlus(clientMark uint8, req wsfsprotocol.CmdReadDirPl
 	path := req.Path
 
 	if !util.IsUrlValid(path) {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "bad path")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
 		return
 	}
 	apath := s.storage.Path + path
@@ -444,14 +444,14 @@ func (s *session) cmdWriteStreamOpen(clientMark uint8, req wsfsprotocol.CmdWrite
 		offset: req.Offset,
 	}
 	if _, loaded := s.writeStreams.LoadOrStore(clientMark, stream); loaded {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "write stream already open")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "write stream already open")
 		return
 	}
 
 	if rsfd, ok := s.fds.Load(req.FD); ok {
 		stream.fd = rsfd.(sfd_t)
 	} else {
-		s.markWriteStreamError(clientMark, stream, wsfsprotocol.ErrorInvailFD, "bad fd")
+		s.markWriteStreamError(clientMark, stream, wsfsprotocol.ErrorInvalidFD, "bad fd")
 	}
 
 	if len(req.Data) > 0 {
@@ -462,7 +462,7 @@ func (s *session) cmdWriteStreamOpen(clientMark uint8, req wsfsprotocol.CmdWrite
 func (s *session) cmdWriteStreamData(clientMark uint8, req wsfsprotocol.CmdWriteStreamDataStruct) {
 	stream, ok := s.loadWriteStream(clientMark)
 	if !ok {
-		s.writeRspError(clientMark, wsfsprotocol.ErrorInvail, "write stream not open")
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "write stream not open")
 		return
 	}
 

@@ -47,7 +47,7 @@ func printDependencies(info *debug.BuildInfo, ok bool) {
 	table.Print(os.Stdout)
 }
 
-func printSettsings(info *debug.BuildInfo, ok bool) {
+func printSettings(info *debug.BuildInfo, ok bool) {
 	fmt.Printf("Build settings:\n")
 	if !ok {
 		fmt.Printf("  %s\n", readBuildInfoFailedMessage)
@@ -67,7 +67,7 @@ func printSettsings(info *debug.BuildInfo, ok bool) {
 
 var VersionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Print version infomation",
+	Short: "Print version information",
 	Args:  cobra.NoArgs,
 	Run: func(_ *cobra.Command, _ []string) {
 		bi, ok := debug.ReadBuildInfo()
@@ -83,7 +83,7 @@ var VersionCmd = &cobra.Command{
 
 		if all {
 			printDependencies(bi, ok)
-			printSettsings(bi, ok)
+			printSettings(bi, ok)
 		}
 	},
 }

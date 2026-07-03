@@ -19,7 +19,7 @@ Options:
   -b DIR        Build artifact directory (default ../build)
   -w DIR        Work directory (default release/work/arch)
   -o DIR        Output directory (default release/output)
-  -e FILE       Example config file (default ../doc/server-config-exmaple.toml)
+  -e FILE       Example config file (default ../doc/server-config-example.toml)
   -l FILE       License file (default ../LICENSE)
 EOF
 }
@@ -111,7 +111,7 @@ for build_arch in "${build_arches[@]}"; do
     mkdir -p "${pkg_dest}" "${makepkg_home}"
 
     release_install_file "${binary_path}" "${stage_dir}/wsfs" 0755
-    release_install_file "${example_file}" "${stage_dir}/exmaple.toml" 0644
+    release_install_file "${example_file}" "${stage_dir}/example.toml" 0644
     release_install_file "${completion_dir}/bash/wsfs" "${stage_dir}/wsfs.bash" 0644
     release_install_file "${completion_dir}/fish/wsfs.fish" "${stage_dir}/wsfs.fish" 0644
     release_install_file "${completion_dir}/zsh/_wsfs" "${stage_dir}/_wsfs" 0644
@@ -128,13 +128,13 @@ license=('${PACKAGE_LICENSE}')
 options=('!debug')
 depends=()
 optdepends=('fuse3: for no-direct mount')
-backup=('etc/wsfs/exmaple.toml')
-source=('wsfs' 'exmaple.toml' 'wsfs.bash' 'wsfs.fish' '_wsfs' 'LICENSE')
+backup=('etc/wsfs/example.toml')
+source=('wsfs' 'example.toml' 'wsfs.bash' 'wsfs.fish' '_wsfs' 'LICENSE')
 sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
     install -Dm755 "\${srcdir}/wsfs" "\${pkgdir}/usr/bin/wsfs"
-    install -Dm644 "\${srcdir}/exmaple.toml" "\${pkgdir}/etc/wsfs/exmaple.toml"
+    install -Dm644 "\${srcdir}/example.toml" "\${pkgdir}/etc/wsfs/example.toml"
     install -Dm644 "\${srcdir}/wsfs.bash" "\${pkgdir}/usr/share/bash-completion/completions/wsfs"
     install -Dm644 "\${srcdir}/wsfs.fish" "\${pkgdir}/usr/share/fish/vendor_completions.d/wsfs.fish"
     install -Dm644 "\${srcdir}/_wsfs" "\${pkgdir}/usr/share/zsh/site-functions/_wsfs"

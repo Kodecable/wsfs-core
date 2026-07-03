@@ -96,7 +96,7 @@ func (ws *WriteStream) WriteError() (uint8, string) {
 
 func (ws *WriteStream) Close(last []byte) (written uint64, code uint8, desc string) {
 	if ws.closed {
-		return 0, wsfsprotocol.ErrorInvail, "write stream already closed"
+		return 0, wsfsprotocol.ErrorInvalid, "write stream already closed"
 	}
 
 	if len(last) > maxWriteStreamDataPayload {
@@ -128,7 +128,7 @@ func (ws *WriteStream) Close(last []byte) (written uint64, code uint8, desc stri
 	for {
 		rsp := <-ws.session.responses[ws.clientMark]
 		code = rsp.Bytes[1]
-		payload := rsp.Bytes[2:rsp.Writted()]
+		payload := rsp.Bytes[2:rsp.Written()]
 
 		switch code {
 		case wsfsprotocol.ErrorOK:
