@@ -17,6 +17,9 @@ import (
 type Config struct {
 	WsfsBin       string
 	WorkRoot      string
+	Endpoint      string
+	StorageDir    string
+	TestDir       string
 	StructTimeout int
 	KeepWork      bool
 	Verbose       bool
@@ -24,14 +27,17 @@ type Config struct {
 
 type Case interface {
 	Name() string
-	Prepare(*Env) error
+	Setup(context.Context, *Env) error
 	Run(ctx context.Context, env *Env) error
+	Verify(context.Context, *Env) error
+	VerifyStorage(context.Context, *Env) error
 }
 
 type Env struct {
 	CaseName   string
 	CaseRoot   string
 	BackendDir string
+	MountRoot  string
 	MountDir   string
 	MountArg   string
 	LogsDir    string
@@ -55,8 +61,18 @@ func NewRunner(cfg Config) (*Runner, error) {
 	if cfg.WsfsBin == "" {
 		return nil, errors.New("wsfs binary path is required")
 	}
+	if cfg.Endpoint != "" && cfg.TestDir == "" {
+		return nil, errors.New("test dir is required when using an external endpoint")
+	}
 	if cfg.WorkRoot == "" {
 		return nil, errors.New("work root is required")
+	}
+	if cfg.TestDir != "" {
+		testDir, err := cleanRelativeDir(cfg.TestDir)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TestDir = testDir
 	}
 	if cfg.StructTimeout < 0 {
 		cfg.StructTimeout = 0
@@ -66,6 +82,13 @@ func NewRunner(cfg Config) (*Runner, error) {
 		return nil, fmt.Errorf("resolve work root: %w", err)
 	}
 	cfg.WorkRoot = absWorkRoot
+	if cfg.StorageDir != "" {
+		absStorageDir, err := filepath.Abs(cfg.StorageDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve storage dir: %w", err)
+		}
+		cfg.StorageDir = absStorageDir
+	}
 	if err := os.MkdirAll(cfg.WorkRoot, 0o755); err != nil {
 		return nil, fmt.Errorf("create work root: %w", err)
 	}
@@ -101,7 +124,17 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 		ServerLog:  filepath.Join(caseRoot, "logs", "server.log"),
 		MountLog:   filepath.Join(caseRoot, "logs", "mount.log"),
 	}
-	for _, dir := range []string{env.BackendDir, env.LogsDir} {
+	if r.cfg.Endpoint != "" {
+		env.Endpoint = r.cfg.Endpoint
+		if r.cfg.StorageDir != "" {
+			env.BackendDir = r.cfg.StorageDir
+		}
+	}
+	requiredDirs := []string{env.LogsDir}
+	if r.cfg.Endpoint == "" {
+		requiredDirs = append(requiredDirs, env.BackendDir)
+	}
+	for _, dir := range requiredDirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			res.Err = fmt.Errorf("prepare work dir: %w", err)
 			return res
@@ -111,22 +144,26 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 		res.Err = fmt.Errorf("prepare mount env: %w", err)
 		return res
 	}
-	if err := c.Prepare(env); err != nil {
-		res.Err = fmt.Errorf("prepare case: %w", err)
-		return res
-	}
 
-	port, err := reserveTCPPort()
-	if err != nil {
-		res.Err = fmt.Errorf("reserve port: %w", err)
-		return res
-	}
-	env.Endpoint = fmt.Sprintf("wsfs://127.0.0.1:%d/", port)
+	var serverProc *Process
+	if r.cfg.Endpoint == "" {
+		port, err := reserveTCPPort()
+		if err != nil {
+			res.Err = fmt.Errorf("reserve port: %w", err)
+			return res
+		}
+		env.Endpoint = fmt.Sprintf("wsfs://127.0.0.1:%d/", port)
 
-	serverProc, err := r.startServer(env, port)
-	if err != nil {
-		res.Err = err
-		return res
+		serverProc, err = r.startServer(env, port)
+		if err != nil {
+			res.Err = err
+			return res
+		}
+
+		if err := waitTCPReady(ctx, port, serverProc); err != nil {
+			res.Err = fmt.Errorf("wait server ready: %w", err)
+			return res
+		}
 	}
 
 	var mountProc *Process
@@ -139,11 +176,6 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 		}
 	}()
 
-	if err := waitTCPReady(ctx, port, serverProc); err != nil {
-		res.Err = fmt.Errorf("wait server ready: %w", err)
-		return res
-	}
-
 	mountProc, err = r.startMount(env)
 	if err != nil {
 		res.Err = err
@@ -155,8 +187,70 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 		return res
 	}
 
-	res.Err = c.Run(ctx, env)
+	if err := r.prepareMountDir(env); err != nil {
+		res.Err = fmt.Errorf("prepare mount test dir: %w", err)
+		return res
+	}
+	if err := c.Setup(ctx, env); err != nil {
+		res.Err = fmt.Errorf("setup case: %w", err)
+		return res
+	}
+	if err := c.Run(ctx, env); err != nil {
+		res.Err = fmt.Errorf("run case: %w", err)
+		return res
+	}
+	if err := c.Verify(ctx, env); err != nil {
+		res.Err = fmt.Errorf("verify case: %w", err)
+		return res
+	}
+	if r.verifyStorage() {
+		if err := c.VerifyStorage(ctx, env); err != nil {
+			res.Err = fmt.Errorf("verify storage: %w", err)
+			return res
+		}
+	}
 	return res
+}
+
+func cleanRelativeDir(dir string) (string, error) {
+	clean := filepath.Clean(dir)
+	if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || clean == ".." {
+		return "", fmt.Errorf("test dir must be a relative child directory, got %q", dir)
+	}
+	return clean, nil
+}
+
+func (r *Runner) verifyStorage() bool {
+	return r.cfg.Endpoint == "" || r.cfg.StorageDir != ""
+}
+
+func (r *Runner) prepareMountDir(env *Env) error {
+	if r.cfg.TestDir != "" {
+		mountDir := filepath.Join(env.MountRoot, r.cfg.TestDir)
+		if err := os.RemoveAll(mountDir); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(mountDir, 0o755); err != nil {
+			return err
+		}
+		env.MountDir = mountDir
+		if r.verifyStorage() {
+			env.BackendDir = filepath.Join(env.BackendDir, r.cfg.TestDir)
+		}
+		return nil
+	}
+
+	env.MountDir = env.MountRoot
+	entries, err := os.ReadDir(env.MountDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(env.MountDir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Runner) cleanup(env *Env, mountProc, serverProc *Process) error {

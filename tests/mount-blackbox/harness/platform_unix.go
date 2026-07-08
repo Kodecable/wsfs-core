@@ -21,9 +21,10 @@ func NewPlatform(Config) (Platform, error) {
 }
 
 func (unixPlatform) PrepareEnv(env *Env) error {
-	env.MountDir = filepath.Join(env.CaseRoot, "mount")
-	env.MountArg = env.MountDir
-	return os.MkdirAll(env.MountDir, 0o755)
+	env.MountRoot = filepath.Join(env.CaseRoot, "mount")
+	env.MountDir = env.MountRoot
+	env.MountArg = env.MountRoot
+	return os.MkdirAll(env.MountRoot, 0o755)
 }
 
 func (unixPlatform) WaitMountReady(ctx context.Context, env *Env, proc *Process) error {
@@ -31,8 +32,8 @@ func (unixPlatform) WaitMountReady(ctx context.Context, env *Env, proc *Process)
 		if proc.Exited() {
 			return fmt.Errorf("mount exited before ready, code=%d", ExitErrorCode(proc.WaitErr()))
 		}
-		if isMounted(env.MountDir) {
-			if _, err := os.ReadDir(env.MountDir); err == nil {
+		if isMounted(env.MountRoot) {
+			if _, err := os.ReadDir(env.MountRoot); err == nil {
 				return nil
 			}
 		}
@@ -45,13 +46,13 @@ func (unixPlatform) WaitMountReady(ctx context.Context, env *Env, proc *Process)
 }
 
 func (unixPlatform) Unmount(env *Env) error {
-	if !isMounted(env.MountDir) {
+	if !isMounted(env.MountRoot) {
 		return nil
 	}
 	var errs []string
 	for _, argv := range [][]string{
-		{"fusermount3", "-u", env.MountDir},
-		{"umount", env.MountDir},
+		{"fusermount3", "-u", env.MountRoot},
+		{"umount", env.MountRoot},
 	} {
 		cmd := exec.Command(argv[0], argv[1:]...)
 		if err := cmd.Run(); err == nil {

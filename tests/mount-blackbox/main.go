@@ -17,6 +17,9 @@ func main() {
 	var (
 		wsfsBin       = flag.String("wsfs-bin", defaultWsfsBin(), "Path to wsfs executable")
 		workRoot      = flag.String("work-root", defaultWorkRoot(), "Directory for per-case work artifacts")
+		endpoint      = flag.String("endpoint", "", "Existing WSFS endpoint; when set, only start the mount client")
+		testDir       = flag.String("test-dir", "", "Relative directory under the mounted filesystem used as the test root")
+		storageDir    = flag.String("storage-dir", "", "Server storage root for storage verification in external endpoint mode")
 		keepWork      = flag.Bool("keep-work", false, "Keep per-case work directory on success too")
 		listCases     = flag.Bool("list", false, "List available cases and exit")
 		structTimeout = flag.Int("struct-timeout", 0, "Mount --struct-timeout seconds")
@@ -40,6 +43,9 @@ func main() {
 	runner, err := harness.NewRunner(harness.Config{
 		WsfsBin:       *wsfsBin,
 		WorkRoot:      *workRoot,
+		Endpoint:      *endpoint,
+		StorageDir:    *storageDir,
+		TestDir:       *testDir,
 		StructTimeout: *structTimeout,
 		KeepWork:      *keepWork,
 	})

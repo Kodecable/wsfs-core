@@ -18,47 +18,65 @@ import (
 )
 
 type testCase struct {
-	name    string
-	prepare func(*harness.Env) error
-	run     func(context.Context, *harness.Env) error
+	name          string
+	setup         func(context.Context, *harness.Env) error
+	run           func(context.Context, *harness.Env) error
+	verify        func(context.Context, *harness.Env) error
+	verifyStorage func(context.Context, *harness.Env) error
 }
 
 func (c testCase) Name() string { return c.name }
-func (c testCase) Prepare(env *harness.Env) error {
-	if c.prepare == nil {
+func (c testCase) Setup(ctx context.Context, env *harness.Env) error {
+	if c.setup == nil {
 		return nil
 	}
-	return c.prepare(env)
+	return c.setup(ctx, env)
 }
 func (c testCase) Run(ctx context.Context, env *harness.Env) error {
+	if c.run == nil {
+		return nil
+	}
 	return c.run(ctx, env)
+}
+func (c testCase) Verify(ctx context.Context, env *harness.Env) error {
+	if c.verify == nil {
+		return nil
+	}
+	return c.verify(ctx, env)
+}
+func (c testCase) VerifyStorage(ctx context.Context, env *harness.Env) error {
+	if c.verifyStorage == nil {
+		return nil
+	}
+	return c.verifyStorage(ctx, env)
 }
 
 func All() []harness.Case {
 	return []harness.Case{
-		testCase{name: "create_write_read_small", run: createWriteReadSmall},
-		testCase{name: "overwrite_existing_file", run: overwriteExistingFile},
-		testCase{name: "append_via_std_write", run: appendViaStdWrite},
-		testCase{name: "truncate_shrink", run: truncateShrink},
-		testCase{name: "truncate_expand", run: truncateExpand},
-		testCase{name: "getattr_after_write", run: getattrAfterWrite},
-		testCase{name: "getattr_after_rename", run: getattrAfterRename},
-		testCase{name: "read_at_offsets", prepare: prepareReadAtOffsets, run: readAtOffsets},
-		testCase{name: "write_at_offsets", run: writeAtOffsets},
-		testCase{name: "read_large_file_cross_message_boundary", prepare: prepareReadLargeFile, run: readLargeFileCrossMessageBoundary},
-		testCase{name: "readdir_root", prepare: prepareReaddirRoot, run: readdirRoot},
-		testCase{name: "readdir_root_prefetch_empty_child", prepare: prepareReaddirRootPrefetchEmptyChild, run: readdirRootPrefetchEmptyChild},
-		testCase{name: "create_many_entries", run: createManyEntries},
-		testCase{name: "mkdir_then_readdir", run: mkdirThenReaddir},
-		testCase{name: "rename_file_cross_dir", run: renameFileCrossDir},
-		testCase{name: "rename_then_readdir_old_parent", run: renameThenReaddirOldParent},
-		testCase{name: "remove_then_readdir", run: removeThenReaddir},
-		testCase{name: "create_and_read_symlink", run: createAndReadSymlink},
-		testCase{name: "read_file_via_symlink", run: readFileViaSymlink},
-		testCase{name: "many_small_random_writes", run: manySmallRandomWrites},
-		testCase{name: "interleaved_random_rw_8x64mib", run: interleavedRandomReadWrite8x64MiB},
-		testCase{name: "random_readdir_walk_deep_fanout", prepare: prepareRandomReaddirWalkDeepFanout, run: randomReaddirWalkDeepFanout},
-		testCase{name: "write_large_file_cross_message_boundary", run: writeLargeFileCrossMessageBoundary},
+		testCase{name: "create_write_read_small", run: createWriteReadSmall, verifyStorage: verifyStorageCreateWriteReadSmall},
+		testCase{name: "overwrite_existing_file", setup: setupOverwriteExistingFile, run: overwriteExistingFile, verifyStorage: verifyStorageOverwriteExistingFile},
+		testCase{name: "append_via_std_write", run: appendViaStdWrite, verifyStorage: verifyStorageAppendViaStdWrite},
+		testCase{name: "truncate_shrink", run: truncateShrink, verifyStorage: verifyStorageTruncateShrink},
+		testCase{name: "truncate_expand", run: truncateExpand, verifyStorage: verifyStorageTruncateExpand},
+		testCase{name: "getattr_after_write", run: getattrAfterWrite, verifyStorage: verifyStorageGetattrAfterWrite},
+		testCase{name: "getattr_after_rename", run: getattrAfterRename, verifyStorage: verifyStorageGetattrAfterRename},
+		testCase{name: "read_at_offsets", setup: setupReadAtOffsets, run: readAtOffsets, verifyStorage: verifyStorageReadAtOffsets},
+		testCase{name: "write_at_offsets", run: writeAtOffsets, verifyStorage: verifyStorageWriteAtOffsets},
+		testCase{name: "read_large_file_cross_message_boundary", setup: setupReadLargeFile, run: readLargeFileCrossMessageBoundary, verifyStorage: verifyStorageReadLargeFileCrossMessageBoundary},
+		testCase{name: "readdir_root", setup: setupReaddirRoot, run: readdirRoot, verifyStorage: verifyStorageReaddirRoot},
+		testCase{name: "readdir_root_prefetch_empty_child", setup: setupReaddirRootPrefetchEmptyChild, run: readdirRootPrefetchEmptyChild, verifyStorage: verifyStorageReaddirRootPrefetchEmptyChild},
+		testCase{name: "create_many_entries", run: createManyEntries, verifyStorage: verifyStorageCreateManyEntries},
+		testCase{name: "mkdir_then_readdir", run: mkdirThenReaddir, verifyStorage: verifyStorageMkdirThenReaddir},
+		testCase{name: "rmdir_empty_dir", run: rmdirEmptyDir, verifyStorage: verifyStorageRmdirEmptyDir},
+		testCase{name: "rename_file_cross_dir", run: renameFileCrossDir, verifyStorage: verifyStorageRenameFileCrossDir},
+		testCase{name: "rename_then_readdir_old_parent", run: renameThenReaddirOldParent, verifyStorage: verifyStorageRenameThenReaddirOldParent},
+		testCase{name: "remove_then_readdir", run: removeThenReaddir, verifyStorage: verifyStorageRemoveThenReaddir},
+		testCase{name: "create_and_read_symlink", run: createAndReadSymlink, verifyStorage: verifyStorageCreateAndReadSymlink},
+		testCase{name: "read_file_via_symlink", run: readFileViaSymlink, verifyStorage: verifyStorageReadFileViaSymlink},
+		testCase{name: "many_small_random_writes", run: manySmallRandomWrites, verifyStorage: verifyStorageManySmallRandomWrites},
+		testCase{name: "interleaved_random_rw_8x64mib", run: interleavedRandomReadWrite8x64MiB, verifyStorage: verifyStorageInterleavedRandomReadWrite8x64MiB},
+		testCase{name: "random_readdir_walk_deep_fanout", setup: setupRandomReaddirWalkDeepFanout, run: randomReaddirWalkDeepFanout, verifyStorage: verifyStorageRandomReaddirWalkDeepFanout},
+		testCase{name: "write_large_file_cross_message_boundary", run: writeLargeFileCrossMessageBoundary, verifyStorage: verifyStorageWriteLargeFileCrossMessageBoundary},
 	}
 }
 
@@ -98,7 +116,11 @@ func createWriteReadSmall(_ context.Context, env *harness.Env) error {
 	if !bytes.Equal(got, want) {
 		return fmt.Errorf("mount content mismatch: got %q want %q", got, want)
 	}
+	return nil
+}
 
+func verifyStorageCreateWriteReadSmall(_ context.Context, env *harness.Env) error {
+	want := []byte("hello from wsfs\n")
 	backend, err := os.ReadFile(filepath.Join(env.BackendDir, "alpha.txt"))
 	if err != nil {
 		return err
@@ -109,19 +131,30 @@ func createWriteReadSmall(_ context.Context, env *harness.Env) error {
 	return nil
 }
 
-func overwriteExistingFile(_ context.Context, env *harness.Env) error {
-	backendPath := filepath.Join(env.BackendDir, "payload.txt")
-	if err := os.WriteFile(backendPath, []byte("old-data"), 0o644); err != nil {
-		return err
-	}
+func setupOverwriteExistingFile(_ context.Context, env *harness.Env) error {
+	return os.WriteFile(filepath.Join(env.MountDir, "payload.txt"), []byte("old-data"), 0o644)
+}
 
+func overwriteExistingFile(_ context.Context, env *harness.Env) error {
 	mountPath := filepath.Join(env.MountDir, "payload.txt")
 	want := []byte("new-data")
 	if err := os.WriteFile(mountPath, want, 0o644); err != nil {
 		return err
 	}
 
-	got, err := os.ReadFile(backendPath)
+	got, err := os.ReadFile(mountPath)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(got, want) {
+		return fmt.Errorf("mount content mismatch: got %q want %q", got, want)
+	}
+	return nil
+}
+
+func verifyStorageOverwriteExistingFile(_ context.Context, env *harness.Env) error {
+	want := []byte("new-data")
+	got, err := os.ReadFile(filepath.Join(env.BackendDir, "payload.txt"))
 	if err != nil {
 		return err
 	}
@@ -150,7 +183,7 @@ func appendViaStdWrite(_ context.Context, env *harness.Env) error {
 	}
 
 	want := []byte("head-tail")
-	got, err := os.ReadFile(filepath.Join(env.BackendDir, "append.txt"))
+	got, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -158,6 +191,10 @@ func appendViaStdWrite(_ context.Context, env *harness.Env) error {
 		return fmt.Errorf("append mismatch: got %q want %q", got, want)
 	}
 	return nil
+}
+
+func verifyStorageAppendViaStdWrite(_ context.Context, env *harness.Env) error {
+	return assertFileBytes(filepath.Join(env.BackendDir, "append.txt"), []byte("head-tail"))
 }
 
 func truncateShrink(_ context.Context, env *harness.Env) error {
@@ -177,6 +214,10 @@ func truncateShrink(_ context.Context, env *harness.Env) error {
 		return fmt.Errorf("truncate shrink mismatch: got %q", got)
 	}
 	return nil
+}
+
+func verifyStorageTruncateShrink(_ context.Context, env *harness.Env) error {
+	return assertFileBytes(filepath.Join(env.BackendDir, "shrink.txt"), []byte("abcd"))
 }
 
 func truncateExpand(_ context.Context, env *harness.Env) error {
@@ -199,6 +240,11 @@ func truncateExpand(_ context.Context, env *harness.Env) error {
 	return nil
 }
 
+func verifyStorageTruncateExpand(_ context.Context, env *harness.Env) error {
+	want := []byte{'a', 'b', 'c', 0, 0, 0, 0, 0}
+	return assertFileBytes(filepath.Join(env.BackendDir, "expand.bin"), want)
+}
+
 func getattrAfterWrite(_ context.Context, env *harness.Env) error {
 	path := filepath.Join(env.MountDir, "stat-after-write.bin")
 	payload := []byte("1234567890abcdef")
@@ -213,13 +259,31 @@ func getattrAfterWrite(_ context.Context, env *harness.Env) error {
 	if size != int64(len(payload)) {
 		return fmt.Errorf("mount stat size mismatch: got %d want %d", size, len(payload))
 	}
+	return nil
+}
 
+func verifyStorageGetattrAfterWrite(_ context.Context, env *harness.Env) error {
+	payload := []byte("1234567890abcdef")
 	backendSize, err := harness.StatSize(filepath.Join(env.BackendDir, "stat-after-write.bin"))
 	if err != nil {
 		return err
 	}
 	if backendSize != int64(len(payload)) {
 		return fmt.Errorf("backend stat size mismatch: got %d want %d", backendSize, len(payload))
+	}
+	return nil
+}
+
+func verifyStorageGetattrAfterRename(_ context.Context, env *harness.Env) error {
+	if _, err := os.Stat(filepath.Join(env.BackendDir, "old-name.txt")); !os.IsNotExist(err) {
+		return fmt.Errorf("old backend path stat mismatch after rename: %v", err)
+	}
+	size, err := harness.StatSize(filepath.Join(env.BackendDir, "new-name.txt"))
+	if err != nil {
+		return err
+	}
+	if size != int64(len("rename-check")) {
+		return fmt.Errorf("new backend path stat size mismatch: got %d", size)
 	}
 	return nil
 }
@@ -277,17 +341,17 @@ func readAtOffsets(_ context.Context, env *harness.Env) error {
 	return nil
 }
 
-func prepareReadAtOffsets(env *harness.Env) error {
+func setupReadAtOffsets(_ context.Context, env *harness.Env) error {
 	data := []byte("0123456789abcdefghijklmnopqrstuvwxyz")
-	return os.WriteFile(filepath.Join(env.BackendDir, "offsets.txt"), data, 0o644)
+	return os.WriteFile(filepath.Join(env.MountDir, "offsets.txt"), data, 0o644)
 }
 
-func prepareReadLargeFile(env *harness.Env) error {
-	payload := make([]byte, 20000)
-	for i := range payload {
-		payload[i] = byte((i*17 + 9) % 251)
-	}
-	return os.WriteFile(filepath.Join(env.BackendDir, "large-read.bin"), payload, 0o644)
+func verifyStorageReadAtOffsets(_ context.Context, env *harness.Env) error {
+	return assertFileBytes(filepath.Join(env.BackendDir, "offsets.txt"), []byte("0123456789abcdefghijklmnopqrstuvwxyz"))
+}
+
+func setupReadLargeFile(_ context.Context, env *harness.Env) error {
+	return os.WriteFile(filepath.Join(env.MountDir, "large-read.bin"), makeLargeReadPayload(), 0o644)
 }
 
 func writeAtOffsets(_ context.Context, env *harness.Env) error {
@@ -312,7 +376,7 @@ func writeAtOffsets(_ context.Context, env *harness.Env) error {
 		return err
 	}
 
-	got, err := os.ReadFile(filepath.Join(env.BackendDir, "patch.txt"))
+	got, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -320,6 +384,10 @@ func writeAtOffsets(_ context.Context, env *harness.Env) error {
 		return fmt.Errorf("writeat mismatch: got %q", got)
 	}
 	return nil
+}
+
+func verifyStorageWriteAtOffsets(_ context.Context, env *harness.Env) error {
+	return assertFileBytes(filepath.Join(env.BackendDir, "patch.txt"), []byte("01AB456XYZ"))
 }
 
 func readdirRoot(_ context.Context, env *harness.Env) error {
@@ -334,26 +402,38 @@ func readdirRoot(_ context.Context, env *harness.Env) error {
 	return nil
 }
 
-func prepareReaddirRoot(env *harness.Env) error {
+func setupReaddirRoot(_ context.Context, env *harness.Env) error {
 	for _, name := range []string{"a.txt", "b.txt"} {
-		if err := os.WriteFile(filepath.Join(env.BackendDir, name), []byte(name), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(env.MountDir, name), []byte(name), 0o644); err != nil {
 			return err
 		}
 	}
-	return os.Mkdir(filepath.Join(env.BackendDir, "dir"), 0o755)
+	return os.Mkdir(filepath.Join(env.MountDir, "dir"), 0o755)
 }
 
-func prepareReaddirRootPrefetchEmptyChild(env *harness.Env) error {
-	if err := os.WriteFile(filepath.Join(env.BackendDir, "a.txt"), []byte("a"), 0o644); err != nil {
+func verifyStorageReaddirRoot(_ context.Context, env *harness.Env) error {
+	got, err := harness.SortedNames(env.BackendDir)
+	if err != nil {
 		return err
 	}
-	if err := os.Mkdir(filepath.Join(env.BackendDir, "empty"), 0o755); err != nil {
+	want := []string{"a.txt", "b.txt", "dir"}
+	if !reflect.DeepEqual(got, want) {
+		return fmt.Errorf("backend readdir mismatch: got %v want %v", got, want)
+	}
+	return nil
+}
+
+func setupReaddirRootPrefetchEmptyChild(_ context.Context, env *harness.Env) error {
+	if err := os.WriteFile(filepath.Join(env.MountDir, "a.txt"), []byte("a"), 0o644); err != nil {
 		return err
 	}
-	if err := os.Mkdir(filepath.Join(env.BackendDir, "filled"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(env.MountDir, "empty"), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(env.BackendDir, "filled", "child.txt"), []byte("child"), 0o644)
+	if err := os.Mkdir(filepath.Join(env.MountDir, "filled"), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(env.MountDir, "filled", "child.txt"), []byte("child"), 0o644)
 }
 
 func readdirRootPrefetchEmptyChild(_ context.Context, env *harness.Env) error {
@@ -390,22 +470,11 @@ func readdirRootPrefetchEmptyChild(_ context.Context, env *harness.Env) error {
 		return fmt.Errorf("filled child dir mismatch: %v", filledNames)
 	}
 
-	backendEmptyNames, err := harness.SortedNames(filepath.Join(env.BackendDir, "empty"))
-	if err != nil {
-		return err
-	}
-	if len(backendEmptyNames) != 0 {
-		return fmt.Errorf("backend empty child dir mismatch: %v", backendEmptyNames)
-	}
-
 	return nil
 }
 
 func readLargeFileCrossMessageBoundary(_ context.Context, env *harness.Env) error {
-	want, err := os.ReadFile(filepath.Join(env.BackendDir, "large-read.bin"))
-	if err != nil {
-		return err
-	}
+	want := makeLargeReadPayload()
 	got, err := os.ReadFile(filepath.Join(env.MountDir, "large-read.bin"))
 	if err != nil {
 		return err
@@ -414,6 +483,35 @@ func readLargeFileCrossMessageBoundary(_ context.Context, env *harness.Env) erro
 		return fmt.Errorf("large read mismatch: got %d bytes want %d bytes", len(got), len(want))
 	}
 	return nil
+}
+
+func verifyStorageReaddirRootPrefetchEmptyChild(_ context.Context, env *harness.Env) error {
+	rootNames, err := harness.SortedNames(env.BackendDir)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(rootNames, []string{"a.txt", "empty", "filled"}) {
+		return fmt.Errorf("backend root dir mismatch: %v", rootNames)
+	}
+	emptyNames, err := harness.SortedNames(filepath.Join(env.BackendDir, "empty"))
+	if err != nil {
+		return err
+	}
+	if len(emptyNames) != 0 {
+		return fmt.Errorf("backend empty child dir mismatch: %v", emptyNames)
+	}
+	filledNames, err := harness.SortedNames(filepath.Join(env.BackendDir, "filled"))
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(filledNames, []string{"child.txt"}) {
+		return fmt.Errorf("backend filled child dir mismatch: %v", filledNames)
+	}
+	return nil
+}
+
+func verifyStorageReadLargeFileCrossMessageBoundary(_ context.Context, env *harness.Env) error {
+	return assertFileBytes(filepath.Join(env.BackendDir, "large-read.bin"), makeLargeReadPayload())
 }
 
 func createManyEntries(_ context.Context, env *harness.Env) error {
@@ -435,6 +533,24 @@ func createManyEntries(_ context.Context, env *harness.Env) error {
 	return nil
 }
 
+func verifyStorageCreateManyEntries(_ context.Context, env *harness.Env) error {
+	const count = 96
+	got, err := harness.SortedNames(env.BackendDir)
+	if err != nil {
+		return err
+	}
+	if len(got) != count {
+		return fmt.Errorf("backend entry count mismatch: got %d want %d", len(got), count)
+	}
+	for i := range count {
+		name := fmt.Sprintf("file-%03d.txt", i)
+		if got[i] != name {
+			return fmt.Errorf("backend entry mismatch at %d: got %q want %q", i, got[i], name)
+		}
+	}
+	return nil
+}
+
 func mkdirThenReaddir(_ context.Context, env *harness.Env) error {
 	dir := filepath.Join(env.MountDir, "newdir")
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -452,12 +568,44 @@ func mkdirThenReaddir(_ context.Context, env *harness.Env) error {
 		return fmt.Errorf("root dir mismatch after mkdir: %v", got)
 	}
 
+	childNames, err := harness.SortedNames(dir)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(childNames, []string{"child.txt"}) {
+		return fmt.Errorf("mount child dir mismatch: %v", childNames)
+	}
+	return nil
+}
+
+func verifyStorageMkdirThenReaddir(_ context.Context, env *harness.Env) error {
 	childNames, err := harness.SortedNames(filepath.Join(env.BackendDir, "newdir"))
 	if err != nil {
 		return err
 	}
 	if !reflect.DeepEqual(childNames, []string{"child.txt"}) {
 		return fmt.Errorf("backend child dir mismatch: %v", childNames)
+	}
+	return nil
+}
+
+func rmdirEmptyDir(_ context.Context, env *harness.Env) error {
+	dir := filepath.Join(env.MountDir, "empty-dir")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.Remove(dir); err != nil {
+		return err
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		return fmt.Errorf("removed directory still exists or unexpected err: %v", err)
+	}
+	return nil
+}
+
+func verifyStorageRmdirEmptyDir(_ context.Context, env *harness.Env) error {
+	if _, err := os.Stat(filepath.Join(env.BackendDir, "empty-dir")); !os.IsNotExist(err) {
+		return fmt.Errorf("removed backend directory still exists or unexpected err: %v", err)
 	}
 	return nil
 }
@@ -483,7 +631,7 @@ func renameFileCrossDir(_ context.Context, env *harness.Env) error {
 	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
 		return fmt.Errorf("old path still exists or unexpected err: %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(env.BackendDir, "dst", "renamed.txt"))
+	got, err := os.ReadFile(newPath)
 	if err != nil {
 		return err
 	}
@@ -491,6 +639,13 @@ func renameFileCrossDir(_ context.Context, env *harness.Env) error {
 		return fmt.Errorf("renamed content mismatch: got %q", got)
 	}
 	return nil
+}
+
+func verifyStorageRenameFileCrossDir(_ context.Context, env *harness.Env) error {
+	if _, err := os.Stat(filepath.Join(env.BackendDir, "src", "payload.txt")); !os.IsNotExist(err) {
+		return fmt.Errorf("old backend path still exists or unexpected err: %v", err)
+	}
+	return assertFileBytes(filepath.Join(env.BackendDir, "dst", "renamed.txt"), []byte("move-me"))
 }
 
 func renameThenReaddirOldParent(_ context.Context, env *harness.Env) error {
@@ -529,6 +684,24 @@ func renameThenReaddirOldParent(_ context.Context, env *harness.Env) error {
 	return nil
 }
 
+func verifyStorageRenameThenReaddirOldParent(_ context.Context, env *harness.Env) error {
+	oldNames, err := harness.SortedNames(filepath.Join(env.BackendDir, "old-parent"))
+	if err != nil {
+		return err
+	}
+	if len(oldNames) != 0 {
+		return fmt.Errorf("backend old parent not empty after rename: %v", oldNames)
+	}
+	newNames, err := harness.SortedNames(filepath.Join(env.BackendDir, "new-parent"))
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(newNames, []string{"move.txt"}) {
+		return fmt.Errorf("backend new parent entries mismatch: %v", newNames)
+	}
+	return nil
+}
+
 func removeThenReaddir(_ context.Context, env *harness.Env) error {
 	for _, name := range []string{"gone-a.txt", "gone-b.txt"} {
 		if err := os.WriteFile(filepath.Join(env.MountDir, name), []byte(name), 0o644); err != nil {
@@ -547,6 +720,17 @@ func removeThenReaddir(_ context.Context, env *harness.Env) error {
 	}
 	if len(got) != 0 {
 		return fmt.Errorf("directory not empty after remove: %v", got)
+	}
+	return nil
+}
+
+func verifyStorageRemoveThenReaddir(_ context.Context, env *harness.Env) error {
+	got, err := harness.SortedNames(env.BackendDir)
+	if err != nil {
+		return err
+	}
+	if len(got) != 0 {
+		return fmt.Errorf("backend directory not empty after remove: %v", got)
 	}
 	return nil
 }
@@ -576,11 +760,18 @@ func createAndReadSymlink(_ context.Context, env *harness.Env) error {
 		return fmt.Errorf("readlink mismatch: got %q want %q", got, wantMountTarget)
 	}
 
+	return nil
+}
+
+func verifyStorageCreateAndReadSymlink(_ context.Context, env *harness.Env) error {
+	if runtime.GOOS == "windows" {
+		return harness.Skip("skip symlinks on Windows")
+	}
 	backendTarget, err := os.Readlink(filepath.Join(env.BackendDir, "link.txt"))
 	if err != nil {
 		return err
 	}
-	wantBackendPrefix := filepath.Join(env.BackendDir, targetName)
+	wantBackendPrefix := filepath.Join(env.BackendDir, "target.txt")
 	if backendTarget != wantBackendPrefix {
 		return fmt.Errorf("backend symlink mismatch: got %q want %q", backendTarget, wantBackendPrefix)
 	}
@@ -610,6 +801,13 @@ func readFileViaSymlink(_ context.Context, env *harness.Env) error {
 		return fmt.Errorf("symlink read mismatch: got %q", got)
 	}
 	return nil
+}
+
+func verifyStorageReadFileViaSymlink(_ context.Context, env *harness.Env) error {
+	if runtime.GOOS == "windows" {
+		return harness.Skip("skip symlinks on Windows")
+	}
+	return assertFileBytes(filepath.Join(env.BackendDir, "link-read.txt"), []byte("through-link"))
 }
 
 func manySmallRandomWrites(_ context.Context, env *harness.Env) error {
@@ -647,13 +845,6 @@ func manySmallRandomWrites(_ context.Context, env *harness.Env) error {
 		return err
 	}
 
-	gotBackend, err := os.ReadFile(filepath.Join(env.BackendDir, "random-writes.bin"))
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(gotBackend, expected) {
-		return fmt.Errorf("backend random write mismatch")
-	}
 	gotMount, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -662,6 +853,25 @@ func manySmallRandomWrites(_ context.Context, env *harness.Env) error {
 		return fmt.Errorf("mount random write mismatch")
 	}
 	return nil
+}
+
+func verifyStorageManySmallRandomWrites(_ context.Context, env *harness.Env) error {
+	const (
+		fileSize   = 8192
+		writeCount = 128
+	)
+	expected := make([]byte, fileSize)
+	rng := rand.New(rand.NewSource(1))
+	for range writeCount {
+		size := rng.Intn(32) + 1
+		off := rng.Intn(fileSize - size + 1)
+		chunk := make([]byte, size)
+		for i := range chunk {
+			chunk[i] = byte(rng.Intn(251))
+		}
+		copy(expected[off:off+size], chunk)
+	}
+	return assertFileBytes(filepath.Join(env.BackendDir, "random-writes.bin"), expected)
 }
 
 func interleavedRandomReadWrite8x64MiB(_ context.Context, env *harness.Env) error {
@@ -678,10 +888,9 @@ func interleavedRandomReadWrite8x64MiB(_ context.Context, env *harness.Env) erro
 	}
 
 	type filePair struct {
-		name    string
-		mount   *os.File
-		ref     *os.File
-		backend string
+		name  string
+		mount *os.File
+		ref   *os.File
 	}
 
 	files := make([]filePair, 0, fileCount)
@@ -710,10 +919,9 @@ func interleavedRandomReadWrite8x64MiB(_ context.Context, env *harness.Env) erro
 			return err
 		}
 		files = append(files, filePair{
-			name:    name,
-			mount:   mountFile,
-			ref:     refFile,
-			backend: filepath.Join(env.BackendDir, name),
+			name:  name,
+			mount: mountFile,
+			ref:   refFile,
 		})
 	}
 	defer func() {
@@ -779,18 +987,26 @@ func interleavedRandomReadWrite8x64MiB(_ context.Context, env *harness.Env) erro
 		if err := assertFilesEqual(mountPath, refPath); err != nil {
 			return fmt.Errorf("mount file mismatch for %s: %w", pair.name, err)
 		}
-		if err := assertFilesEqual(pair.backend, refPath); err != nil {
-			return fmt.Errorf("backend file mismatch for %s: %w", pair.name, err)
-		}
 	}
 
 	return nil
 }
 
-func prepareRandomReaddirWalkDeepFanout(env *harness.Env) error {
+func verifyStorageInterleavedRandomReadWrite8x64MiB(_ context.Context, env *harness.Env) error {
+	refDir := filepath.Join(env.CaseRoot, "reference-rw")
+	for i := range 8 {
+		name := fmt.Sprintf("blob-%02d.bin", i)
+		if err := assertFilesEqual(filepath.Join(env.BackendDir, name), filepath.Join(refDir, name)); err != nil {
+			return fmt.Errorf("backend file mismatch for %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func setupRandomReaddirWalkDeepFanout(_ context.Context, env *harness.Env) error {
 	counts := []int{16, 32, 64, 128, 256, 800, 1200, 1600}
 	for rootIdx, count := range counts {
-		root := filepath.Join(env.BackendDir, fmt.Sprintf("walk-root-%02d", rootIdx))
+		root := filepath.Join(env.MountDir, fmt.Sprintf("walk-root-%02d", rootIdx))
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			return err
 		}
@@ -826,12 +1042,12 @@ func randomReaddirWalkDeepFanout(_ context.Context, env *harness.Env) error {
 		if err != nil {
 			return err
 		}
-		backendNames, err := harness.SortedNames(filepath.Join(env.BackendDir, rel))
+		wantNames, err := expectedWalkNames(rel)
 		if err != nil {
 			return err
 		}
-		if !reflect.DeepEqual(mountNames, backendNames) {
-			return fmt.Errorf("readdir mismatch at %s: got %d entries want %d", rel, len(mountNames), len(backendNames))
+		if !reflect.DeepEqual(mountNames, wantNames) {
+			return fmt.Errorf("readdir mismatch at %s: got %d entries want %d", rel, len(mountNames), len(wantNames))
 		}
 		return nil
 	}
@@ -846,7 +1062,7 @@ func randomReaddirWalkDeepFanout(_ context.Context, env *harness.Env) error {
 			return err
 		}
 		for step := 0; step < 32; step++ {
-			entries, err := os.ReadDir(filepath.Join(env.BackendDir, rel))
+			entries, err := os.ReadDir(filepath.Join(env.MountDir, rel))
 			if err != nil {
 				return err
 			}
@@ -867,11 +1083,11 @@ func randomReaddirWalkDeepFanout(_ context.Context, env *harness.Env) error {
 			if err != nil {
 				return err
 			}
-			backendData, err := os.ReadFile(filepath.Join(env.BackendDir, rel, entry.Name()))
+			wantData, err := expectedWalkPayload(rel, entry.Name())
 			if err != nil {
 				return err
 			}
-			if !bytes.Equal(mountData, backendData) {
+			if !bytes.Equal(mountData, wantData) {
 				return fmt.Errorf("file content mismatch at %s", filepath.Join(rel, entry.Name()))
 			}
 
@@ -887,22 +1103,15 @@ func randomReaddirWalkDeepFanout(_ context.Context, env *harness.Env) error {
 	return nil
 }
 
+func verifyStorageRandomReaddirWalkDeepFanout(_ context.Context, env *harness.Env) error {
+	return verifyWalkTree(env.BackendDir)
+}
+
 func writeLargeFileCrossMessageBoundary(_ context.Context, env *harness.Env) error {
 	path := filepath.Join(env.MountDir, "large.bin")
-	payload := make([]byte, 20000)
-	for i := range payload {
-		payload[i] = byte((i * 31) % 251)
-	}
+	payload := makeLargeWritePayload()
 	if err := os.WriteFile(path, payload, 0o644); err != nil {
 		return err
-	}
-
-	got, err := os.ReadFile(filepath.Join(env.BackendDir, "large.bin"))
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(got, payload) {
-		return fmt.Errorf("large payload mismatch: got %d bytes want %d bytes", len(got), len(payload))
 	}
 
 	readBack, err := os.ReadFile(path)
@@ -913,6 +1122,143 @@ func writeLargeFileCrossMessageBoundary(_ context.Context, env *harness.Env) err
 		return fmt.Errorf("large mount readback mismatch")
 	}
 	return nil
+}
+
+func verifyStorageWriteLargeFileCrossMessageBoundary(_ context.Context, env *harness.Env) error {
+	payload := makeLargeWritePayload()
+	return assertFileBytes(filepath.Join(env.BackendDir, "large.bin"), payload)
+}
+
+func makeLargeReadPayload() []byte {
+	payload := make([]byte, 20000)
+	for i := range payload {
+		payload[i] = byte((i*17 + 9) % 251)
+	}
+	return payload
+}
+
+func makeLargeWritePayload() []byte {
+	payload := make([]byte, 20000)
+	for i := range payload {
+		payload[i] = byte((i * 31) % 251)
+	}
+	return payload
+}
+
+func assertFileBytes(path string, want []byte) error {
+	got, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(got, want) {
+		return fmt.Errorf("content mismatch for %s: got %d bytes want %d bytes", path, len(got), len(want))
+	}
+	return nil
+}
+
+func walkRootCount(rootIdx int) (int, error) {
+	counts := []int{16, 32, 64, 128, 256, 800, 1200, 1600}
+	if rootIdx < 0 || rootIdx >= len(counts) {
+		return 0, fmt.Errorf("invalid walk root index %d", rootIdx)
+	}
+	return counts[rootIdx], nil
+}
+
+func parseWalkRel(rel string) (rootIdx int, depth int, err error) {
+	if rel == "." || rel == "" {
+		return -1, 0, nil
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if _, err = fmt.Sscanf(parts[0], "walk-root-%02d", &rootIdx); err != nil {
+		return 0, 0, fmt.Errorf("parse walk root %q: %w", parts[0], err)
+	}
+	depth = len(parts) - 1
+	return rootIdx, depth, nil
+}
+
+func expectedWalkNames(rel string) ([]string, error) {
+	rootIdx, depth, err := parseWalkRel(rel)
+	if err != nil {
+		return nil, err
+	}
+	if rootIdx < 0 {
+		names := make([]string, 8)
+		for i := range names {
+			names[i] = fmt.Sprintf("walk-root-%02d", i)
+		}
+		return names, nil
+	}
+
+	count, err := walkRootCount(rootIdx)
+	if err != nil {
+		return nil, err
+	}
+	if depth == 6 {
+		return []string{}, nil
+	}
+	if depth > 6 {
+		return nil, fmt.Errorf("invalid walk depth %d", depth)
+	}
+
+	names := make([]string, 0, count+1)
+	for i := range count {
+		names = append(names, fmt.Sprintf("f-%d-%04d.dat", depth+1, i))
+	}
+	names = append(names, fmt.Sprintf("level-%d", depth+1))
+	sort.Strings(names)
+	return names, nil
+}
+
+func expectedWalkPayload(rel string, name string) ([]byte, error) {
+	rootIdx, _, err := parseWalkRel(rel)
+	if err != nil {
+		return nil, err
+	}
+	var depth, fileIdx int
+	if _, err := fmt.Sscanf(name, "f-%d-%04d.dat", &depth, &fileIdx); err != nil {
+		return nil, fmt.Errorf("parse walk file %q: %w", name, err)
+	}
+	return []byte(fmt.Sprintf("root=%d depth=%d file=%d", rootIdx, depth, fileIdx)), nil
+}
+
+func verifyWalkTree(root string) error {
+	var verifyDir func(rel string) error
+	verifyDir = func(rel string) error {
+		got, err := harness.SortedNames(filepath.Join(root, rel))
+		if err != nil {
+			return err
+		}
+		want, err := expectedWalkNames(rel)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(got, want) {
+			return fmt.Errorf("walk tree entries mismatch at %s: got %d want %d", rel, len(got), len(want))
+		}
+
+		for _, name := range got {
+			path := filepath.Join(root, rel, name)
+			info, err := os.Stat(path)
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				if err := verifyDir(filepath.Join(rel, name)); err != nil {
+					return err
+				}
+				continue
+			}
+			wantData, err := expectedWalkPayload(rel, name)
+			if err != nil {
+				return err
+			}
+			if err := assertFileBytes(path, wantData); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return verifyDir(".")
 }
 
 func assertFilesEqual(gotPath, wantPath string) error {

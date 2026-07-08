@@ -21,7 +21,8 @@ func (windowsPlatform) PrepareEnv(env *Env) error {
 		return err
 	}
 	env.MountArg = drive + ":"
-	env.MountDir = drive + ":\\"
+	env.MountRoot = drive + ":\\"
+	env.MountDir = env.MountRoot
 	return nil
 }
 
@@ -30,8 +31,8 @@ func (windowsPlatform) WaitMountReady(ctx context.Context, env *Env, proc *Proce
 		if proc.Exited() {
 			return fmt.Errorf("mount exited before ready, code=%d", ExitErrorCode(proc.WaitErr()))
 		}
-		if _, err := os.Stat(env.MountDir); err == nil {
-			if _, err := os.ReadDir(env.MountDir); err == nil {
+		if _, err := os.Stat(env.MountRoot); err == nil {
+			if _, err := os.ReadDir(env.MountRoot); err == nil {
 				return nil
 			}
 		}
