@@ -184,19 +184,22 @@ func (s *session) cmdClose(clientMark uint8, req wsfsprotocol.CmdCloseStruct) {
 	}
 }
 
-func (s *session) readAndSend(clientMark uint8, fd int, size uint64, okCode uint8) bool {
+func (s *session) readAndSend(clientMark uint8, fd int, size uint64, partial bool) (uint64, bool) {
 	buf := bufPool.Get().(*util.Buffer)
 	defer putBuf(buf)
-	buf.Write([]byte{clientMark, okCode})
+	buf.Write([]byte{clientMark, wsfsprotocol.ErrorOK})
 	readed, err := syscall.Read(fd, buf.Bytes[buf.Written():][:int(size)])
 	buf.Grow(readed)
 
 	if err != nil {
 		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
-		return false
+		return 0, false
+	}
+	if partial && uint64(readed) == size {
+		buf.Bytes[1] = wsfsprotocol.ErrorPartialResponse
 	}
 	s.write(buf.Done())
-	return true
+	return uint64(readed), true
 }
 
 func (s *session) cmdRead(clientMark uint8, req wsfsprotocol.CmdReadStruct) {
@@ -208,18 +211,21 @@ func (s *session) cmdRead(clientMark uint8, req wsfsprotocol.CmdReadStruct) {
 	sfd := rsfd.(sfd_t)
 
 	if req.Size < maxReadPayLoad {
-		s.readAndSend(clientMark, int(sfd), req.Size, wsfsprotocol.ErrorOK)
+		s.readAndSend(clientMark, int(sfd), req.Size, false)
 	} else {
 		for range req.Size / maxReadPayLoad {
-			ok := s.readAndSend(clientMark, int(sfd), maxReadPayLoad, wsfsprotocol.ErrorPartialResponse)
+			readed, ok := s.readAndSend(clientMark, int(sfd), maxReadPayLoad, true)
 			if !ok {
+				return
+			}
+			if readed < maxReadPayLoad {
 				return
 			}
 		}
 		if req.Size%maxReadPayLoad == 0 {
 			s.writeRspOK(clientMark)
 		} else {
-			s.readAndSend(clientMark, int(sfd), req.Size%maxReadPayLoad, wsfsprotocol.ErrorOK)
+			s.readAndSend(clientMark, int(sfd), req.Size%maxReadPayLoad, false)
 		}
 	}
 }
@@ -478,16 +484,19 @@ func (s *session) cmdFsStat(clientMark uint8, req wsfsprotocol.CmdFsStatStruct) 
 	}
 }
 
-func (s *session) readAtAndSend(clientMark uint8, fd int, off uint64, size uint64, okCode uint8) (uint64, bool) {
+func (s *session) readAtAndSend(clientMark uint8, fd int, off uint64, size uint64, partial bool) (uint64, bool) {
 	buf := bufPool.Get().(*util.Buffer)
 	defer putBuf(buf)
-	buf.Write([]byte{clientMark, okCode})
+	buf.Write([]byte{clientMark, wsfsprotocol.ErrorOK})
 	readed, err := syscall.Pread(fd, buf.Bytes[buf.Written():][:int(size)], int64(off))
 	buf.Grow(readed)
 
 	if err != nil {
 		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
 		return 0, false
+	}
+	if partial && uint64(readed) == size {
+		buf.Bytes[1] = wsfsprotocol.ErrorPartialResponse
 	}
 	s.write(buf.Done())
 	return uint64(readed), true
@@ -503,11 +512,14 @@ func (s *session) cmdReadAt(clientMark uint8, req wsfsprotocol.CmdReadAtStruct) 
 	off := req.Offset
 
 	if req.Size < maxReadPayLoad {
-		s.readAtAndSend(clientMark, int(sfd), off, req.Size, wsfsprotocol.ErrorOK)
+		s.readAtAndSend(clientMark, int(sfd), off, req.Size, false)
 	} else {
 		for range req.Size / maxReadPayLoad {
-			readed, ok := s.readAtAndSend(clientMark, int(sfd), off, maxReadPayLoad, wsfsprotocol.ErrorPartialResponse)
+			readed, ok := s.readAtAndSend(clientMark, int(sfd), off, maxReadPayLoad, true)
 			if !ok {
+				return
+			}
+			if readed < maxReadPayLoad {
 				return
 			}
 			off += readed
@@ -515,7 +527,7 @@ func (s *session) cmdReadAt(clientMark uint8, req wsfsprotocol.CmdReadAtStruct) 
 		if req.Size%maxReadPayLoad == 0 {
 			s.writeRspOK(clientMark)
 		} else {
-			s.readAtAndSend(clientMark, int(sfd), off, req.Size%maxReadPayLoad, wsfsprotocol.ErrorOK)
+			s.readAtAndSend(clientMark, int(sfd), off, req.Size%maxReadPayLoad, false)
 		}
 	}
 }

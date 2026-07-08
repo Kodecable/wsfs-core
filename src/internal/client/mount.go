@@ -48,7 +48,7 @@ func dial(url, username, password, resumeId, expectedCertHash string) (conn *web
 		return
 	}
 	if conn.Subprotocol() != wsfsprotocol.WSSubprotocol {
-		log.Error().Str("Subprotocol", conn.Subprotocol()).Msg("Subprotocol mismatch")
+		log.Error().Str("Negotiated", conn.Subprotocol()).Str("Want", wsfsprotocol.WSSubprotocol).Msg("Subprotocol mismatch")
 		err = errors.New("subprotocol mismatch")
 		return
 	}
