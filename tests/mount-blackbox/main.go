@@ -77,7 +77,9 @@ func main() {
 		fmt.Printf("--- FAIL: %s\n", c.Name())
 		fmt.Printf("    workdir: %s\n", result.WorkDir)
 		fmt.Printf("    error: %v\n", result.Err)
-		printLogTail("server.log", filepath.Join(result.WorkDir, "logs", "server.log"))
+		if *endpoint == "" {
+			printLogTail("server.log", filepath.Join(result.WorkDir, "logs", "server.log"))
+		}
 		printLogTail("mount.log", filepath.Join(result.WorkDir, "logs", "mount.log"))
 	}
 

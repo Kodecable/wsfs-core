@@ -227,10 +227,7 @@ func (r *Runner) verifyStorage() bool {
 func (r *Runner) prepareMountDir(env *Env) error {
 	if r.cfg.TestDir != "" {
 		mountDir := filepath.Join(env.MountRoot, r.cfg.TestDir)
-		if err := os.RemoveAll(mountDir); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(mountDir, 0o755); err != nil {
+		if err := resetMountDir(mountDir); err != nil {
 			return err
 		}
 		env.MountDir = mountDir
@@ -246,11 +243,65 @@ func (r *Runner) prepareMountDir(env *Env) error {
 		return err
 	}
 	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(env.MountDir, entry.Name())); err != nil {
-			return err
+		path := filepath.Join(env.MountDir, entry.Name())
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("remove mount root entry %q: %w", entry.Name(), err)
+		}
+		if err := assertRemoved(path); err != nil {
+			return fmt.Errorf("remove mount root entry %q: %w", entry.Name(), err)
 		}
 	}
+	if err := assertEmptyDir(env.MountDir); err != nil {
+		return fmt.Errorf("clean mount root: %w", err)
+	}
 	return nil
+}
+
+func resetMountDir(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("remove mount test dir %q: %w", dir, err)
+	}
+	if err := assertRemoved(dir); err != nil {
+		return fmt.Errorf("remove mount test dir %q: %w", dir, err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create mount test dir %q: %w", dir, err)
+	}
+	return assertEmptyDir(dir)
+}
+
+func assertRemoved(path string) error {
+	_, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	names, readErr := SortedNames(path)
+	if readErr != nil {
+		return fmt.Errorf("path still exists; unable to list residual entries: %w", readErr)
+	}
+	return fmt.Errorf("path still exists with residual entries: %s", formatNames(names))
+}
+
+func assertEmptyDir(dir string) error {
+	names, err := SortedNames(dir)
+	if err != nil {
+		return err
+	}
+	if len(names) != 0 {
+		return fmt.Errorf("directory is not empty after cleanup: %s", formatNames(names))
+	}
+	return nil
+}
+
+func formatNames(names []string) string {
+	const maxNames = 20
+	if len(names) <= maxNames {
+		return fmt.Sprintf("%v", names)
+	}
+	return fmt.Sprintf("%v ... (%d total)", names[:maxNames], len(names))
 }
 
 func (r *Runner) cleanup(env *Env, mountProc, serverProc *Process) error {
