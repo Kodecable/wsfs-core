@@ -26,6 +26,7 @@ type MountOption struct {
 	AttrTimeout      time.Duration
 	EntryTimeout     time.Duration
 	NegativeTimeout  time.Duration
+	PingInterval     time.Duration
 	UseFusemount     bool
 	VolumeLabel      string
 	MasqueradeAsNtfs bool
@@ -120,7 +121,7 @@ func Mount(mountpoint, url, expectedCertHash, username, password string, opt Mou
 		log.Warn().Msg("Server do not support session resume")
 	}
 
-	s, err := session.NewSession(reDialFunc(url, username, password, resumeId, expectedCertHash))
+	s, err := session.NewSession(reDialFunc(url, username, password, resumeId, expectedCertHash), opt.PingInterval)
 	if err != nil {
 		log.Error().Err(err).Msg("Unable to create session")
 		return err

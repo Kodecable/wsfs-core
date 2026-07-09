@@ -23,6 +23,7 @@ var (
 	volumeLabel      string
 	masqueradeAsNtfs bool
 	structTimeout    int16
+	pingInterval     int16
 	directMount      bool
 	noLogTime        bool
 	noLogColor       bool
@@ -43,6 +44,11 @@ var MountCmd = &cobra.Command{
   wsfs mount windows.mountpoint.like "P:"`,
 	Args: cobra.ExactArgs(2),
 	Run: func(c *cobra.Command, args []string) {
+		if pingInterval != 0 && pingInterval < 10 {
+			fmt.Fprintln(os.Stderr, "Bad ping interval: must be 0 or at least 10 seconds")
+			os.Exit(2)
+		}
+
 		fsIds, err := resolveFsIds(c)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -99,6 +105,7 @@ var MountCmd = &cobra.Command{
 			AttrTimeout:      time.Duration(structTimeout) * time.Second,
 			EntryTimeout:     time.Duration(structTimeout) * time.Second,
 			NegativeTimeout:  time.Duration(structTimeout) * time.Second,
+			PingInterval:     time.Duration(pingInterval) * time.Second,
 			UseFusemount:     !directMount,
 			VolumeLabel:      volumeLabel,
 			MasqueradeAsNtfs: masqueradeAsNtfs,
@@ -152,6 +159,7 @@ func init() {
 	MountCmd.Flags().StringVarP(&volumeLabel, "volume-label", "", "WSFS Storage", "Volume label (Windows only)")
 	MountCmd.Flags().BoolVarP(&directMount, "direct-mount", "", false, "Use mount syscall instead fusemount, root needed (Unix only)")
 	MountCmd.Flags().Int16VarP(&structTimeout, "struct-timeout", "", 60, "Fuse struct cache timeout in seconds, improves performance and inconsistency")
+	MountCmd.Flags().Int16VarP(&pingInterval, "ping-interval", "", 60, "WebSocket ping interval in seconds; 0 disables client keepalive")
 	MountCmd.Flags().BoolVarP(&masqueradeAsNtfs, "masquerade-as-ntfs", "", false, "Allow Windows to run executable as administrator (Windows only)")
 	MountCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
 	MountCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")

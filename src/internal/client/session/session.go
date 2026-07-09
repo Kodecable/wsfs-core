@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/util"
 
@@ -17,6 +18,7 @@ type ReDialFunc func() (*websocket.Conn, error)
 
 const (
 	maxFrameSize = wsfsprotocol.MaxMsgSize
+	pingTimeout  = 10 * time.Second
 )
 
 var (
@@ -32,6 +34,8 @@ type Session struct {
 	exitWg  sync.WaitGroup
 	reDial  ReDialFunc
 
+	pingInterval time.Duration
+
 	conn      *websocket.Conn
 	writer    io.WriteCloser
 	writeLock sync.Mutex
@@ -46,8 +50,11 @@ type Session struct {
 	marks     [256]sync.Mutex
 }
 
-func NewSession(reDial ReDialFunc) (*Session, error) {
-	s := &Session{reDial: reDial}
+func NewSession(reDial ReDialFunc, pingInterval time.Duration) (*Session, error) {
+	s := &Session{
+		reDial:       reDial,
+		pingInterval: pingInterval,
+	}
 	for i := range s.responses {
 		s.responses[i] = make(chan *util.Buffer, 1)
 	}
@@ -86,6 +93,35 @@ func (s *Session) takeConn(conn *websocket.Conn) {
 	s.conn = conn
 	s.connCtx, s.connCtxCancel = context.WithCancel(context.Background())
 	go s.readLoop(conn)
+	if s.pingInterval > 0 {
+		go s.pingLoop(conn, s.connCtx)
+	}
+}
+
+func (s *Session) pingLoop(conn *websocket.Conn, ctx context.Context) {
+	ticker := time.NewTicker(s.pingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
+		err := conn.Ping(pingCtx)
+		cancel()
+		if err == nil {
+			continue
+		}
+
+		if s.connErrLock.TryLock() {
+			s.connErr = err
+		}
+		s.connCtxCancel()
+		return
+	}
 }
 
 func (s *Session) stopConn() {
