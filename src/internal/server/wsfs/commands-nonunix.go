@@ -56,7 +56,7 @@ func (s *session) cmdOpen(clientMark uint8, req wsfsprotocol.CmdOpenStruct) {
 		}
 	}
 
-	sfd, err := os.OpenFile(s.storage.Path+req.Path, oflag, fs.FileMode(req.FMode))
+	sfd, err := openSFD(s.storage.Path+req.Path, oflag, fs.FileMode(req.FMode))
 	if err != nil {
 		s.writeRspError(clientMark, osErrCode(err), "syscall error")
 		return
