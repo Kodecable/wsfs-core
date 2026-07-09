@@ -22,7 +22,10 @@ type WriteStream struct {
 }
 
 func (s *Session) OpenWriteStream(fd uint32, offset uint64, first []byte) (*WriteStream, error) {
-	clientMark := s.newClientMark()
+	clientMark, ok := s.newClientMark()
+	if !ok {
+		return nil, errWriteStreamIO
+	}
 	stream := &WriteStream{
 		session:    s,
 		clientMark: clientMark,
@@ -36,7 +39,7 @@ func (s *Session) OpenWriteStream(fd uint32, offset uint64, first []byte) (*Writ
 	}
 
 	if !s.beginRequest(clientMark, wsfsprotocol.CmdWriteStreamOpen) {
-		s.marks[clientMark].Unlock()
+		s.releaseClientMark(clientMark)
 		return nil, errWriteStreamIO
 	}
 	err := wsfsprotocol.WriteCmdWriteStreamOpenStructToWriter(wsfsprotocol.CmdWriteStreamOpenStruct{
@@ -46,14 +49,14 @@ func (s *Session) OpenWriteStream(fd uint32, offset uint64, first []byte) (*Writ
 	}, s.writer)
 	s.writeDone(err)
 	if err != nil {
-		s.marks[clientMark].Unlock()
+		s.releaseClientMark(clientMark)
 		return nil, errWriteStreamIO
 	}
 
 	if len(rest) > 0 {
 		if err := stream.Write(rest); err != nil {
 			stream.closed = true
-			s.marks[clientMark].Unlock()
+			s.releaseClientMark(clientMark)
 			return nil, err
 		}
 	}
@@ -102,7 +105,7 @@ func (ws *WriteStream) Close(last []byte) (written uint64, code uint8, desc stri
 	if len(last) > maxWriteStreamDataPayload {
 		if err := ws.Write(last[:len(last)-maxWriteStreamDataPayload]); err != nil {
 			ws.closed = true
-			ws.session.marks[ws.clientMark].Unlock()
+			ws.session.releaseClientMark(ws.clientMark)
 			return 0, wsfsprotocol.ErrorUnknown, err.Error()
 		}
 		last = last[len(last)-maxWriteStreamDataPayload:]
@@ -110,7 +113,7 @@ func (ws *WriteStream) Close(last []byte) (written uint64, code uint8, desc stri
 	ws.closed = true
 
 	if !ws.session.beginRequest(ws.clientMark, wsfsprotocol.CmdWriteStreamData) {
-		ws.session.marks[ws.clientMark].Unlock()
+		ws.session.releaseClientMark(ws.clientMark)
 		return 0, wsfsprotocol.ErrorUnknown, "session error mode"
 	}
 	err := wsfsprotocol.WriteCmdWriteStreamDataStructToWriter(wsfsprotocol.CmdWriteStreamDataStruct{
@@ -119,11 +122,11 @@ func (ws *WriteStream) Close(last []byte) (written uint64, code uint8, desc stri
 	}, ws.session.writer)
 	ws.session.writeDone(err)
 	if err != nil {
-		ws.session.marks[ws.clientMark].Unlock()
+		ws.session.releaseClientMark(ws.clientMark)
 		return 0, wsfsprotocol.ErrorUnknown, err.Error()
 	}
 
-	defer ws.session.marks[ws.clientMark].Unlock()
+	defer ws.session.releaseClientMark(ws.clientMark)
 
 	for {
 		rsp := <-ws.session.responses[ws.clientMark]

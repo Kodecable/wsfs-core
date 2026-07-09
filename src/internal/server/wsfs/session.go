@@ -23,6 +23,7 @@ type session struct {
 	// Lock is an external indicator of whether a session is running.
 	Lock sync.Mutex
 
+	Id       string
 	Username string
 	handler  *Handler
 	storage  *storage.Storage
@@ -51,8 +52,9 @@ type session struct {
 	fastBuffers chan []byte
 }
 
-func newSession(handler *Handler, username string, storage *storage.Storage) *session {
+func newSession(handler *Handler, id string, username string, storage *storage.Storage) *session {
 	s := &session{
+		Id:          id,
 		Username:    username,
 		handler:     handler,
 		storage:     storage,
@@ -94,24 +96,31 @@ func (s *session) takeConn(conn *websocket.Conn, remoteAddr string) {
 
 func (s *session) stopConn() {
 	s.connCtxCancel()
+
 	s.writeLock.Lock()
 	conn := s.conn
 	s.conn = nil
 	s.writeLock.Unlock()
-	if conn != nil {
+
+	connErr := s.connErr
+	closeStatus := websocket.CloseStatus(connErr)
+	gracefulClose := closeStatus == websocket.StatusNormalClosure || closeStatus == websocket.StatusGoingAway
+	if conn != nil && closeStatus == -1 {
 		_ = conn.CloseNow()
 	}
 	_ = s.cmdGroup.Wait()
 	s.clearWriteStreams()
-
-	if cs := websocket.CloseStatus(s.connErr); cs != -1 {
-		log.Info().Str("From", s.remoteAddr).Int("CloseStatus", int(cs)).Msg("Disconnected")
-	} else {
-		log.Error().Str("From", s.remoteAddr).Err(s.connErr).Msg("Failed to read/write message")
-	}
 	s.connErrLock.Unlock()
 
-	log.Info().Msg("Session hibernated")
+	if gracefulClose {
+		log.Info().Str("From", s.remoteAddr).Str("Id", s.Id).Msg("Session closed")
+		s.handler.delSession(s.Id)
+		s.Lock.Unlock()
+		return
+	}
+
+	log.Error().Str("From", s.remoteAddr).Str("Id", s.Id).Err(connErr).Msg("Failed to read/write message")
+	log.Info().Str("From", s.remoteAddr).Str("Id", s.Id).Msg("Session hibernated")
 
 	s.inactiveCount = 0
 	s.Lock.Unlock()

@@ -78,6 +78,7 @@ func All() []harness.Case {
 		testCase{name: "random_readdir_walk_deep_fanout", setup: setupRandomReaddirWalkDeepFanout, run: randomReaddirWalkDeepFanout, verifyStorage: verifyStorageRandomReaddirWalkDeepFanout},
 		testCase{name: "write_large_file_cross_message_boundary", run: writeLargeFileCrossMessageBoundary, verifyStorage: verifyStorageWriteLargeFileCrossMessageBoundary},
 		testCase{name: "session_resume_existing_open_fd", run: sessionResumeExistingOpenFD, verifyStorage: verifyStorageSessionResumeExistingOpenFD},
+		testCase{name: "session_close_normal", run: sessionCloseNormal},
 	}
 }
 
@@ -298,6 +299,41 @@ func sessionResumeExistingOpenFD(ctx context.Context, env *harness.Env) error {
 
 func verifyStorageSessionResumeExistingOpenFD(_ context.Context, env *harness.Env) error {
 	return assertFileBytes(filepath.Join(env.BackendDir, "resume-open-fd.txt"), []byte("before-after"))
+}
+
+func sessionCloseNormal(ctx context.Context, env *harness.Env) error {
+	if runtime.GOOS == "windows" {
+		return harness.Skip("windows mount shutdown does not reliably reach websocket close handshake")
+	}
+	if !env.OwnServer {
+		return harness.Skip("session close log assertion requires a harness-managed server")
+	}
+	if env.StopMount == nil {
+		return harness.Skip("graceful mount shutdown is unavailable")
+	}
+
+	path := filepath.Join(env.MountDir, "normal-close.txt")
+	if err := os.WriteFile(path, []byte("ok"), 0o644); err != nil {
+		return err
+	}
+
+	if err := env.StopMount(); err != nil {
+		return err
+	}
+	if err := harness.WaitLogContains(ctx, env.ServerLog, "Session closed"); err != nil {
+		return fmt.Errorf("wait for normal close log: %w", err)
+	}
+	if err := harness.WaitLogContains(ctx, env.ServerLog, "Session destroyed"); err != nil {
+		return fmt.Errorf("wait for session destroy log: %w", err)
+	}
+	logText, err := harness.ReadLog(env.ServerLog)
+	if err != nil {
+		return err
+	}
+	if strings.Contains(logText, "Session hibernated") {
+		return fmt.Errorf("server log unexpectedly contains session hibernation")
+	}
+	return nil
 }
 
 func getattrAfterWrite(_ context.Context, env *harness.Env) error {

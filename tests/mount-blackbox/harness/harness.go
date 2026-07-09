@@ -44,7 +44,9 @@ type Env struct {
 	ServerLog  string
 	MountLog   string
 	Endpoint   string
+	OwnServer  bool
 	BreakConn  func() error
+	StopMount  func() error
 }
 
 type Result struct {
@@ -124,6 +126,7 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 		LogsDir:    filepath.Join(caseRoot, "logs"),
 		ServerLog:  filepath.Join(caseRoot, "logs", "server.log"),
 		MountLog:   filepath.Join(caseRoot, "logs", "mount.log"),
+		OwnServer:  r.cfg.Endpoint == "",
 	}
 	if r.cfg.Endpoint != "" {
 		env.Endpoint = r.cfg.Endpoint
@@ -194,6 +197,12 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 	if err != nil {
 		res.Err = err
 		return res
+	}
+	env.StopMount = func() error {
+		if mountProc == nil {
+			return nil
+		}
+		return requestMountShutdown(mountProc)
 	}
 
 	if err := r.platform.WaitMountReady(ctx, env, mountProc); err != nil {
@@ -321,15 +330,11 @@ func formatNames(names []string) string {
 func (r *Runner) cleanup(env *Env, mountProc, serverProc *Process, proxy *tcpProxy) error {
 	var errs []string
 
-	if err := r.platform.Unmount(env); err != nil {
-		errs = append(errs, fmt.Sprintf("unmount: %v", err))
-	}
-
 	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if mountProc != nil {
-		if err := mountProc.Stop(stopCtx); err != nil && ExitErrorCode(err) != 0 {
+		if err := r.stopMountProcess(stopCtx, env, mountProc); err != nil && ExitErrorCode(err) != 0 {
 			errs = append(errs, fmt.Sprintf("stop mount: %v", err))
 		}
 	}
@@ -348,6 +353,52 @@ func (r *Runner) cleanup(env *Env, mountProc, serverProc *Process, proxy *tcpPro
 		return errors.New(strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+func (r *Runner) stopMountProcess(ctx context.Context, env *Env, mountProc *Process) error {
+	if mountProc == nil || mountProc.Cmd == nil || mountProc.Cmd.Process == nil {
+		return nil
+	}
+	if mountProc.Exited() {
+		return mountProc.WaitErr()
+	}
+
+	if err := requestMountShutdown(mountProc); err != nil {
+		if killErr := r.forceStopMount(env, mountProc); killErr != nil {
+			return errors.Join(err, killErr)
+		}
+		return err
+	}
+
+	select {
+	case <-mountProc.done:
+		return mountProc.waitErr
+	case <-ctx.Done():
+		return r.forceStopMount(env, mountProc)
+	}
+}
+
+func (r *Runner) forceStopMount(env *Env, proc *Process) error {
+	var errs []string
+	if err := r.platform.Unmount(env); err != nil {
+		errs = append(errs, fmt.Sprintf("unmount: %v", err))
+	}
+	if !proc.Exited() {
+		select {
+		case <-proc.done:
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	if err := proc.Signal(os.Kill); err != nil && !proc.Exited() {
+		errs = append(errs, fmt.Sprintf("kill: %v", err))
+	}
+	if err := proc.WaitErr(); err != nil && ExitErrorCode(err) != 0 {
+		errs = append(errs, fmt.Sprintf("wait: %v", err))
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(errs, "; "))
 }
 
 func (r *Runner) startServer(env *Env, port int) (*Process, error) {
@@ -372,6 +423,7 @@ func (r *Runner) startMount(env *Env) (*Process, error) {
 		env.Endpoint,
 		env.MountArg,
 	)
+	prepareMountCommand(cmd)
 	return StartProcess("mount", env.MountLog, cmd)
 }
 

@@ -21,6 +21,15 @@ const (
 	pingTimeout  = 10 * time.Second
 )
 
+type sessionState uint8
+
+const (
+	sessionStateRunning sessionState = iota
+	sessionStateRecovering
+	sessionStateClosing
+	sessionStateClosed
+)
+
 var (
 	bufPool = sync.Pool{
 		New: func() any {
@@ -35,6 +44,12 @@ type Session struct {
 	reDial  ReDialFunc
 
 	pingInterval time.Duration
+	exitOnce     sync.Once
+
+	lifecycleLock sync.Mutex
+	lifecycleCond *sync.Cond
+	state         sessionState
+	activeReqs    int
 
 	conn      *websocket.Conn
 	writer    io.WriteCloser
@@ -54,7 +69,9 @@ func NewSession(reDial ReDialFunc, pingInterval time.Duration) (*Session, error)
 	s := &Session{
 		reDial:       reDial,
 		pingInterval: pingInterval,
+		state:        sessionStateRunning,
 	}
+	s.lifecycleCond = sync.NewCond(&s.lifecycleLock)
 	for i := range s.responses {
 		s.responses[i] = make(chan *util.Buffer, 1)
 	}
@@ -62,11 +79,25 @@ func NewSession(reDial ReDialFunc, pingInterval time.Duration) (*Session, error)
 }
 
 func (s *Session) exit(err error) {
-	s.exitErr = err
-	s.exitWg.Done()
+	s.exitOnce.Do(func() {
+		s.lifecycleLock.Lock()
+		s.exitErr = err
+		s.state = sessionStateClosed
+		s.lifecycleCond.Broadcast()
+		s.lifecycleLock.Unlock()
+		s.exitWg.Done()
+	})
 }
 
-func (s *Session) newClientMark() uint8 {
+func (s *Session) newClientMark() (uint8, bool) {
+	s.lifecycleLock.Lock()
+	if s.state == sessionStateClosing || s.state == sessionStateClosed {
+		s.lifecycleLock.Unlock()
+		return 0, false
+	}
+	s.activeReqs += 1
+	s.lifecycleLock.Unlock()
+
 	var v uint8
 	for {
 		v = uint8(s.lastMark.Add(1))
@@ -74,12 +105,25 @@ func (s *Session) newClientMark() uint8 {
 			break
 		}
 	}
-	return v
+	return v, true
+}
+
+func (s *Session) releaseClientMark(clientMark uint8) {
+	s.marks[clientMark].Unlock()
+
+	s.lifecycleLock.Lock()
+	s.activeReqs -= 1
+	s.lifecycleCond.Broadcast()
+	s.lifecycleLock.Unlock()
 }
 
 func (s *Session) Start(conn *websocket.Conn) {
 	s.exitErr = nil
 	s.exitWg.Add(1)
+	s.lifecycleLock.Lock()
+	s.state = sessionStateRunning
+	s.lifecycleCond.Broadcast()
+	s.lifecycleLock.Unlock()
 	s.takeConn(conn)
 }
 
@@ -124,14 +168,59 @@ func (s *Session) pingLoop(conn *websocket.Conn, ctx context.Context) {
 	}
 }
 
+func (s *Session) Close() error {
+	s.lifecycleLock.Lock()
+	for {
+		switch s.state {
+		case sessionStateClosed, sessionStateClosing:
+			s.lifecycleLock.Unlock()
+			return s.Wait()
+		case sessionStateRecovering:
+			s.lifecycleCond.Wait()
+		case sessionStateRunning:
+			if s.activeReqs != 0 {
+				s.lifecycleCond.Wait()
+				continue
+			}
+			s.state = sessionStateClosing
+			s.lifecycleCond.Broadcast()
+			conn := s.conn
+			s.lifecycleLock.Unlock()
+
+			if conn == nil {
+				s.exit(nil)
+				return s.Wait()
+			}
+
+			if err := conn.Close(websocket.StatusNormalClosure, ""); err != nil {
+				if s.connErrLock.TryLock() {
+					s.connErr = err
+				}
+				s.connCtxCancel()
+			}
+			return s.Wait()
+		}
+	}
+}
+
 func (s *Session) stopConn() {
+	s.lifecycleLock.Lock()
+	gracefulClose := s.state == sessionStateClosing
+	if gracefulClose {
+		s.lifecycleCond.Broadcast()
+	} else if s.state != sessionStateClosed {
+		s.state = sessionStateRecovering
+		s.lifecycleCond.Broadcast()
+	}
+	s.lifecycleLock.Unlock()
+
 	s.connCtxCancel()
 
 	s.writeLock.Lock()
 	conn := s.conn
 	s.conn = nil
 	s.writeLock.Unlock()
-	if conn != nil {
+	if conn != nil && !gracefulClose {
 		_ = conn.CloseNow()
 	}
 
@@ -142,12 +231,30 @@ func (s *Session) stopConn() {
 	}
 	s.connErrLock.Unlock()
 
+	if gracefulClose {
+		s.notifyAllMarksClosed()
+		if websocket.CloseStatus(s.connErr) == websocket.StatusNormalClosure || websocket.CloseStatus(s.connErr) == websocket.StatusGoingAway {
+			s.exit(nil)
+		} else {
+			s.exit(s.connErr)
+		}
+		return
+	}
+
 	s.notifyAllMarksError()
 
 	s.errorMode()
 }
 
 func (s *Session) notifyAllMarksError() {
+	s.notifyAllMarksWithDesc("Session error mode")
+}
+
+func (s *Session) notifyAllMarksClosed() {
+	s.notifyAllMarksWithDesc("Session closed")
+}
+
+func (s *Session) notifyAllMarksWithDesc(desc string) {
 	for i := range 256 {
 		if s.marks[i].TryLock() {
 			s.marks[i].Unlock()
@@ -157,7 +264,7 @@ func (s *Session) notifyAllMarksError() {
 		buf := bufPool.Get().(*util.Buffer)
 		buf.Reset()
 		buf.Write([]byte{uint8(i), wsfsprotocol.ErrorIO})
-		wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: "Session error mode"}, buf)
+		wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: desc}, buf)
 		s.responses[i] <- buf
 	}
 }
@@ -281,4 +388,10 @@ func (s *Session) errorMode() {
 	log.Info().Msg("Reconnected to server")
 
 	s.takeConn(conn)
+	s.lifecycleLock.Lock()
+	if s.state == sessionStateRecovering {
+		s.state = sessionStateRunning
+		s.lifecycleCond.Broadcast()
+	}
+	s.lifecycleLock.Unlock()
 }

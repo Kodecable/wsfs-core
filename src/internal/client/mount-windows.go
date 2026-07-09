@@ -4,7 +4,10 @@ package client
 
 import (
 	"os"
+	"os/signal"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/client/windows"
@@ -15,9 +18,17 @@ import (
 )
 
 func fuseMount(mountpoint string, session *session.Session, opt MountOption) error {
-	exitCode := 0
+	destroyed := make(chan struct{})
+	shutdownRequested := make(chan struct{})
+	var destroyOnce sync.Once
+	var shutdownOnce sync.Once
+	var exitCode atomic.Int32
 
-	fs := windows.NewFS(session, mountpoint, opt.EntryTimeout, func() { os.Exit(exitCode) })
+	fs := windows.NewFS(session, mountpoint, opt.EntryTimeout, func() {
+		destroyOnce.Do(func() {
+			close(destroyed)
+		})
+	})
 	host := fuse.NewFileSystemHost(fs)
 
 	// winfsp-fuse opts
@@ -45,11 +56,23 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 	opts = append(opts, "-o")
 	opts = append(opts, "DirInfoTimeout="+strconv.FormatInt(min(int64(opt.EntryTimeout/time.Second), 10), 10))
 
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, os.Interrupt)
+	defer signal.Stop(sigc)
+
+	go func() {
+		<-sigc
+		shutdownOnce.Do(func() {
+			close(shutdownRequested)
+		})
+		host.Unmount()
+	}()
+
 	go func() {
 		err := session.Wait()
 		if err != nil {
 			log.Error().Err(err).Msg("Session exit with error")
-			exitCode = 1
+			exitCode.Store(1)
 		}
 		host.Unmount()
 	}()
@@ -58,6 +81,20 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 	host.SetCapDeleteAccess(true)
 	host.SetCapOpenTrunc(true)
 	host.SetCapReaddirPlus(true)
-	host.Mount(mountpoint, opts)
+	if !host.Mount(mountpoint, opts) {
+		destroyOnce.Do(func() {
+			close(destroyed)
+		})
+	}
+	<-destroyed
+
+	select {
+	case <-shutdownRequested:
+		if err := session.Close(); err != nil {
+			return err
+		}
+	default:
+	}
+	os.Exit(int(exitCode.Load()))
 	return nil
 }

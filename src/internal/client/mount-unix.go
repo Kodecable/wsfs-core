@@ -54,10 +54,12 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 	log.Warn().Str("Mountpoint", mountpoint).Msg("Mounted")
 
 	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
+	shutdownRequested := make(chan struct{})
+	signal.Notify(sigc, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 
 	go func() {
 		<-sigc
+		close(shutdownRequested)
 		server.Unmount()
 	}()
 
@@ -70,5 +72,11 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 	}()
 
 	server.Wait()
+
+	select {
+	case <-shutdownRequested:
+		return session.Close()
+	default:
+	}
 	return nil
 }

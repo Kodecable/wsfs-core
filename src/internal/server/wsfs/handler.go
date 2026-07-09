@@ -169,7 +169,7 @@ func (h *Handler) newSession(username string, storage *storage.Storage) (string,
 		if _, loaded := h.sessions.LoadOrStore(id, (*session)(nil)); loaded {
 			continue
 		}
-		h.sessions.Store(id, newSession(h, username, storage))
+		h.sessions.Store(id, newSession(h, id, username, storage))
 		log.Info().Str("Id", id).Msg("Session created")
 		return id, nil
 	}
