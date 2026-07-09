@@ -113,13 +113,16 @@ func (s *Session) stopConn() {
 
 func (s *Session) notifyAllMarksError() {
 	for i := range 256 {
-		if !s.marks[i].TryLock() {
-			buf := bufPool.Get().(*util.Buffer)
-			buf.Reset()
-			buf.Write([]byte{uint8(i), wsfsprotocol.ErrorIO})
-			wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: "Session error mode"}, buf)
-			s.responses[i] <- buf
+		if s.marks[i].TryLock() {
+			s.marks[i].Unlock()
+			continue
 		}
+
+		buf := bufPool.Get().(*util.Buffer)
+		buf.Reset()
+		buf.Write([]byte{uint8(i), wsfsprotocol.ErrorIO})
+		wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: "Session error mode"}, buf)
+		s.responses[i] <- buf
 	}
 }
 

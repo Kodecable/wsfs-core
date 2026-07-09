@@ -77,6 +77,7 @@ func All() []harness.Case {
 		testCase{name: "interleaved_random_rw_8x64mib", run: interleavedRandomReadWrite8x64MiB, verifyStorage: verifyStorageInterleavedRandomReadWrite8x64MiB},
 		testCase{name: "random_readdir_walk_deep_fanout", setup: setupRandomReaddirWalkDeepFanout, run: randomReaddirWalkDeepFanout, verifyStorage: verifyStorageRandomReaddirWalkDeepFanout},
 		testCase{name: "write_large_file_cross_message_boundary", run: writeLargeFileCrossMessageBoundary, verifyStorage: verifyStorageWriteLargeFileCrossMessageBoundary},
+		testCase{name: "session_resume_existing_open_fd", run: sessionResumeExistingOpenFD, verifyStorage: verifyStorageSessionResumeExistingOpenFD},
 	}
 }
 
@@ -243,6 +244,60 @@ func truncateExpand(_ context.Context, env *harness.Env) error {
 func verifyStorageTruncateExpand(_ context.Context, env *harness.Env) error {
 	want := []byte{'a', 'b', 'c', 0, 0, 0, 0, 0}
 	return assertFileBytes(filepath.Join(env.BackendDir, "expand.bin"), want)
+}
+
+func sessionResumeExistingOpenFD(ctx context.Context, env *harness.Env) error {
+	if env.BreakConn == nil {
+		return harness.Skip("connection breaker is unavailable")
+	}
+
+	path := filepath.Join(env.MountDir, "resume-open-fd.txt")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if _, err := f.Write([]byte("before-")); err != nil {
+		return err
+	}
+	if err := env.BreakConn(); err != nil {
+		return err
+	}
+	if err := harness.WaitLogContains(ctx, env.MountLog, "Reconnected to server"); err != nil {
+		return fmt.Errorf("wait for reconnection: %w", err)
+	}
+
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := f.WriteAt([]byte("after"), int64(len("before-")))
+		writeDone <- err
+	}()
+
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			return err
+		}
+	case <-ctx.Done():
+		return fmt.Errorf("write on resumed open fd timed out: %w", ctx.Err())
+	}
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	got, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+	if string(got) != "before-after" {
+		return fmt.Errorf("resumed open fd content mismatch: got %q", got)
+	}
+	return nil
+}
+
+func verifyStorageSessionResumeExistingOpenFD(_ context.Context, env *harness.Env) error {
+	return assertFileBytes(filepath.Join(env.BackendDir, "resume-open-fd.txt"), []byte("before-after"))
 }
 
 func getattrAfterWrite(_ context.Context, env *harness.Env) error {

@@ -23,15 +23,16 @@ import (
 var randomPasswordRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*")
 
 var (
-	uid            uint32
-	gid            uint32
-	otherUid       uint32
-	otherGid       uint32
-	storage        string
-	noLogTime      bool
-	noLogColor     bool
-	passwordSource string
-	logLevel       zerolog.Level = zerolog.InfoLevel
+	uid                       uint32
+	gid                       uint32
+	otherUid                  uint32
+	otherGid                  uint32
+	storage                   string
+	noLogTime                 bool
+	noLogColor                bool
+	insecureSessionIdMathRand bool
+	passwordSource            string
+	logLevel                  zerolog.Level = zerolog.InfoLevel
 )
 
 func exitWithError(code int, msg string, err error) {
@@ -158,6 +159,7 @@ var QuickServeCmd = &cobra.Command{
 
 		configStorage(&config, c)
 		configIDs(&config, c)
+		config.WSFS.InsecureSessionIdMathRand = insecureSessionIdMathRand
 
 		if len(args) != 0 {
 			parseArg(&config, c, args[0])
@@ -204,5 +206,6 @@ func init() {
 	QuickServeCmd.Flags().StringVarP(&storage, "storage", "s", "", "Storage path")
 	QuickServeCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
 	QuickServeCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
+	QuickServeCmd.Flags().BoolVarP(&insecureSessionIdMathRand, "insecure-session-id-math-rand", "", false, "Use math/rand for WSFS session resume IDs instead of crypto/rand; insecure and easier to predict")
 	QuickServeCmd.Flags().StringVarP(&passwordSource, "password", "", "", cmdpassword.FlagUsage)
 }

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"wsfs-core/internal/server/config"
 	internalerror "wsfs-core/internal/server/internalError"
@@ -14,7 +13,6 @@ import (
 	"wsfs-core/internal/util"
 
 	"github.com/rs/zerolog/log"
-	"github.com/sqids/sqids-go"
 )
 
 var (
@@ -27,10 +25,9 @@ const (
 )
 
 type Handler struct {
-	ider         *sqids.Sqids
+	idSource     sessionIdSource
 	errorHandler internalerror.ErrorHandler
 	sessions     sync.Map
-	sessionLast  atomic.Uint64
 	fsIds        util.FsIds
 	ctx          context.Context
 
@@ -41,11 +38,10 @@ func NewHandler(errorHandler internalerror.ErrorHandler, fsIds util.FsIds, c con
 	h = &Handler{
 		errorHandler: errorHandler,
 		fsIds:        fsIds,
+		idSource:     setupSessionIdSource(c),
 	}
 	h.ctx, h.Stop = context.WithCancel(context.Background())
-
-	h.ider, err = setupIder()
-	return
+	return h, nil
 }
 
 func (h *Handler) CollectInactiveSessions() {
@@ -64,7 +60,7 @@ func (h *Handler) CollectInactiveSessions() {
 				s.inactiveCount += 1
 
 				if s.inactiveCount >= sessionInactiveMaxCount {
-					h.delSession(key.(uint64))
+					h.delSession(key.(string))
 					return true // continue
 				}
 
@@ -111,21 +107,12 @@ func headerContainsToken(header http.Header, key, want string) bool {
 }
 
 func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *storage.User) {
-	var id uint64
-	var idstr = ""
-	if resumeHeader := req.Header.Get("X-Wsfs-Resume"); resumeHeader != "" {
-		if result := h.ider.Decode(resumeHeader); len(result) == 1 {
-			id = result[0]
-		} else {
-			rsp.WriteHeader(http.StatusBadRequest)
-			return
-		}
-	} else {
+	id := req.Header.Get("X-Wsfs-Resume")
+	if id == "" {
 		var err error
-		id = h.newSession(user.Name, user.Storage)
-		if idstr, err = h.ider.Encode([]uint64{id}); err != nil {
-			log.Error().Err(err).Msg("Ider encode failed")
-			h.delSession(id)
+		id, err = h.newSession(user.Name, user.Storage)
+		if err != nil {
+			log.Error().Err(err).Msg("Generate session id failed")
 			rsp.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -154,18 +141,18 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 		}
 	}()
 
-	conn, err := h.upgrade(rsp, req, idstr)
+	conn, err := h.upgrade(rsp, req, id)
 	if err != nil {
 		log.Error().Err(err).Msg("Upgrade websocket connection failed")
 		return
 	}
 	succeeded = true
 
-	log.Info().Str("From", req.RemoteAddr).Str("User", user.Name).Uint64("Id", id).Msg("Session running")
+	log.Info().Str("From", req.RemoteAddr).Str("User", user.Name).Str("Id", id).Msg("Session running")
 	session.takeConn(conn, req.RemoteAddr)
 }
 
-func (h *Handler) getSession(id uint64) *session {
+func (h *Handler) getSession(id string) *session {
 	v, ok := h.sessions.Load(id)
 	if !ok {
 		return nil
@@ -173,22 +160,25 @@ func (h *Handler) getSession(id uint64) *session {
 	return v.(*session)
 }
 
-func (h *Handler) newSession(username string, storage *storage.Storage) (id uint64) {
+func (h *Handler) newSession(username string, storage *storage.Storage) (string, error) {
 	for {
-		id = h.sessionLast.Add(1)
-		if _, loaded := h.sessions.LoadOrStore(id, (*session)(nil)); !loaded {
-			break
+		id, err := h.idSource.New()
+		if err != nil {
+			return "", err
 		}
+		if _, loaded := h.sessions.LoadOrStore(id, (*session)(nil)); loaded {
+			continue
+		}
+		h.sessions.Store(id, newSession(h, username, storage))
+		log.Info().Str("Id", id).Msg("Session created")
+		return id, nil
 	}
-	h.sessions.Store(id, newSession(h, username, storage))
-	log.Info().Uint64("Id", id).Msg("Session created")
-	return
 }
 
-func (h *Handler) delSession(id uint64) {
+func (h *Handler) delSession(id string) {
 	if session := h.getSession(id); session != nil {
 		session.clearFDs()
 	}
-	log.Info().Uint64("Id", id).Msg("Session destroyed")
+	log.Info().Str("Id", id).Msg("Session destroyed")
 	h.sessions.Delete(id)
 }

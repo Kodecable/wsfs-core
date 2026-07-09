@@ -44,6 +44,7 @@ type Env struct {
 	ServerLog  string
 	MountLog   string
 	Endpoint   string
+	BreakConn  func() error
 }
 
 type Result struct {
@@ -146,6 +147,7 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 	}
 
 	var serverProc *Process
+	var proxy *tcpProxy
 	if r.cfg.Endpoint == "" {
 		port, err := reserveTCPPort()
 		if err != nil {
@@ -166,9 +168,21 @@ func (r *Runner) RunCase(ctx context.Context, c Case) Result {
 		}
 	}
 
+	proxy, env.Endpoint, err = startTCPProxy(env.Endpoint)
+	if err != nil {
+		if !IsSkip(err) {
+			res.Err = err
+			return res
+		}
+		proxy = nil
+	}
+	if proxy != nil {
+		env.BreakConn = proxy.CloseActiveConnections
+	}
+
 	var mountProc *Process
 	defer func() {
-		if cleanupErr := r.cleanup(env, mountProc, serverProc); cleanupErr != nil && res.Err == nil {
+		if cleanupErr := r.cleanup(env, mountProc, serverProc, proxy); cleanupErr != nil && res.Err == nil {
 			res.Err = cleanupErr
 		}
 		if res.Err == nil && !r.cfg.KeepWork {
@@ -304,7 +318,7 @@ func formatNames(names []string) string {
 	return fmt.Sprintf("%v ... (%d total)", names[:maxNames], len(names))
 }
 
-func (r *Runner) cleanup(env *Env, mountProc, serverProc *Process) error {
+func (r *Runner) cleanup(env *Env, mountProc, serverProc *Process, proxy *tcpProxy) error {
 	var errs []string
 
 	if err := r.platform.Unmount(env); err != nil {
@@ -322,6 +336,11 @@ func (r *Runner) cleanup(env *Env, mountProc, serverProc *Process) error {
 	if serverProc != nil {
 		if err := serverProc.Stop(stopCtx); err != nil && ExitErrorCode(err) != 0 {
 			errs = append(errs, fmt.Sprintf("stop server: %v", err))
+		}
+	}
+	if proxy != nil {
+		if err := proxy.Close(); err != nil {
+			errs = append(errs, fmt.Sprintf("stop proxy: %v", err))
 		}
 	}
 

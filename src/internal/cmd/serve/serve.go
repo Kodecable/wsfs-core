@@ -16,20 +16,24 @@ import (
 )
 
 var (
-	configPath string
-	noLogTime  bool
-	noLogColor bool
-	logLevel   zerolog.Level = zerolog.InfoLevel
+	configPath                string
+	noLogTime                 bool
+	noLogColor                bool
+	insecureSessionIdMathRand bool
+	logLevel                  zerolog.Level = zerolog.InfoLevel
 )
 
 var ServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start a Websocket Filesystem server",
 	Args:  cobra.NoArgs,
-	Run: func(_ *cobra.Command, _ []string) {
+	Run: func(c *cobra.Command, _ []string) {
 		util.SetupZerolog(noLogTime, noLogColor, logLevel)
 
 		config := findAndDecodeConfig()
+		if c.Flags().Changed("insecure-session-id-math-rand") {
+			config.WSFS.InsecureSessionIdMathRand = insecureSessionIdMathRand
+		}
 
 		hub, err := server.NewHub()
 		if err != nil {
@@ -39,7 +43,14 @@ var ServeCmd = &cobra.Command{
 		}
 
 		hub.GetConfig = func() (serverConfig.Server, error) {
-			return serverConfig.ReDecode(&config)
+			newConfig, err := serverConfig.ReDecode(&config)
+			if err != nil {
+				return newConfig, err
+			}
+			if c.Flags().Changed("insecure-session-id-math-rand") {
+				newConfig.WSFS.InsecureSessionIdMathRand = insecureSessionIdMathRand
+			}
+			return newConfig, nil
 		}
 
 		util.SetupSignalHandlers(util.SignalHandlers{
@@ -69,6 +80,7 @@ func init() {
 	ServeCmd.Flags().StringVarP(&configPath, "config", "c", internalDefaultConfigPath, "Path to config file")
 	ServeCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
 	ServeCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
+	ServeCmd.Flags().BoolVarP(&insecureSessionIdMathRand, "insecure-session-id-math-rand", "", false, "Use math/rand for WSFS session resume IDs instead of crypto/rand; insecure and easier to predict")
 	ServeCmd.Flags().VarP(
 		enumflag.New(&logLevel, "LEVEL", util.ZerologLevelIds, enumflag.EnumCaseInsensitive),
 		"level", "l",

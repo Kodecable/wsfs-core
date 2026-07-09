@@ -21,7 +21,8 @@ var Default = Server{
 		},
 	},
 	WSFS: WSFS{
-		Enable: true,
+		Enable:                    true,
+		InsecureSessionIdMathRand: false,
 	},
 	Anonymous: AnonymousUser{
 		Enable:   false,
