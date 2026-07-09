@@ -53,7 +53,7 @@ func (n *fsNode) Statfs(_ context.Context, out *fuse.StatfsOut) syscall.Errno {
 	return fusefs.OK
 }
 
-func fileMode(mode uint32) (r uint32) {
+func wsfsFileModeToFuseMode(mode uint32) (r uint32) {
 	r = mode & 0o777
 
 	if mode&uint32(os.ModeSetuid) != 0 {
@@ -81,6 +81,28 @@ func fileMode(mode uint32) (r uint32) {
 	return
 }
 
+func wsfsFileModeFromFuseMode(mode uint32) (r uint32) {
+	r = mode & 0o777
+
+	if mode&syscall.S_ISUID != 0 {
+		r |= uint32(os.ModeSetuid)
+	}
+	if mode&syscall.S_ISGID != 0 {
+		r |= uint32(os.ModeSetgid)
+	}
+	if mode&syscall.S_ISVTX != 0 {
+		r |= uint32(os.ModeSticky)
+	}
+
+	if mode&syscall.S_IFDIR != 0 {
+		r |= uint32(os.ModeDir)
+	} else if mode&syscall.S_IFLNK != 0 {
+		r |= uint32(os.ModeSymlink)
+	}
+
+	return
+}
+
 func attrFromFileInfo(path string, attr *fuse.Attr, fi *wsfsprotocol.FileInfo, fsIds *util.FsIds) {
 	attr.Ino = maphash.String(inodeHashSeed, path)
 	attr.Size = fi.Size
@@ -90,7 +112,7 @@ func attrFromFileInfo(path string, attr *fuse.Attr, fi *wsfsprotocol.FileInfo, f
 	attr.Atimensec = uint32(fi.MTime.Nanoseconds)
 	attr.Ctimensec = uint32(fi.MTime.Nanoseconds)
 	attr.Mtimensec = uint32(fi.MTime.Nanoseconds)
-	attr.Mode = fileMode(fi.Mode)
+	attr.Mode = wsfsFileModeToFuseMode(fi.Mode)
 	attr.Nlink = 1
 	attr.Blksize = fsBlockSize
 
@@ -503,7 +525,7 @@ func (n *fsNode) Setattr(ctx context.Context, f fusefs.FileHandle, in *fuse.SetA
 
 	if m, ok := in.GetMode(); ok {
 		flag |= wsfsprotocol.SETATTR_MODE
-		fi.Mode = m
+		fi.Mode = wsfsFileModeFromFuseMode(m)
 	}
 
 	flag |= wsfsprotocol.SETATTR_OWNER

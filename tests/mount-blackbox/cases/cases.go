@@ -79,6 +79,7 @@ func All() []harness.Case {
 		testCase{name: "write_large_file_cross_message_boundary", run: writeLargeFileCrossMessageBoundary, verifyStorage: verifyStorageWriteLargeFileCrossMessageBoundary},
 		testCase{name: "session_resume_existing_open_fd", run: sessionResumeExistingOpenFD, verifyStorage: verifyStorageSessionResumeExistingOpenFD},
 		testCase{name: "session_close_normal", run: sessionCloseNormal},
+		testCase{name: "sticky_bit_roundtrip", run: stickyBitRoundtrip, verifyStorage: verifyStorageStickyBitRoundtrip},
 	}
 }
 
@@ -332,6 +333,44 @@ func sessionCloseNormal(ctx context.Context, env *harness.Env) error {
 	}
 	if strings.Contains(logText, "Session hibernated") {
 		return fmt.Errorf("server log unexpectedly contains session hibernation")
+	}
+	return nil
+}
+
+func stickyBitRoundtrip(_ context.Context, env *harness.Env) error {
+	if runtime.GOOS == "windows" {
+		return harness.Skip("skip sticky bit mode test on Windows")
+	}
+
+	path := filepath.Join(env.MountDir, "sticky-dir")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		return err
+	}
+	if err := os.Chmod(path, os.ModeSticky|0o755); err != nil {
+		return err
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSticky == 0 {
+		return fmt.Errorf("mount dir missing sticky bit: mode=%v", info.Mode())
+	}
+	return nil
+}
+
+func verifyStorageStickyBitRoundtrip(_ context.Context, env *harness.Env) error {
+	if runtime.GOOS == "windows" {
+		return harness.Skip("skip sticky bit mode test on Windows")
+	}
+
+	info, err := os.Stat(filepath.Join(env.BackendDir, "sticky-dir"))
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSticky == 0 {
+		return fmt.Errorf("backend dir missing sticky bit: mode=%v", info.Mode())
 	}
 	return nil
 }
