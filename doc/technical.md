@@ -56,8 +56,6 @@ Servers that support reload will handle the POSIX signal `SIGHUP` and reload the
 
 The reload operation is thread-safe. If the new configuration has errors, the server will refuse to reload and continue using the old configuration.
 
-During reload, there is a very small gap where the server will not listen on its port even if the listener configuration remains unchanged. New HTTP requests to the server during this gap will fail. If another program takes the port during this gap, the server will exit with an error.
-
 ### WebUI
 
 The WebUI is designed for modern browsers. It requires no cookies. JavaScript is optional; without it, you can still view a directory index, but cannot perform uploads or other interactive operations.

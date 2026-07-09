@@ -98,16 +98,11 @@ Typical workflow:
 2. Copy the printed hash value, for example `SHA256:0123456789abcdef...`.
 3. Re-run mount with `--cert-hash <copied-hash>`.
 
-Example:
-
-```shell
-$ wsfs mount wsfss://localhost:20001/ /mnt/wsfs
-$ wsfs mount --cert-hash SHA256:0123456789abcdef... wsfss://localhost:20001/ /mnt/wsfs
-```
-
 #### Linux
 
 Although FUSE supports multi-user access, it is very dangerous and not recommended on WSFS. We recommend running WSFS mount as a normal user and only using this user to access the file system.
+
+The SIGHUP/SIGINT/SIGTERM signals are supported for graceful system shutdown. It waits until there are no ongoing requests, performing a WebSocket close handshake to complete the shutdown.
 
 If you are on Android, you may need root to mount, use the option `--direct-mount`.
 

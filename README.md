@@ -2,7 +2,7 @@
 
 **Warning:** This project is currently **WIP** and may contain numerous **bugs**.
 
-WSFS-Core is an implementation of WSFS (WebSocket File System) designed to provide a lightweight, nearly complete remote-mounting experience.
+WSFS-Core is an implementation of WSFS designed to provide a lightweight, nearly complete remote-mounting experience.
 
 Written in pure Go, WSFS-Core can serve WSFS on almost all Go-supported operating systems and architectures. It can also mount WSFS on Windows, Linux (including Android) and Darwin. (Currently, it is recommended to run WSFS-Core on Linux.)
 
