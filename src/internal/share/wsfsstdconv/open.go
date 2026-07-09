@@ -11,7 +11,9 @@ var OpenFlagToStd = map[uint32]int{
 	wsfsprotocol.O_RDWR:   os.O_RDWR,
 	wsfsprotocol.O_TRUNC:  os.O_TRUNC,
 	wsfsprotocol.O_EXCL:   os.O_EXCL,
+	wsfsprotocol.O_CREAT:  os.O_CREATE,
 	wsfsprotocol.O_APPEND: os.O_APPEND,
+	wsfsprotocol.O_SYNC:   os.O_SYNC,
 }
 
 var OpenFlagFromStd = map[int]uint32{}
