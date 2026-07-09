@@ -1,62 +1,94 @@
 package server
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"wsfs-core/internal/server/config"
+	"wsfs-core/internal/server/wsfs"
 
 	"github.com/rs/zerolog/log"
 )
 
 type instance struct {
 	server *Server
-	olded  atomic.Bool
 }
 
 type Hub struct {
 	GetConfig func() (config.Server, error)
 
-	inst *instance
+	inst atomic.Pointer[instance]
 
-	exitErrorChan chan error
+	listenerConfig config.Listener
+	listener       net.Listener
+	httpServer     *http.Server
+	exitErrorChan  chan error
 
 	lock            sync.Mutex
 	reloadReentrant atomic.Bool
+	wsfsRegistry    *wsfs.SessionRegistry
 }
 
 func NewHub() (h *Hub, err error) {
 	h = new(Hub)
-	h.exitErrorChan = make(chan error)
-
+	h.exitErrorChan = make(chan error, 1)
 	return
 }
 
-func (h *Hub) runInst(listener config.Listener, inst *instance) {
-	err := inst.server.Run(listener)
-	if inst.olded.Load() {
-		if !errors.Is(err, http.ErrServerClosed) {
-			log.Error().Err(err).Msg("Old server exit with error")
-		}
-	} else {
-		h.exitErrorChan <- err
+func (h *Hub) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
+	inst := h.inst.Load()
+	if inst == nil || inst.server == nil {
+		http.Error(rsp, "server unavailable", http.StatusServiceUnavailable)
+		return
 	}
+	inst.server.ServeHTTP(rsp, req)
 }
 
 func (h *Hub) Run(c config.Server) error {
-	server, err := NewServer(c)
+	h.ensureWSFSRegistry(c.WSFS)
+
+	server, err := NewServer(c, h.wsfsRegistry)
 	if err != nil {
 		return err
 	}
-	inst := &instance{
-		server: server,
+	h.inst.Store(&instance{server: server})
+
+	listener, tlsConfig, err := listen(c.Listener)
+	if err != nil {
+		return err
 	}
-	h.inst = inst
+	h.listener = listener
+	h.listenerConfig = c.Listener
 
-	go h.runInst(c.Listener, inst)
+	httpServer := &http.Server{Handler: h}
+	if c.Listener.TLS.Enable {
+		httpServer.TLSConfig = tlsConfig
+	}
+	h.httpServer = httpServer
 
-	return <-h.exitErrorChan
+	log.Warn().Str("Net", c.Listener.Network).Str("Addr", c.Listener.Address).Msg("Listening")
+
+	go func() {
+		var serveErr error
+		if c.Listener.TLS.Enable {
+			serveErr = httpServer.ServeTLS(listener, "", "")
+		} else {
+			serveErr = httpServer.Serve(listener)
+		}
+		if serveErr != nil {
+			h.exitErrorChan <- serveErr
+		}
+	}()
+
+	err = <-h.exitErrorChan
+	cleanListen(c.Listener)
+	if h.wsfsRegistry != nil {
+		h.wsfsRegistry.Stop()
+	}
+	return err
 }
 
 func (h *Hub) IssueReload() {
@@ -89,30 +121,90 @@ func (h *Hub) doReload() {
 		return
 	}
 
-	server, err := NewServer(conf)
+	h.ensureWSFSRegistry(conf.WSFS)
+
+	server, err := NewServer(conf, h.wsfsRegistry)
 	if err != nil {
 		log.Error().Err(err).Msg("Reload failed: Unable to new server")
 		return
 	}
 
-	oldinst := h.inst
-	oldinst.olded.Store(true)
-	oldinst.server.Shutdown(func(err error) {
-		if err != nil {
-			log.Error().Err(err).Msg("Old server shutdown failed")
-		}
-	})
-
-	newinst := &instance{
-		server: server,
+	if listenerEquals(h.listenerConfig, conf.Listener) {
+		h.inst.Store(&instance{server: server})
+		log.Warn().Msg("Reloaded")
+		return
 	}
-	go h.runInst(conf.Listener, newinst)
-	h.inst = newinst
+
+	listener, tlsConfig, err := listen(conf.Listener)
+	if err != nil {
+		log.Error().Err(err).Msg("Reload failed: Unable to listen on new config")
+		return
+	}
+
+	oldHTTPServer := h.httpServer
+	oldListenerConfig := h.listenerConfig
+
+	newHTTPServer := &http.Server{Handler: h}
+	if conf.Listener.TLS.Enable {
+		newHTTPServer.TLSConfig = tlsConfig
+	}
+
+	h.inst.Store(&instance{server: server})
+	h.listener = listener
+	h.listenerConfig = conf.Listener
+	h.httpServer = newHTTPServer
+
+	log.Warn().Str("Net", conf.Listener.Network).Str("Addr", conf.Listener.Address).Msg("Listening")
+	go func() {
+		var serveErr error
+		if conf.Listener.TLS.Enable {
+			serveErr = newHTTPServer.ServeTLS(listener, "", "")
+		} else {
+			serveErr = newHTTPServer.Serve(listener)
+		}
+		if serveErr != nil {
+			h.exitErrorChan <- serveErr
+		}
+	}()
+
+	shutdownErr := oldHTTPServer.Shutdown(context.Background())
+	if shutdownErr != nil && !errors.Is(shutdownErr, http.ErrServerClosed) {
+		log.Error().Err(shutdownErr).Msg("Old server shutdown failed")
+	}
+	cleanListen(oldListenerConfig)
 
 	log.Warn().Msg("Reloaded")
 }
 
 func (h *Hub) IssueShutdown() {
 	log.Warn().Msg("Shutting down")
-	h.inst.server.Shutdown(nil)
+	if h.httpServer != nil {
+		err := h.httpServer.Shutdown(context.Background())
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("Server shutdown failed")
+		}
+	}
+	if h.wsfsRegistry != nil {
+		h.wsfsRegistry.Stop()
+	}
+}
+
+func (h *Hub) ensureWSFSRegistry(c config.WSFS) {
+	if !c.Enable {
+		return
+	}
+	if h.wsfsRegistry == nil {
+		h.wsfsRegistry = wsfs.NewSessionRegistry(c)
+		go h.wsfsRegistry.CollectInactiveSessions()
+		return
+	}
+	h.wsfsRegistry.Reconfigure(c)
+}
+
+func listenerEquals(a, b config.Listener) bool {
+	return a.Network == b.Network &&
+		a.Address == b.Address &&
+		a.TLS.Enable == b.TLS.Enable &&
+		a.TLS.CertFile == b.TLS.CertFile &&
+		a.TLS.KeyFile == b.TLS.KeyFile
 }

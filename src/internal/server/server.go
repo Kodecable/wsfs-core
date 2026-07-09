@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -25,15 +24,12 @@ var cacheIdRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0
 var _ = (internalerror.ErrorHandler)((*Server)(nil))
 
 type Server struct {
-	httpServer http.Server
-	errorChan  chan error
-	cacheId    string
+	cacheId string
 
 	webuiHandler  *webui.Handler
 	webdavHandler *webdav.Handler
 	wsfsHandler   *wsfs.Handler
 
-	fsIds     util.FsIds
 	users     storage.Users
 	anonymous *storage.User
 
@@ -41,10 +37,8 @@ type Server struct {
 	serverHeader string
 }
 
-func NewServer(c config.Server) (s *Server, err error) {
+func NewServer(c config.Server, wsfsRegistry *wsfs.SessionRegistry) (s *Server, err error) {
 	s = &Server{
-		httpServer:   http.Server{},
-		errorChan:    make(chan error),
 		cacheId:      util.RandomString(8, cacheIdRunes),
 		realIpHeader: c.RealIpHeader,
 		serverHeader: c.ServerHeader,
@@ -75,62 +69,15 @@ func NewServer(c config.Server) (s *Server, err error) {
 	}
 
 	if c.WSFS.Enable {
-		s.fsIds, err = c.FsIds.Resolve()
-		if err != nil {
+		fsIds, resolveErr := c.FsIds.Resolve()
+		if resolveErr != nil {
+			err = resolveErr
 			return
 		}
-		s.wsfsHandler, err = wsfs.NewHandler(s, s.fsIds, c.WSFS)
-		if err != nil {
-			return
-		}
-		go s.wsfsHandler.CollectInactiveSessions()
+		s.wsfsHandler = wsfs.NewHandler(s, fsIds, wsfsRegistry)
 	}
 
 	return
-}
-
-func (s *Server) Run(c config.Listener) error {
-	listener, tlsConfig, err := listen(c)
-	if err != nil {
-		return err
-	}
-
-	defer cleanListen(c)
-
-	s.httpServer = http.Server{
-		Handler: s,
-	}
-
-	log.Warn().Str("Net", c.Network).Str("Addr", c.Address).Msg("Listening")
-	if c.TLS.Enable {
-		s.httpServer.TLSConfig = tlsConfig
-		err = s.httpServer.ServeTLS(listener, "", "")
-	} else {
-		err = s.httpServer.Serve(listener)
-	}
-
-	return err
-}
-
-// Async shutdown
-func (s *Server) Shutdown(callback func(error)) {
-	done := make(chan any)
-
-	go func() {
-		if s.wsfsHandler != nil {
-			s.wsfsHandler.Stop()
-		}
-
-		s.httpServer.RegisterOnShutdown(func() {
-			close(done)
-		})
-		err := s.httpServer.Shutdown(context.Background())
-		if callback != nil {
-			callback(err)
-		}
-	}()
-
-	<-done
 }
 
 func (s *Server) ServeErrorPage(rsp http.ResponseWriter, req *http.Request, status int, msg string) {
@@ -162,11 +109,7 @@ func (s *Server) ServeErrorMessage(rsp http.ResponseWriter, req *http.Request, s
 	rsp.Write([]byte(msg))
 }
 
-// Modified from gin's RecoveryFunc.
-// Original copyright: Copyright 2014 Manu Martinez-Almeida. All rights reserved.
-// Original license: MIT (https://raw.githubusercontent.com/gin-gonic/gin/master/LICENSE)
 func (s *Server) serveRecover(rsp *responseWriter, req *http.Request, err any) {
-	// Check for a broken connection
 	var brokenPipe bool
 	if ne, ok := err.(*net.OpError); ok {
 		var se *os.SyscallError
@@ -181,7 +124,6 @@ func (s *Server) serveRecover(rsp *responseWriter, req *http.Request, err any) {
 
 	if brokenPipe {
 		log.Warn().Str("From", req.RemoteAddr).Msg("Connection reset")
-		// If the connection is dead, we can do nothing
 		return
 	}
 
@@ -215,7 +157,6 @@ func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (user *stor
 	user, err = httpBasicAuth(s.users, req)
 	switch err {
 	case nil:
-		break
 	case ErrAuthHeaderNotExists, ErrAnonymous:
 		if s.anonymous != nil && !req.URL.Query().Has("must-login") {
 			user = s.anonymous
@@ -249,7 +190,6 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 			s.serveRecover(rsp, req, err)
 		} else {
 			if rsp.status == -1 || rsp.status == http.StatusSwitchingProtocols {
-				// conn hijacked
 				return
 			}
 			log.Info().Str("Path", req.RequestURI).Str("From", req.RemoteAddr).Int("Code", rsp.status).Msg("HTTP " + req.Method)
@@ -302,5 +242,4 @@ func (s *Server) ServeHTTP(rsp_ http.ResponseWriter, req *http.Request) {
 			s.writeMethodNotAllow(rsp, "")
 		}
 	}
-
 }

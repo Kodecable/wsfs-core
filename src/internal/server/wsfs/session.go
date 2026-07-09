@@ -25,8 +25,9 @@ type session struct {
 
 	Id       string
 	Username string
-	handler  *Handler
+	registry *SessionRegistry
 	storage  *storage.Storage
+	fsIds    util.FsIds
 
 	inactiveCount uint32
 
@@ -52,12 +53,13 @@ type session struct {
 	fastBuffers chan []byte
 }
 
-func newSession(handler *Handler, id string, username string, storage *storage.Storage) *session {
+func newSession(registry *SessionRegistry, id string, username string, storage *storage.Storage, fsIds util.FsIds) *session {
 	s := &session{
 		Id:          id,
 		Username:    username,
-		handler:     handler,
+		registry:    registry,
 		storage:     storage,
+		fsIds:       fsIds,
 		fastBuffers: make(chan []byte, 16),
 	}
 	s.cmdGroup.SetLimit(64)
@@ -114,7 +116,7 @@ func (s *session) stopConn() {
 
 	if gracefulClose {
 		log.Info().Str("From", s.remoteAddr).Str("Id", s.Id).Msg("Session closed")
-		s.handler.delSession(s.Id)
+		s.registry.delSession(s.Id)
 		s.Lock.Unlock()
 		return
 	}

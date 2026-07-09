@@ -25,5 +25,6 @@ func ReDecode(old *Server) (new Server, err error) {
 		return
 	}
 
+	new = *old
 	return new, Decode(&new, old.filePath)
 }
