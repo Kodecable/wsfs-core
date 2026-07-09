@@ -4,6 +4,7 @@ package windows
 
 import (
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -115,11 +116,17 @@ func wsfsOpenFlagFromWinOpenFlag(winflag int) (flag uint32) {
 	//if winflag&fuse.O_RDONLY != 0 {
 	//	flag |= wsfsprotocol.O_RDONLY
 	//}
-	if winflag&fuse.O_WRONLY != 0 {
+	switch winflag & (fuse.O_WRONLY | fuse.O_RDWR) {
+	case fuse.O_WRONLY | fuse.O_RDWR:
+		// Metadata-only opens on Windows can surface through cgofuse with
+		// both write and read/write bits set; treat them as read-only opens.
+		flag |= wsfsprotocol.O_RDONLY
+	case fuse.O_WRONLY:
 		flag |= wsfsprotocol.O_WRONLY
-	}
-	if winflag&fuse.O_RDWR != 0 {
+	case fuse.O_RDWR:
 		flag |= wsfsprotocol.O_RDWR
+	default:
+		flag |= wsfsprotocol.O_RDONLY
 	}
 	if winflag&fuse.O_TRUNC != 0 {
 		flag |= wsfsprotocol.O_TRUNC
@@ -187,7 +194,7 @@ func dirCacheKey(path string) string {
 }
 
 func (s *fileSystem) delParentCache(path string) {
-	if ppath := filepath.Dir(path); ppath != path {
+	if ppath := pathpkg.Dir(path); ppath != path {
 		s.deleteDirState(dirCacheKey(ppath))
 	}
 }
@@ -264,9 +271,9 @@ func (s *fileSystem) Open(path string, winflag int) (errc int, fh uint64) {
 }
 
 func (s *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
-	if ppath := filepath.Dir(path); ppath != path {
+	if ppath := pathpkg.Dir(path); ppath != path {
 		dirKey := dirCacheKey(ppath)
-		name := filepath.Base(path)
+		name := pathpkg.Base(path)
 		if errc, ok := s.lookupChildFromDirCache(dirKey, name, stat); ok {
 			return errc
 		}
@@ -363,35 +370,42 @@ func (s *fileSystem) rename(oldpath string, newpath string, flags uint32) int {
 	return errnoFromCode(code)
 }
 
-/*
-func (s *fs) Access(path string, mask uint32) int {
+func (s *fileSystem) Access(path string, mask uint32) int {
+	// Do not preflight normal read/write/execute access in the Windows client.
+	// The backend filesystem is the source of truth for permissions, and the
+	// actual operation should return the authoritative error.
+	if mask&fuse.DELETE_OK == 0 {
+		return fuseOK
+	}
 
-		mask = mask & 7
-		if mask == 0 {
-			return ok
-		}
-
-		fi, code := s.session.CmdGetAttr(path)
+	var fi wsfsprotocol.FileInfo
+	if cache, ok := s.cache.Get(pathCacheKey(path)); ok {
+		fi = cache.attr
+	} else {
+		var code uint8
+		fi, code = s.session.CmdGetAttr(path)
 		if code != wsfsprotocol.ErrorOK {
 			return errnoFromCode(code)
 		}
-		mode := fi.Mode & 0o777
+		s.cache.Set(pathCacheKey(path), cachedData{attr: fi})
+	}
+	if fi.Mode&uint32(os.ModeDir) == 0 {
+		return fuseOK
+	}
 
-		if fi.Owner&0b01 != 0 {
-			if mode&(mask<<6) != 0 {
-				return ok
-			}
-		}
-		if fi.Owner&0b10 != 0 {
-			if mode&(mask<<3) != 0 {
-				return ok
-			}
-		}
-		if mode&mask != 0 {
-			return ok
-		}
-		return -fuse.EACCES
-}*/
+	// WinFsp/cgofuse can accept a delete disposition for a non-empty
+	// directory before Cleanup, and Cleanup ignores the later rmdir failure.
+	// Denying delete access for non-empty directories makes Windows callers
+	// such as Go's os.RemoveAll fall back to recursive deletion.
+	items, code := s.session.CmdReadDir(path)
+	if code != wsfsprotocol.ErrorOK {
+		return errnoFromCode(code)
+	}
+	if len(items) != 0 {
+		return -fuse.EPERM
+	}
+	return fuseOK
+}
 
 func (s *fileSystem) Create(path string, flags int, mode uint32) (int, uint64) {
 	s.delParentCache(path)
