@@ -57,11 +57,11 @@ func GetCmdCopyFileRangeStructRequiredSize(d CmdCopyFileRangeStruct) int {
 }
 
 func GetCmdFsStatStructRequiredSize(d CmdFsStatStruct) int {
-	return len(d.Path) + 1
+	return len(d.Path) + 2
 }
 
 func GetCmdGetAttrStructRequiredSize(d CmdGetAttrStruct) int {
-	return len(d.Path) + 1
+	return len(d.Path) + 2
 }
 
 func GetCmdGetFileLockStructRequiredSize(d CmdGetFileLockStruct) int {
@@ -69,11 +69,11 @@ func GetCmdGetFileLockStructRequiredSize(d CmdGetFileLockStruct) int {
 }
 
 func GetCmdMkdirStructRequiredSize(d CmdMkdirStruct) int {
-	return len(d.Path) + 5
+	return len(d.Path) + 6
 }
 
 func GetCmdOpenStructRequiredSize(d CmdOpenStruct) int {
-	return len(d.Path) + 9
+	return len(d.Path) + 10
 }
 
 func GetCmdReadAtStructRequiredSize(d CmdReadAtStruct) int {
@@ -81,15 +81,15 @@ func GetCmdReadAtStructRequiredSize(d CmdReadAtStruct) int {
 }
 
 func GetCmdReadDirPlusStructRequiredSize(d CmdReadDirPlusStruct) int {
-	return len(d.Path) + 1
+	return len(d.Path) + 2
 }
 
 func GetCmdReadDirStructRequiredSize(d CmdReadDirStruct) int {
-	return len(d.Path) + 1
+	return len(d.Path) + 2
 }
 
 func GetCmdReadLinkStructRequiredSize(d CmdReadLinkStruct) int {
-	return len(d.Path) + 1
+	return len(d.Path) + 2
 }
 
 func GetCmdReadStructRequiredSize(d CmdReadStruct) int {
@@ -97,15 +97,15 @@ func GetCmdReadStructRequiredSize(d CmdReadStruct) int {
 }
 
 func GetCmdRemoveStructRequiredSize(d CmdRemoveStruct) int {
-	return len(d.Path) + 1
+	return len(d.Path) + 2
 }
 
 func GetCmdRenameStructRequiredSize(d CmdRenameStruct) int {
-	return len(d.OldPath) + len(d.NewPath) + 6
+	return len(d.OldPath) + len(d.NewPath) + 8
 }
 
 func GetCmdRmDirStructRequiredSize(d CmdRmDirStruct) int {
-	return len(d.Path) + 1
+	return len(d.Path) + 2
 }
 
 func GetCmdSeekStructRequiredSize(d CmdSeekStruct) int {
@@ -117,7 +117,7 @@ func GetCmdSetAttrByFDStructRequiredSize(d CmdSetAttrByFDStruct) int {
 }
 
 func GetCmdSetAttrStructRequiredSize(d CmdSetAttrStruct) int {
-	return len(d.Path) + GetFileInfoRequiredSize(d.FI) + 2
+	return len(d.Path) + GetFileInfoRequiredSize(d.FI) + 3
 }
 
 func GetCmdSetFileLockStructRequiredSize(d CmdSetFileLockStruct) int {
@@ -129,7 +129,7 @@ func GetCmdSetFileLockWaitStructRequiredSize(d CmdSetFileLockWaitStruct) int {
 }
 
 func GetCmdSymLinkStructRequiredSize(d CmdSymLinkStruct) int {
-	return len(d.TargetPath) + len(d.FilePath) + 2
+	return len(d.TargetPath) + len(d.FilePath) + 4
 }
 
 func GetCmdSyncStructRequiredSize(d CmdSyncStruct) int {
@@ -153,7 +153,7 @@ func GetCmdWriteStructRequiredSize(d CmdWriteStruct) int {
 }
 
 func GetDirentRequiredSize(d Dirent) int {
-	return len(d.Name) + GetTimespecRequiredSize(d.MTime) + 14
+	return len(d.Name) + GetTimespecRequiredSize(d.MTime) + 15
 }
 
 func GetFileInfoRequiredSize(d FileInfo) int {
@@ -181,7 +181,7 @@ func GetRspCopyFileRangeRequiredSize(d RspCopyFileRange) int {
 }
 
 func GetRspErrorRequiredSize(d RspError) int {
-	return len(d.Desc) + 1
+	return len(d.Desc) + 2
 }
 
 func GetRspFsStatRequiredSize(d RspFsStat) int {
@@ -217,7 +217,7 @@ func GetRspReadDirRequiredSize(d RspReadDir) int {
 }
 
 func GetRspReadLinkRequiredSize(d RspReadLink) int {
-	return len(d.TargetPath) + 1
+	return len(d.TargetPath) + 2
 }
 
 func GetRspRemoveRequiredSize(d RspRemove) int {
@@ -340,10 +340,7 @@ func WriteCmdCopyFileRangeStructToWriter(d CmdCopyFileRangeStruct, w io.Writer) 
 
 func WriteCmdFsStatStructToWriter(d CmdFsStatStruct, w io.Writer) error {
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	return nil
@@ -351,10 +348,7 @@ func WriteCmdFsStatStructToWriter(d CmdFsStatStruct, w io.Writer) error {
 
 func WriteCmdGetAttrStructToWriter(d CmdGetAttrStruct, w io.Writer) error {
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	return nil
@@ -377,10 +371,7 @@ func WriteCmdGetFileLockStructToWriter(d CmdGetFileLockStruct, w io.Writer) erro
 func WriteCmdMkdirStructToWriter(d CmdMkdirStruct, w io.Writer) error {
 	var buf [4]byte
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	// Mode uint32
@@ -394,10 +385,7 @@ func WriteCmdMkdirStructToWriter(d CmdMkdirStruct, w io.Writer) error {
 func WriteCmdOpenStructToWriter(d CmdOpenStruct, w io.Writer) error {
 	var buf [8]byte
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	// OFlag uint32
@@ -426,10 +414,7 @@ func WriteCmdReadAtStructToWriter(d CmdReadAtStruct, w io.Writer) error {
 
 func WriteCmdReadDirPlusStructToWriter(d CmdReadDirPlusStruct, w io.Writer) error {
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	return nil
@@ -437,10 +422,7 @@ func WriteCmdReadDirPlusStructToWriter(d CmdReadDirPlusStruct, w io.Writer) erro
 
 func WriteCmdReadDirStructToWriter(d CmdReadDirStruct, w io.Writer) error {
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	return nil
@@ -448,10 +430,7 @@ func WriteCmdReadDirStructToWriter(d CmdReadDirStruct, w io.Writer) error {
 
 func WriteCmdReadLinkStructToWriter(d CmdReadLinkStruct, w io.Writer) error {
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	return nil
@@ -471,10 +450,7 @@ func WriteCmdReadStructToWriter(d CmdReadStruct, w io.Writer) error {
 
 func WriteCmdRemoveStructToWriter(d CmdRemoveStruct, w io.Writer) error {
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	return nil
@@ -483,17 +459,11 @@ func WriteCmdRemoveStructToWriter(d CmdRemoveStruct, w io.Writer) error {
 func WriteCmdRenameStructToWriter(d CmdRenameStruct, w io.Writer) error {
 	var buf [4]byte
 	// OldPath string
-	if _, err := w.Write([]byte(d.OldPath)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.OldPath, w); err != nil {
 		return err
 	}
 	// NewPath string
-	if _, err := w.Write([]byte(d.NewPath)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.NewPath, w); err != nil {
 		return err
 	}
 	// Flag uint32
@@ -506,10 +476,7 @@ func WriteCmdRenameStructToWriter(d CmdRenameStruct, w io.Writer) error {
 
 func WriteCmdRmDirStructToWriter(d CmdRmDirStruct, w io.Writer) error {
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	return nil
@@ -548,10 +515,7 @@ func WriteCmdSetAttrByFDStructToWriter(d CmdSetAttrByFDStruct, w io.Writer) erro
 func WriteCmdSetAttrStructToWriter(d CmdSetAttrStruct, w io.Writer) error {
 	var buf [1]byte
 	// Path string
-	if _, err := w.Write([]byte(d.Path)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Path, w); err != nil {
 		return err
 	}
 	// Flag uint8
@@ -596,17 +560,11 @@ func WriteCmdSetFileLockWaitStructToWriter(d CmdSetFileLockWaitStruct, w io.Writ
 
 func WriteCmdSymLinkStructToWriter(d CmdSymLinkStruct, w io.Writer) error {
 	// TargetPath string
-	if _, err := w.Write([]byte(d.TargetPath)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.TargetPath, w); err != nil {
 		return err
 	}
 	// FilePath string
-	if _, err := w.Write([]byte(d.FilePath)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.FilePath, w); err != nil {
 		return err
 	}
 	return nil
@@ -685,10 +643,7 @@ func WriteCmdWriteStructToWriter(d CmdWriteStruct, w io.Writer) error {
 func WriteDirentToWriter(d Dirent, w io.Writer) error {
 	var buf [8]byte
 	// Name string
-	if _, err := w.Write([]byte(d.Name)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Name, w); err != nil {
 		return err
 	}
 	// Size uint64
@@ -771,10 +726,7 @@ func WriteRspCopyFileRangeToWriter(d RspCopyFileRange, w io.Writer) error {
 
 func WriteRspErrorToWriter(d RspError, w io.Writer) error {
 	// Desc string
-	if _, err := w.Write([]byte(d.Desc)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.Desc, w); err != nil {
 		return err
 	}
 	return nil
@@ -850,10 +802,7 @@ func WriteRspReadDirToWriter(d RspReadDir, w io.Writer) error {
 
 func WriteRspReadLinkToWriter(d RspReadLink, w io.Writer) error {
 	// TargetPath string
-	if _, err := w.Write([]byte(d.TargetPath)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte{0}); err != nil {
+	if err := WriteStrToWriter(d.TargetPath, w); err != nil {
 		return err
 	}
 	return nil
@@ -1011,7 +960,7 @@ func ReadCmdCopyFileRangeStructFromReader(d *CmdCopyFileRangeStruct, r io.Reader
 
 func ReadCmdFsStatStructFromReader(d *CmdFsStatStruct, r io.Reader) error {
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	return nil
@@ -1019,7 +968,7 @@ func ReadCmdFsStatStructFromReader(d *CmdFsStatStruct, r io.Reader) error {
 
 func ReadCmdGetAttrStructFromReader(d *CmdGetAttrStruct, r io.Reader) error {
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	return nil
@@ -1042,7 +991,7 @@ func ReadCmdGetFileLockStructFromReader(d *CmdGetFileLockStruct, r io.Reader) er
 func ReadCmdMkdirStructFromReader(d *CmdMkdirStruct, r io.Reader) error {
 	var buf [4]byte
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	// Mode uint32
@@ -1056,7 +1005,7 @@ func ReadCmdMkdirStructFromReader(d *CmdMkdirStruct, r io.Reader) error {
 func ReadCmdOpenStructFromReader(d *CmdOpenStruct, r io.Reader) error {
 	var buf [8]byte
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	// OFlag uint32
@@ -1085,7 +1034,7 @@ func ReadCmdReadAtStructFromReader(d *CmdReadAtStruct, r io.Reader) error {
 
 func ReadCmdReadDirPlusStructFromReader(d *CmdReadDirPlusStruct, r io.Reader) error {
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	return nil
@@ -1093,7 +1042,7 @@ func ReadCmdReadDirPlusStructFromReader(d *CmdReadDirPlusStruct, r io.Reader) er
 
 func ReadCmdReadDirStructFromReader(d *CmdReadDirStruct, r io.Reader) error {
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	return nil
@@ -1101,7 +1050,7 @@ func ReadCmdReadDirStructFromReader(d *CmdReadDirStruct, r io.Reader) error {
 
 func ReadCmdReadLinkStructFromReader(d *CmdReadLinkStruct, r io.Reader) error {
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	return nil
@@ -1121,7 +1070,7 @@ func ReadCmdReadStructFromReader(d *CmdReadStruct, r io.Reader) error {
 
 func ReadCmdRemoveStructFromReader(d *CmdRemoveStruct, r io.Reader) error {
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	return nil
@@ -1130,11 +1079,11 @@ func ReadCmdRemoveStructFromReader(d *CmdRemoveStruct, r io.Reader) error {
 func ReadCmdRenameStructFromReader(d *CmdRenameStruct, r io.Reader) error {
 	var buf [4]byte
 	// OldPath string
-	if err := CopyStrFromReader(r, &d.OldPath); err != nil {
+	if err := ReadStrFromReader(r, &d.OldPath); err != nil {
 		return err
 	}
 	// NewPath string
-	if err := CopyStrFromReader(r, &d.NewPath); err != nil {
+	if err := ReadStrFromReader(r, &d.NewPath); err != nil {
 		return err
 	}
 	// Flag uint32
@@ -1147,7 +1096,7 @@ func ReadCmdRenameStructFromReader(d *CmdRenameStruct, r io.Reader) error {
 
 func ReadCmdRmDirStructFromReader(d *CmdRmDirStruct, r io.Reader) error {
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	return nil
@@ -1186,7 +1135,7 @@ func ReadCmdSetAttrByFDStructFromReader(d *CmdSetAttrByFDStruct, r io.Reader) er
 func ReadCmdSetAttrStructFromReader(d *CmdSetAttrStruct, r io.Reader) error {
 	var buf [1]byte
 	// Path string
-	if err := CopyStrFromReader(r, &d.Path); err != nil {
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
 		return err
 	}
 	// Flag uint8
@@ -1231,11 +1180,11 @@ func ReadCmdSetFileLockWaitStructFromReader(d *CmdSetFileLockWaitStruct, r io.Re
 
 func ReadCmdSymLinkStructFromReader(d *CmdSymLinkStruct, r io.Reader) error {
 	// TargetPath string
-	if err := CopyStrFromReader(r, &d.TargetPath); err != nil {
+	if err := ReadStrFromReader(r, &d.TargetPath); err != nil {
 		return err
 	}
 	// FilePath string
-	if err := CopyStrFromReader(r, &d.FilePath); err != nil {
+	if err := ReadStrFromReader(r, &d.FilePath); err != nil {
 		return err
 	}
 	return nil
@@ -1322,7 +1271,7 @@ func ReadCmdWriteStructFromReader(d *CmdWriteStruct, r io.Reader) error {
 func ReadDirentFromReader(d *Dirent, r io.Reader) error {
 	var buf [8]byte
 	// Name string
-	if err := CopyStrFromReader(r, &d.Name); err != nil {
+	if err := ReadStrFromReader(r, &d.Name); err != nil {
 		return err
 	}
 	// Size uint64
@@ -1405,7 +1354,7 @@ func ReadRspCopyFileRangeFromReader(d *RspCopyFileRange, r io.Reader) error {
 
 func ReadRspErrorFromReader(d *RspError, r io.Reader) error {
 	// Desc string
-	if err := CopyStrFromReader(r, &d.Desc); err != nil {
+	if err := ReadStrFromReader(r, &d.Desc); err != nil {
 		return err
 	}
 	return nil
@@ -1487,7 +1436,7 @@ func ReadRspReadDirFromReader(d *RspReadDir, r io.Reader) error {
 
 func ReadRspReadLinkFromReader(d *RspReadLink, r io.Reader) error {
 	// TargetPath string
-	if err := CopyStrFromReader(r, &d.TargetPath); err != nil {
+	if err := ReadStrFromReader(r, &d.TargetPath); err != nil {
 		return err
 	}
 	return nil

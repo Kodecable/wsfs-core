@@ -173,7 +173,7 @@ func genGetRequiredSize(buf *bytes.Buffer) error {
 					constSize += int(bs)
 				} else {
 					if field.Type == "string" {
-						constSize += 1
+						constSize += 2
 					}
 					sizes = append(sizes, "len(d."+field.Name+")")
 				}
@@ -227,18 +227,7 @@ func genWrite2Writer(buf *bytes.Buffer) error {
 				}
 			} else if field.Type == "string" {
 				writeFlushBuf()
-				if unsafeMode {
-					fmt.Fprintf(buf, "if _, err := w.Write(unsafe.Slice(unsafe.StringData(d.%s), len(d.%s))); err != nil {\n", field.Name, field.Name)
-				} else {
-					fmt.Fprintf(buf, "if _, err := w.Write([]byte(d.%s)); err != nil {\n", field.Name)
-				}
-				buf.WriteString("return err\n")
-				buf.WriteString("}\n")
-				if unsafeMode {
-					buf.WriteString("if _, err := w.Write([]byte{0}); err != nil {\n")
-				} else {
-					buf.WriteString("if _, err := w.Write([]byte{0}); err != nil {\n")
-				}
+				fmt.Fprintf(buf, "if err := WriteStrToWriter(d.%s, w); err != nil {\n", field.Name)
 				buf.WriteString("return err\n")
 				buf.WriteString("}\n")
 			} else if field.Type == "[]byte" {
@@ -311,7 +300,7 @@ func genReadFromReader(buf *bytes.Buffer) error {
 				}
 			} else if field.Type == "string" {
 				flushBuf()
-				fmt.Fprintf(buf, "if err := CopyStrFromReader(r, &d.%s); err != nil {\n", field.Name)
+				fmt.Fprintf(buf, "if err := ReadStrFromReader(r, &d.%s); err != nil {\n", field.Name)
 				fmt.Fprintf(buf, "return err\n")
 				fmt.Fprintf(buf, "}\n")
 			} else if field.Type == "[]byte" {
@@ -385,7 +374,7 @@ func genReadWithBufferFromReader(buf *bytes.Buffer) error {
 				}
 			} else if field.Type == "string" {
 				flushBuf()
-				fmt.Fprintf(buf, "if err := CopyStrFromReader(r, &d.%s); err != nil {\n", field.Name)
+				fmt.Fprintf(buf, "if err := ReadStrFromReader(r, &d.%s); err != nil {\n", field.Name)
 				fmt.Fprintf(buf, "return err\n")
 				fmt.Fprintf(buf, "}\n")
 			} else if field.Type == "[]byte" {

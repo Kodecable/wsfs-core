@@ -255,6 +255,9 @@ func (s *Session) notifyAllMarksClosed() {
 }
 
 func (s *Session) notifyAllMarksWithDesc(desc string) {
+	if len(desc) > wsfsprotocol.MaxErrorDescLength {
+		desc = desc[:wsfsprotocol.MaxErrorDescLength]
+	}
 	for i := range 256 {
 		if s.marks[i].TryLock() {
 			s.marks[i].Unlock()
@@ -264,7 +267,11 @@ func (s *Session) notifyAllMarksWithDesc(desc string) {
 		buf := bufPool.Get().(*util.Buffer)
 		buf.Reset()
 		buf.Write([]byte{uint8(i), wsfsprotocol.ErrorIO})
-		wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: desc}, buf)
+		if err := wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: desc}, buf); err != nil {
+			buf.Reset()
+			buf.Write([]byte{uint8(i), wsfsprotocol.ErrorIO})
+			_ = wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: "bad synthetic error response"}, buf)
+		}
 		s.responses[i] <- buf
 	}
 }

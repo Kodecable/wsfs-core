@@ -266,6 +266,9 @@ func (s *session) writeRspError(clientMark uint8, ec uint8, desc string) {
 	if !s.beginRsp(clientMark, ec) {
 		return
 	}
+	if len(desc) > wsfsprotocol.MaxErrorDescLength {
+		desc = desc[:wsfsprotocol.MaxErrorDescLength]
+	}
 	err := wsfsprotocol.WriteRspErrorToWriter(wsfsprotocol.RspError{Desc: desc}, s.writer)
 	s.writeDone(err)
 }

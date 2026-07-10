@@ -6,8 +6,10 @@ const (
 	MaxMsgSize        int = 8192
 	MaxCommandLength  int = MaxMsgSize
 	MaxResponseLength int = MaxMsgSize
-	WSSubprotocol         = "WSFS/draft.5"
+	WSSubprotocol         = "WSFS/draft.6"
 )
+
+const MaxErrorDescLength int = MaxResponseLength - 4 // header(2) + string length prefix(2)
 
 const (
 	CmdOpen            uint8 = 1
