@@ -33,7 +33,7 @@ func listen(c config.Listener) (listener net.Listener, tlsConfig *tls.Config, er
 			if fi.Mode()&os.ModeSocket != 0 {
 				err = os.Remove(c.Address)
 				if err != nil {
-					err = fmt.Errorf("unable to remove old sock file: %e", err)
+					err = fmt.Errorf("unable to remove old sock file: %w", err)
 					return
 				}
 			} else {

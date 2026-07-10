@@ -19,7 +19,7 @@ func NewUsers(conf config.Server, anonymousUsername string) (users Users, anonym
 			if st.Id == "" {
 				err = fmt.Errorf("default storage repeated")
 			} else {
-				err = fmt.Errorf("storage id '%s' repeated", st.Id)
+				err = fmt.Errorf("storage id %q repeated", st.Id)
 			}
 			return
 		}
@@ -33,7 +33,7 @@ func NewUsers(conf config.Server, anonymousUsername string) (users Users, anonym
 
 	for _, us := range conf.Users {
 		if _, ok := users[us.Name]; ok {
-			err = fmt.Errorf("user '%s' repeated", us.Name)
+			err = fmt.Errorf("user %q repeated", us.Name)
 			return
 		}
 
@@ -43,7 +43,7 @@ func NewUsers(conf config.Server, anonymousUsername string) (users Users, anonym
 		}
 
 		if _, ok := storages[us.Storage]; !ok {
-			err = fmt.Errorf("user '%s' referenced a storage that does not exist", us.Name)
+			err = fmt.Errorf("user %q referenced a storage that does not exist", us.Name)
 			return
 		}
 

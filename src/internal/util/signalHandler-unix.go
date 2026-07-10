@@ -28,7 +28,7 @@ func SetupSignalHandlers(h SignalHandlers) {
 			case syscall.SIGHUP:
 				go tryCall(h.Sighup, h.OnHandlerPanic)
 			case syscall.SIGINT:
-				go tryCall(h.Sighup, h.OnHandlerPanic)
+				go tryCall(h.Sigint, h.OnHandlerPanic)
 			case syscall.SIGTERM:
 				go tryCall(h.Sigterm, h.OnHandlerPanic)
 			}
