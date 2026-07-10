@@ -13,15 +13,6 @@ function JUnlock() { GLock -= 1 }
 function Exists(o) { return (typeof (o) != 'undefined' && o != null) }
 function $(s) { return document.querySelector(s) }
 
-function UnhumanizeSize(text) {
-    const powers = { 'k': 1, 'm': 2, 'g': 3, 't': 4, 'p': 5, 'e': 6, 'z': 7, 'y': 8 }
-    const regex = /(\d+(?:\.\d+)?)\s?(k|m|g|t|p|e|z|y)?i?b?/i
-
-    let res = regex.exec(text)
-    if (!Exists(res) || !Exists(res[1])) return -1
-    if (!Exists(res[2])) return Number(res[1])
-    return res[1] * Math.pow(1024, powers[res[2].toLowerCase()])
-}
 
 function GracefullyLoad(url, pushState = true) {
     let xhr = new XMLHttpRequest()
@@ -302,12 +293,26 @@ function Sort(field, factor) {
     let items = Array.from(GItemsElement.children)
     let index = GTableHeaderCellIndex[field]
     items.sort(function (o1, o2) {
-        let n1 = o1.children[index].innerHTML;
-        let n2 = o2.children[index].innerHTML;
-        if (field == "size")
-            return (UnhumanizeSize(n1) - UnhumanizeSize(n2)) * sortFactor
-        return ((o1.classList.contains("dirItem") ? "dir" : "file" + n1).
-            localeCompare(o2.classList.contains("dirItem") ? "dir" : "file" + n2)) * sortFactor;
+        let cmp = 0;
+        if (field == "size") {
+            let s1 = parseInt(o1.children[index].getAttribute("title"));
+            let s2 = parseInt(o2.children[index].getAttribute("title"));
+            if (isNaN(s1)) s1 = -1;
+            if (isNaN(s2)) s2 = -1;
+            cmp = s1 - s2;
+        } else if (field == "time") {
+            let t1 = Date.parse(o1.children[index].getAttribute("title"));
+            let t2 = Date.parse(o2.children[index].getAttribute("title"));
+            if (isNaN(t1)) t1 = -1;
+            if (isNaN(t2)) t2 = -1;
+            cmp = t1 - t2;
+        }
+        if (cmp != 0) return cmp * sortFactor;
+        
+        let isDir1 = o1.classList.contains("dirItem");
+        let isDir2 = o2.classList.contains("dirItem");
+        if (isDir1 != isDir2) return isDir1 ? -1 : 1;
+        return sortFactor * (o1.children[index].innerHTML.localeCompare(o2.children[index].innerHTML));
     })
     for (let value of items) {
         GItemsElement.appendChild(value)
@@ -340,8 +345,13 @@ function initWebui(reload) {
         }
     }
     GItemsElement = $("#files>tbody")
-    for (let elem of GItemsElement.children)
+    for (let elem of GItemsElement.children) {
         elem.setAttribute("title", elem.getElementsByTagName("a")[0].textContent)
+        // convert to local time
+        let d = new Date(elem.children[2].getAttribute("title"))
+        let pad = (n) => String(n).padStart(2, "0")
+        elem.children[2].innerHTML = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+    }
     GItemsElement.addEventListener("click", ElementAGracefullyLoad)
     $(".path").addEventListener("click", ElementAGracefullyLoad)
     Sort("name", 1)

@@ -1,5 +1,6 @@
 {% import (
     "net/url"
+    "net/http"
     "strings"
     "time"
     "github.com/dustin/go-humanize"
@@ -54,8 +55,8 @@ type FileInfo struct {
                     This way won't.
                     Golang std http server do not decode '+' to ' ' in path.
                 {% endcomment %}
-                <td>{% if !file.IsDir || showDirSize %}{%s= humanize.IBytes(uint64(file.Size)) %}{% endif %}</td>
-                <td>{%s= file.MTime.Format("2006-01-02 15:04:05") %}</td>
+                <td {% if !file.IsDir || showDirSize %}{% space %}title="{%dl file.Size %}{% space %}Byte(s)"{% endif %}>{% if !file.IsDir || showDirSize %}{%s= humanize.IBytes(uint64(file.Size)) %}{% endif %}</td>
+                <td title="{%s= file.MTime.UTC().Format(http.TimeFormat) %}">{%s= file.MTime.Format("2006-01-02 15:04:05") %}</td>
             </tr>
             {% endfor %}
             {% endstripspace %}

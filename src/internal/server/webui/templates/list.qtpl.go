@@ -7,25 +7,26 @@ package templates
 //line list.qtpl:1
 import (
 	"github.com/dustin/go-humanize"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
 
-//line list.qtpl:8
+//line list.qtpl:9
 import (
 	qtio422016 "io"
 
 	qt422016 "github.com/valyala/quicktemplate"
 )
 
-//line list.qtpl:8
+//line list.qtpl:9
 var (
 	_ = qtio422016.Copy
 	_ = qt422016.AcquireByteBuffer
 )
 
-//line list.qtpl:9
+//line list.qtpl:10
 type FileInfo struct {
 	Name  string
 	IsDir bool
@@ -33,9 +34,9 @@ type FileInfo struct {
 	MTime time.Time
 }
 
-//line list.qtpl:17
+//line list.qtpl:18
 func StreamList(qw422016 *qt422016.Writer, cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool, ReadOnly bool) {
-//line list.qtpl:17
+//line list.qtpl:18
 	qw422016.N().S(`<!DOCTYPE html>
 <html lang="en">
 
@@ -43,103 +44,103 @@ func StreamList(qw422016 *qt422016.Writer, cacheId string, paths []string, files
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta name="viewport" content="width=device-width">
     <title>`)
-//line list.qtpl:23
+//line list.qtpl:24
 	if len(paths) != 1 {
-//line list.qtpl:23
+//line list.qtpl:24
 		qw422016.E().S(paths[len(paths)-1])
-//line list.qtpl:23
+//line list.qtpl:24
 		qw422016.N().S(` - `)
-//line list.qtpl:23
+//line list.qtpl:24
 	}
-//line list.qtpl:23
+//line list.qtpl:24
 	qw422016.N().S(`WSFS WebUI</title>
     <script type="text/javascript">const GCacheId="`)
-//line list.qtpl:24
+//line list.qtpl:25
 	qw422016.N().S(cacheId)
-//line list.qtpl:24
+//line list.qtpl:25
 	qw422016.N().S(`";const GReadOnly=`)
-//line list.qtpl:24
+//line list.qtpl:25
 	if ReadOnly {
-//line list.qtpl:24
+//line list.qtpl:25
 		qw422016.N().S(`true`)
-//line list.qtpl:24
+//line list.qtpl:25
 	} else {
-//line list.qtpl:24
+//line list.qtpl:25
 		qw422016.N().S(`false`)
-//line list.qtpl:24
+//line list.qtpl:25
 	}
-//line list.qtpl:24
+//line list.qtpl:25
 	qw422016.N().S(`</script>
     <link rel="shortcut icon" href="/img/favicon.ico?webui-assets=`)
-//line list.qtpl:25
+//line list.qtpl:26
 	qw422016.N().S(cacheId)
-//line list.qtpl:25
+//line list.qtpl:26
 	qw422016.N().S(`">
     <script src="/js/list.js?webui-assets=`)
-//line list.qtpl:26
+//line list.qtpl:27
 	qw422016.N().S(cacheId)
-//line list.qtpl:26
+//line list.qtpl:27
 	qw422016.N().S(`"></script>
     `)
-//line list.qtpl:27
+//line list.qtpl:28
 	if customJS {
-//line list.qtpl:27
+//line list.qtpl:28
 		qw422016.N().S(`<script src="/custom/custom.js?webui-assets=`)
-//line list.qtpl:27
+//line list.qtpl:28
 		qw422016.N().S(cacheId)
-//line list.qtpl:27
+//line list.qtpl:28
 		qw422016.N().S(`"></script>`)
-//line list.qtpl:27
+//line list.qtpl:28
 	}
-//line list.qtpl:27
+//line list.qtpl:28
 	qw422016.N().S(`
     <link rel="stylesheet" type="text/css" href="/css/main.css?webui-assets=`)
-//line list.qtpl:28
+//line list.qtpl:29
 	qw422016.N().S(cacheId)
-//line list.qtpl:28
+//line list.qtpl:29
 	qw422016.N().S(`">
     <link rel="stylesheet" type="text/css" href="/css/list.css?webui-assets=`)
-//line list.qtpl:29
+//line list.qtpl:30
 	qw422016.N().S(cacheId)
-//line list.qtpl:29
+//line list.qtpl:30
 	qw422016.N().S(`">
     `)
-//line list.qtpl:30
+//line list.qtpl:31
 	if customCSS {
-//line list.qtpl:30
+//line list.qtpl:31
 		qw422016.N().S(`<link rel="stylesheet" type="text/css" href="/custom/custom.css?webui-assets=`)
-//line list.qtpl:30
+//line list.qtpl:31
 		qw422016.N().S(cacheId)
-//line list.qtpl:30
+//line list.qtpl:31
 		qw422016.N().S(`">`)
-//line list.qtpl:30
+//line list.qtpl:31
 	}
-//line list.qtpl:30
+//line list.qtpl:31
 	qw422016.N().S(`
 </head>
 
 <body data-cacheid="`)
-//line list.qtpl:33
+//line list.qtpl:34
 	qw422016.N().S(cacheId)
-//line list.qtpl:33
+//line list.qtpl:34
 	qw422016.N().S(`">
     <main class="page column">
         <div class="path">`)
-//line list.qtpl:36
+//line list.qtpl:37
 	for i, path := range paths {
-//line list.qtpl:36
+//line list.qtpl:37
 		qw422016.N().S(`<a href="`)
-//line list.qtpl:37
-		qw422016.N().S(strings.Repeat("../", len(paths)-i-1))
-//line list.qtpl:37
-		qw422016.N().S(`">`)
-//line list.qtpl:37
-		qw422016.E().S(path)
-//line list.qtpl:37
-		qw422016.N().S(`</a>`)
 //line list.qtpl:38
-	}
+		qw422016.N().S(strings.Repeat("../", len(paths)-i-1))
+//line list.qtpl:38
+		qw422016.N().S(`">`)
+//line list.qtpl:38
+		qw422016.E().S(path)
+//line list.qtpl:38
+		qw422016.N().S(`</a>`)
 //line list.qtpl:39
+	}
+//line list.qtpl:40
 	qw422016.N().S(`
         </div>
         <table id="files">
@@ -147,96 +148,116 @@ func StreamList(qw422016 *qt422016.Writer, cacheId string, paths []string, files
             <th id="nameHeader" data-t>Name</th>
             <th id="sizeHeader" data-t>Size</th>
             <th id="timeHeader" data-t>Modification Time</th>`)
-//line list.qtpl:45
+//line list.qtpl:46
 	qw422016.N().S(`</thead><tbody>`)
-//line list.qtpl:48
-	for _, file := range files {
 //line list.qtpl:49
+	for _, file := range files {
+//line list.qtpl:50
 		qw422016.N().S(`
 `)
-//line list.qtpl:49
+//line list.qtpl:50
 		qw422016.N().S(`            `)
-//line list.qtpl:49
+//line list.qtpl:50
 		qw422016.N().S(`<tr`)
-//line list.qtpl:50
+//line list.qtpl:51
 		if file.IsDir {
-//line list.qtpl:50
+//line list.qtpl:51
 			qw422016.N().S(` `)
-//line list.qtpl:50
+//line list.qtpl:51
 			qw422016.N().S(`class="dirItem"`)
-//line list.qtpl:50
+//line list.qtpl:51
 		}
-//line list.qtpl:50
+//line list.qtpl:51
 		qw422016.N().S(`><td><div><a href="`)
-//line list.qtpl:51
+//line list.qtpl:52
 		qw422016.N().S((&url.URL{Path: file.Name}).EscapedPath())
-//line list.qtpl:51
+//line list.qtpl:52
 		if file.IsDir {
-//line list.qtpl:51
+//line list.qtpl:52
 			qw422016.N().S(`/`)
-//line list.qtpl:51
+//line list.qtpl:52
 		}
-//line list.qtpl:51
+//line list.qtpl:52
 		qw422016.N().S(`">`)
-//line list.qtpl:51
+//line list.qtpl:52
 		qw422016.E().S(file.Name)
-//line list.qtpl:51
+//line list.qtpl:52
 		qw422016.N().S(`</a></div></td>`)
-//line list.qtpl:56
-		qw422016.N().S(`<td>`)
 //line list.qtpl:57
+		qw422016.N().S(`<td`)
+//line list.qtpl:58
 		if !file.IsDir || showDirSize {
-//line list.qtpl:57
-			qw422016.N().S(humanize.IBytes(uint64(file.Size)))
-//line list.qtpl:57
+//line list.qtpl:58
+			qw422016.N().S(` `)
+//line list.qtpl:58
+			qw422016.N().S(`title="`)
+//line list.qtpl:58
+			qw422016.N().DL(file.Size)
+//line list.qtpl:58
+			qw422016.N().S(` `)
+//line list.qtpl:58
+			qw422016.N().S(`Byte(s)"`)
+//line list.qtpl:58
 		}
-//line list.qtpl:57
-		qw422016.N().S(`</td><td>`)
 //line list.qtpl:58
+		qw422016.N().S(`>`)
+//line list.qtpl:58
+		if !file.IsDir || showDirSize {
+//line list.qtpl:58
+			qw422016.N().S(humanize.IBytes(uint64(file.Size)))
+//line list.qtpl:58
+		}
+//line list.qtpl:58
+		qw422016.N().S(`</td><td title="`)
+//line list.qtpl:59
+		qw422016.N().S(file.MTime.UTC().Format(http.TimeFormat))
+//line list.qtpl:59
+		qw422016.N().S(`">`)
+//line list.qtpl:59
 		qw422016.N().S(file.MTime.Format("2006-01-02 15:04:05"))
-//line list.qtpl:58
+//line list.qtpl:59
 		qw422016.N().S(`</td></tr>`)
-//line list.qtpl:60
-	}
 //line list.qtpl:61
+	}
+//line list.qtpl:62
 	qw422016.N().S(`
             </tbody>
         </table>
     </main>
 </body>
 <script src="/js/i18n.js?webui-assets=`)
-//line list.qtpl:66
+//line list.qtpl:67
 	qw422016.N().S(cacheId)
-//line list.qtpl:66
+//line list.qtpl:67
 	qw422016.N().S(`"></script>
 
 </html>
 `)
-//line list.qtpl:69
+//line list.qtpl:70
 }
 
-//line list.qtpl:69
+//line list.qtpl:70
 func WriteList(qq422016 qtio422016.Writer, cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool, ReadOnly bool) {
-//line list.qtpl:69
+//line list.qtpl:70
 	qw422016 := qt422016.AcquireWriter(qq422016)
-//line list.qtpl:69
+//line list.qtpl:70
 	StreamList(qw422016, cacheId, paths, files, showDirSize, customCSS, customJS, ReadOnly)
-//line list.qtpl:69
+//line list.qtpl:70
 	qt422016.ReleaseWriter(qw422016)
-//line list.qtpl:69
+//line list.qtpl:70
 }
 
-//line list.qtpl:69
+//line list.qtpl:70
 func List(cacheId string, paths []string, files []FileInfo, showDirSize bool, customCSS bool, customJS bool, ReadOnly bool) string {
-//line list.qtpl:69
+//line list.qtpl:70
 	qb422016 := qt422016.AcquireByteBuffer()
-//line list.qtpl:69
+//line list.qtpl:70
 	WriteList(qb422016, cacheId, paths, files, showDirSize, customCSS, customJS, ReadOnly)
-//line list.qtpl:69
+//line list.qtpl:70
 	qs422016 := string(qb422016.B)
-//line list.qtpl:69
+//line list.qtpl:70
 	qt422016.ReleaseByteBuffer(qb422016)
-//line list.qtpl:69
+//line list.qtpl:70
 	return qs422016
-//line list.qtpl:69
+//line list.qtpl:70
 }
