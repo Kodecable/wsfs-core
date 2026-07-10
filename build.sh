@@ -71,12 +71,12 @@ gen_minifiedwebui() {
     cp -r resources~/img resources/img
     cd resources~/js
     for file in ./*; do
-        minify -o ../../resources/js/${file} ${file} > /dev/null
+        minify -o "../../resources/js/${file}" "${file}" > /dev/null
     done
     cd ../..
     cd resources~/css
     for file in ./*; do
-        minify -o ../../resources/css/${file} ${file} > /dev/null
+        minify -o "../../resources/css/${file}" "${file}" > /dev/null
     done
 }
 
@@ -111,6 +111,7 @@ build(){
     ENVVAR="CGO_ENABLED=0 GOOS=$1"
     case $2 in
         amd64*) ENVVAR="$ENVVAR GOARCH=amd64 GOAMD64=${2:5}" ;;
+        arm) ENVVAR="$ENVVAR GOARCH=arm GOARM=7" ;;
         *) ENVVAR="$ENVVAR GOARCH=$2" ;;
     esac
     

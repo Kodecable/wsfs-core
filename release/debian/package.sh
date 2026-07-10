@@ -61,6 +61,7 @@ shift "$((OPTIND - 1))"
 release_require_command dpkg-deb
 release_require_command install
 release_require_command du
+release_require_command awk
 
 release_require_file "${example_file}"
 release_require_file "${license_file}"
@@ -102,7 +103,7 @@ for build_arch in "${build_arches[@]}"; do
     release_prepare_dir "${stage_dir}"
 
     release_install_file "${binary_path}" "${pkg_root}/usr/bin/wsfs" 0755
-    release_install_file "${example_file}" "${pkg_root}/etc/wsfs/example.toml" 0644
+    release_install_file "${example_file}" "${pkg_root}/etc/wsfs/server.example.toml" 0644
     release_install_file "${completion_dir}/bash/wsfs" "${pkg_root}/usr/share/bash-completion/completions/wsfs" 0644
 
     mkdir -p "${control_dir}"
@@ -121,11 +122,7 @@ Homepage: ${PACKAGE_HOMEPAGE}
 Description: ${PACKAGE_DESCRIPTION}
 EOF
 
-    cat > "${control_dir}/conffiles" <<'EOF'
-/etc/wsfs/example.toml
-EOF
-
-    chmod 0644 "${control_dir}/control" "${control_dir}/conffiles"
+    chmod 0644 "${control_dir}/control"
 
     output_path="${output_dir}/wsfs-core-package-debian-${deb_arch}.deb"
     echo "packaging debian/${deb_arch} from wsfs-linux-${build_arch}"

@@ -128,13 +128,13 @@ license=('${PACKAGE_LICENSE}')
 options=('!debug')
 depends=()
 optdepends=('fuse3: for no-direct mount')
-backup=('etc/wsfs/example.toml')
+backup=()
 source=('wsfs' 'example.toml' 'wsfs.bash' 'wsfs.fish' '_wsfs' 'LICENSE')
 sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
     install -Dm755 "\${srcdir}/wsfs" "\${pkgdir}/usr/bin/wsfs"
-    install -Dm644 "\${srcdir}/example.toml" "\${pkgdir}/etc/wsfs/example.toml"
+    install -Dm644 "\${srcdir}/example.toml" "\${pkgdir}/etc/wsfs/server.example.toml"
     install -Dm644 "\${srcdir}/wsfs.bash" "\${pkgdir}/usr/share/bash-completion/completions/wsfs"
     install -Dm644 "\${srcdir}/wsfs.fish" "\${pkgdir}/usr/share/fish/vendor_completions.d/wsfs.fish"
     install -Dm644 "\${srcdir}/_wsfs" "\${pkgdir}/usr/share/zsh/site-functions/_wsfs"
