@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"wsfs-core/internal/client"
+	clientSession "wsfs-core/internal/client/session"
 	cmdpassword "wsfs-core/internal/cmd/password"
 	"wsfs-core/internal/util"
 	"wsfs-core/version"
@@ -34,6 +35,7 @@ var (
 	logLevel         zerolog.Level = zerolog.InfoLevel
 	certHash         string
 	passwordSource   string
+	flockMode        clientSession.FlockMode
 )
 
 var MountCmd = &cobra.Command{
@@ -112,6 +114,7 @@ var MountCmd = &cobra.Command{
 			EnableFuseLog:    false,
 			FuseFsName:       inputedEndpoint.Host,
 			FsIds:            fsIds,
+			FlockMode:        flockMode,
 		}
 		if logLevel == zerolog.TraceLevel {
 			opts.EnableFuseLog = true
@@ -169,4 +172,12 @@ func init() {
 		"Sets logging level; can be 'trace', 'debug', 'info', 'warning', 'error', 'fatal', 'panic'")
 	MountCmd.Flags().StringVarP(&certHash, "cert-hash", "", "", "Only verify TLS server cert hash; copy the hash from the connection log")
 	MountCmd.Flags().StringVarP(&passwordSource, "password", "", "", cmdpassword.FlagUsage)
+	MountCmd.Flags().VarP(
+		enumflag.New(&flockMode, "MODE", map[clientSession.FlockMode][]string{
+			clientSession.FlockModeOFD:         {"ofd"},
+			clientSession.FlockModeUnsupported: {"unsupported"},
+			clientSession.FlockModeNoop:        {"noop"},
+		}, enumflag.EnumCaseInsensitive),
+		"flock", "",
+		"BSD flock handling on Unix: 'ofd' maps to whole-file OFD locks, 'unsupported' returns ENOTSUP, 'noop' succeeds without locking")
 }

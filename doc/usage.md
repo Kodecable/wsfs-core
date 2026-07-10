@@ -106,6 +106,12 @@ The SIGHUP/SIGINT/SIGTERM signals are supported for graceful system shutdown. It
 
 If you are on Android, you may need root to mount, use the option `--direct-mount`.
 
+The `--flock` option controls how BSD `flock(2)` requests are handled:
+
+- `ofd` maps `flock` to whole-file OFD locks. This is the default. It provides practical cross-client locking, but `flock` shares the same conflict domain as WSFS fcntl/OFD byte-range locks and is not a strict Linux local-filesystem `flock` emulation.
+- `unsupported` returns `ENOTSUP` for `flock` requests.
+- `noop` reports `flock` success without taking any lock. 
+
 #### Windows
 
 Windows will not accept special characters (e.g., "<") in filenames. Please avoid using them.

@@ -21,17 +21,19 @@ type fileSystem struct {
 
 	mountpoint string
 	fsIds      util.FsIds
+	flockMode  session.FlockMode
 
 	structTimeout   time.Duration
 	negativeTimeout time.Duration
 }
 
 func NewFS(sesseion *session.Session, fsIds util.FsIds,
-	mountpoint string, structTimeout, negativeTimeout time.Duration) *fileSystem {
+	mountpoint string, structTimeout, negativeTimeout time.Duration, flockMode session.FlockMode) *fileSystem {
 	return &fileSystem{
 		session:         sesseion,
 		mountpoint:      mountpoint,
 		fsIds:           fsIds,
+		flockMode:       flockMode,
 		structTimeout:   structTimeout,
 		negativeTimeout: negativeTimeout,
 	}

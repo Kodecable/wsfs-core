@@ -33,6 +33,7 @@ type MountOption struct {
 	EnableFuseLog    bool
 	FuseFsName       string
 	FsIds            util.FsIds
+	FlockMode        session.FlockMode
 }
 
 func dial(url, username, password, resumeId, expectedCertHash string) (conn *websocket.Conn, rsp *http.Response, err error) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"syscall"
 	"unsafe"
+	"wsfs-core/internal/client/session"
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/share/wsfsunixconv"
 
@@ -67,6 +68,19 @@ func fileLockToProtocol(fileLock *fuse.FileLock) (wsfsprotocol.FileLockInfo, boo
 	return wsfsprotocol.FileLockInfo{Start: fileLock.Start, Size: lockLength, Type: lockType}, true
 }
 
+func wholeFileLockToProtocol(fileLock *fuse.FileLock) (wsfsprotocol.FileLockInfo, bool) {
+	lockType, ok := wsfsunixconv.LockTypeFromUnix[int16(fileLock.Typ)]
+	if !ok {
+		return wsfsprotocol.FileLockInfo{}, false
+	}
+	return wsfsprotocol.FileLockInfo{
+		Type:   lockType,
+		Whence: wsfsprotocol.WHENCE_SET,
+		Start:  0,
+		Size:   0,
+	}, true
+}
+
 func fileLockFromProtocol(dst *fuse.FileLock, fileLock wsfsprotocol.FileLockInfo) bool {
 	lockType, ok := wsfsunixconv.LockTypeToUnix[fileLock.Type]
 	if !ok {
@@ -83,6 +97,10 @@ func fileLockFromProtocol(dst *fuse.FileLock, fileLock wsfsprotocol.FileLockInfo
 	return true
 }
 
+func markNoLock(out *fuse.FileLock) {
+	*out = fuse.FileLock{Typ: uint32(syscall.F_UNLCK)}
+}
+
 var _ = (fusefs.NodeGetlker)((*fsNode)(nil))
 
 func (n *fsNode) Getlk(_ context.Context, f fusefs.FileHandle, _ uint64, lk *fuse.FileLock, flags uint32, out *fuse.FileLock) syscall.Errno {
@@ -91,7 +109,28 @@ func (n *fsNode) Getlk(_ context.Context, f fusefs.FileHandle, _ uint64, lk *fus
 		return syscall.EBADF
 	}
 	if flags&fuse.FUSE_LK_FLOCK != 0 {
-		return syscall.ENOTSUP
+		switch n.fsdata.flockMode {
+		case session.FlockModeNoop:
+			markNoLock(out)
+			return 0
+		case session.FlockModeOFD:
+			wsfsLock, ok := wholeFileLockToProtocol(lk)
+			if !ok {
+				return syscall.EINVAL
+			}
+			outLk, code := n.fsdata.session.CmdGetFileLock(fd, wsfsLock)
+			if code != wsfsprotocol.ErrorOK {
+				return errnoFromCode(code)
+			}
+			if !fileLockFromProtocol(out, outLk) {
+				return syscall.EINVAL
+			}
+			return 0
+		case session.FlockModeUnsupported:
+			return syscall.ENOTSUP
+		default:
+			return syscall.ENOTSUP
+		}
 	}
 	wsfsLock, ok := fileLockToProtocol(lk)
 	if !ok {
@@ -115,7 +154,20 @@ func (n *fsNode) Setlk(_ context.Context, f fusefs.FileHandle, _ uint64, lk *fus
 		return syscall.EBADF
 	}
 	if flags&fuse.FUSE_LK_FLOCK != 0 {
-		return syscall.ENOTSUP
+		switch n.fsdata.flockMode {
+		case session.FlockModeNoop:
+			return 0
+		case session.FlockModeOFD:
+			wsfsLock, ok := wholeFileLockToProtocol(lk)
+			if !ok {
+				return syscall.EINVAL
+			}
+			return errnoFromCode(n.fsdata.session.CmdSetFileLock(fd, wsfsLock))
+		case session.FlockModeUnsupported:
+			return syscall.ENOTSUP
+		default:
+			return syscall.ENOTSUP
+		}
 	}
 	wsfsLock, ok := fileLockToProtocol(lk)
 	if !ok {
@@ -132,7 +184,20 @@ func (n *fsNode) Setlkw(_ context.Context, f fusefs.FileHandle, _ uint64, lk *fu
 		return syscall.EBADF
 	}
 	if flags&fuse.FUSE_LK_FLOCK != 0 {
-		return syscall.ENOTSUP
+		switch n.fsdata.flockMode {
+		case session.FlockModeNoop:
+			return 0
+		case session.FlockModeOFD:
+			wsfsLock, ok := wholeFileLockToProtocol(lk)
+			if !ok {
+				return syscall.EINVAL
+			}
+			return errnoFromCode(n.fsdata.session.CmdSetFileLockWait(fd, wsfsLock))
+		case session.FlockModeUnsupported:
+			return syscall.ENOTSUP
+		default:
+			return syscall.ENOTSUP
+		}
 	}
 	wsfsLock, ok := fileLockToProtocol(lk)
 	if !ok {

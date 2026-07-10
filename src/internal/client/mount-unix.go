@@ -22,7 +22,8 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 		opt.FsIds,
 		mountpoint,
 		opt.AttrTimeout,
-		opt.NegativeTimeout)
+		opt.NegativeTimeout,
+		opt.FlockMode)
 	root := fsroot.NewNode()
 
 	opts := &fs.Options{
@@ -35,6 +36,7 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 			Debug:             version.IsDebug(),
 			DirectMount:       !opt.UseFusemount,
 			DirectMountStrict: !opt.UseFusemount,
+			EnableLocks:       true,
 			FsName:            opt.FuseFsName, // First column in "df -T"
 			Name:              "wsfs",         // Second column in "df -T" will be shown as "fuse." + Name
 		},
