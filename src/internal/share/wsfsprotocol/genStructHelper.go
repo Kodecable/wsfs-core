@@ -86,7 +86,7 @@ func parseStructInfos(srcPath string) error {
 		}
 		for _, field := range structType.Fields.List {
 			if len(field.Names) == 0 {
-				err = fmt.Errorf("not supported no name field in '%s'", typeSpec.Name.Name)
+				err = fmt.Errorf("not supported no name field in %q", typeSpec.Name.Name)
 				return false
 			}
 			for _, name := range field.Names {
@@ -306,7 +306,7 @@ func genReadFromReader(buf *bytes.Buffer) error {
 			} else if field.Type == "[]byte" {
 				flushBuf()
 				if i != len(info.Fields)-1 {
-					return fmt.Errorf("[]byte not in the end of struct '%s'", typeName)
+					return fmt.Errorf("[]byte not in the end of struct %q", typeName)
 				}
 				fmt.Fprintf(buf, "var err error\n")
 				fmt.Fprintf(buf, "d.%s, err = io.ReadAll(r)\n", field.Name)
@@ -380,7 +380,7 @@ func genReadWithBufferFromReader(buf *bytes.Buffer) error {
 			} else if field.Type == "[]byte" {
 				flushBuf()
 				if i != len(info.Fields)-1 {
-					return fmt.Errorf("[]byte not in the end of struct '%s'", typeName)
+					return fmt.Errorf("[]byte not in the end of struct %q", typeName)
 				}
 				fmt.Fprintf(buf, "var err error\n")
 				fmt.Fprintf(buf, "d.%s, err = readAllToBuffer(r, dataBuf)\n", field.Name)
@@ -462,7 +462,7 @@ func genHelper() error {
 	}
 	if err == nil {
 		if !strings.Contains(string(data[:min(len(banner)+64, len(data))]), banner) {
-			return fmt.Errorf("'%s' exists and not generated code", writeTo)
+			return fmt.Errorf("%q exists and not generated code", writeTo)
 		}
 	}
 

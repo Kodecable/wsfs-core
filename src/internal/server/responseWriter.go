@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"net/http"
 )
@@ -23,9 +24,9 @@ func (rsp *responseWriter) WriteHeader(status int) {
 }
 
 func (rsp *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	//h, ok := rsp.ResponseWriter.(http.Hijacker)
-	//if !ok {
-	//	return nil, nil, errors.New("hijack not supported")
-	//}
-	return rsp.ResponseWriter.(http.Hijacker).Hijack()
+	h, ok := rsp.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("hijack not supported")
+	}
+	return h.Hijack()
 }

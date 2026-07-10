@@ -29,7 +29,7 @@ type Hub struct {
 
 	lock            sync.Mutex
 	reloadReentrant atomic.Bool
-	wsfsRegistry    *wsfs.SessionRegistry
+	wsfsRegistry    atomic.Pointer[wsfs.SessionRegistry]
 }
 
 func NewHub() (h *Hub, err error) {
@@ -48,9 +48,9 @@ func (h *Hub) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
 }
 
 func (h *Hub) Run(c config.Server) error {
-	h.ensureWSFSRegistry(c.WSFS)
+	registry := h.ensureWSFSRegistry(c.WSFS)
 
-	server, err := NewServer(c, h.wsfsRegistry)
+	server, err := NewServer(c, registry)
 	if err != nil {
 		return err
 	}
@@ -85,8 +85,8 @@ func (h *Hub) Run(c config.Server) error {
 
 	err = <-h.exitErrorChan
 	cleanListen(c.Listener)
-	if h.wsfsRegistry != nil {
-		h.wsfsRegistry.Stop()
+	if registry := h.wsfsRegistry.Load(); registry != nil {
+		registry.Stop()
 	}
 	return err
 }
@@ -121,9 +121,9 @@ func (h *Hub) doReload() {
 		return
 	}
 
-	h.ensureWSFSRegistry(conf.WSFS)
+	registry := h.ensureWSFSRegistry(conf.WSFS)
 
-	server, err := NewServer(conf, h.wsfsRegistry)
+	server, err := NewServer(conf, registry)
 	if err != nil {
 		log.Error().Err(err).Msg("Reload failed: Unable to new server")
 		return
@@ -167,6 +167,9 @@ func (h *Hub) doReload() {
 		}
 	}()
 
+	// Intentionally wait without a deadline so in-flight requests can finish and
+	// long-lived wsfs sessions can survive a listener reload.
+	// TODO: Emit a warning if shutdown remains blocked for too long.
 	shutdownErr := oldHTTPServer.Shutdown(context.Background())
 	if shutdownErr != nil && !errors.Is(shutdownErr, http.ErrServerClosed) {
 		log.Error().Err(shutdownErr).Msg("Old server shutdown failed")
@@ -179,26 +182,38 @@ func (h *Hub) doReload() {
 func (h *Hub) IssueShutdown() {
 	log.Warn().Msg("Shutting down")
 	if h.httpServer != nil {
+		// Intentionally wait without a deadline so active wsfs sessions are not
+		// force-terminated during hub shutdown.
+		// TODO: Emit a warning if shutdown remains blocked for too long.
 		err := h.httpServer.Shutdown(context.Background())
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error().Err(err).Msg("Server shutdown failed")
 		}
 	}
-	if h.wsfsRegistry != nil {
-		h.wsfsRegistry.Stop()
+	if registry := h.wsfsRegistry.Load(); registry != nil {
+		registry.Stop()
 	}
 }
 
-func (h *Hub) ensureWSFSRegistry(c config.WSFS) {
+func (h *Hub) ensureWSFSRegistry(c config.WSFS) *wsfs.SessionRegistry {
 	if !c.Enable {
-		return
+		return nil
 	}
-	if h.wsfsRegistry == nil {
-		h.wsfsRegistry = wsfs.NewSessionRegistry(c)
-		go h.wsfsRegistry.CollectInactiveSessions()
-		return
+
+	if registry := h.wsfsRegistry.Load(); registry != nil {
+		registry.Reconfigure(c)
+		return registry
 	}
-	h.wsfsRegistry.Reconfigure(c)
+
+	registry := wsfs.NewSessionRegistry(c)
+	if h.wsfsRegistry.CompareAndSwap(nil, registry) {
+		go registry.CollectInactiveSessions()
+		return registry
+	}
+
+	registry = h.wsfsRegistry.Load()
+	registry.Reconfigure(c)
+	return registry
 }
 
 func listenerEquals(a, b config.Listener) bool {

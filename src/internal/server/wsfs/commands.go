@@ -42,7 +42,7 @@ func (s *session) dispatchCommand(r io.Reader) (err error) {
 	var header [2]byte
 	_, err = io.ReadFull(r, header[:])
 	if err != nil {
-		return fmt.Errorf("bad command header: %e", err)
+		return fmt.Errorf("bad command header: %w", err)
 	}
 	//log.Debug().Uint8("Cm", header[0]).Uint8("Op", header[1]).Msg("Recived commnad")
 	s.doCommandCall(header[0], header[1], r)
