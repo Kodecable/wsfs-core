@@ -439,49 +439,55 @@ func (s *session) cmdReadDirPlus(clientMark uint8, req wsfsprotocol.CmdReadDirPl
 	s.writeRspOK(clientMark)
 }
 
-func (s *session) cmdWriteStreamOpen(clientMark uint8, req wsfsprotocol.CmdWriteStreamOpenStruct) {
-	stream := &writeStreamState{
-		offset: req.Offset,
+func (s *session) cmdWriteStreamOpen(clientMark uint8, req wsfsprotocol.CmdWriteStreamOpenStruct, dataBuf []byte) {
+	rsfd, ok := s.fds.Load(req.FD)
+	if !ok {
+		if dataBuf != nil {
+			s.releaseFastBuffer(dataBuf)
+		}
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalidFD, "bad fd")
+		return
+	}
+
+	stream := &writeStream{
+		session:    s,
+		clientMark: clientMark,
+		input:      make(chan writeStreamInput, writeStreamInputBuffer),
 	}
 	if _, loaded := s.writeStreams.LoadOrStore(clientMark, stream); loaded {
+		if dataBuf != nil {
+			s.releaseFastBuffer(dataBuf)
+		}
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "write stream already open")
 		return
 	}
 
-	if rsfd, ok := s.fds.Load(req.FD); ok {
-		stream.fd = rsfd.(sfd_t)
-	} else {
-		s.markWriteStreamError(clientMark, stream, wsfsprotocol.ErrorInvalidFD, "bad fd")
-	}
+	s.cmdGroup.Go(func() error {
+		stream.run(rsfd.(sfd_t), req.Offset)
+		return nil
+	})
 
-	if len(req.Data) > 0 {
-		s.writeStreamChunk(clientMark, stream, req.Data)
-	}
+	stream.enqueue(writeStreamInput{
+		data:    req.Data,
+		dataBuf: dataBuf,
+	})
 }
 
-func (s *session) cmdWriteStreamData(clientMark uint8, req wsfsprotocol.CmdWriteStreamDataStruct) {
+func (s *session) cmdWriteStreamData(clientMark uint8, req wsfsprotocol.CmdWriteStreamDataStruct, dataBuf []byte) {
 	stream, ok := s.loadWriteStream(clientMark)
 	if !ok {
+		if dataBuf != nil {
+			s.releaseFastBuffer(dataBuf)
+		}
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "write stream not open")
 		return
 	}
 
-	if len(req.Data) > 0 {
-		s.writeStreamChunk(clientMark, stream, req.Data)
-	}
-
-	if req.IsEnd != 0 {
-		s.writeStreams.Delete(clientMark)
-		s.writeRspWriteStreamClose(clientMark, stream.written)
-	}
-}
-
-func (s *session) markWriteStreamError(clientMark uint8, stream *writeStreamState, code uint8, desc string) {
-	if stream.writeErrSent {
-		return
-	}
-	stream.writeErrSent = true
-	s.writeRspError(clientMark, code, desc)
+	stream.enqueue(writeStreamInput{
+		data:    req.Data,
+		dataBuf: dataBuf,
+		isEnd:   req.IsEnd != 0,
+	})
 }
 
 func (s *session) writeRspWriteStreamClose(clientMark uint8, written uint64) {

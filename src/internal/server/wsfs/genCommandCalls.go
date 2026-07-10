@@ -22,12 +22,18 @@ var syncCommands = map[string]bool{
 	"CmdWriteStreamData": true,
 }
 
+var selfManagedBufferCommands = map[string]bool{
+	"CmdWriteStreamOpen": true,
+	"CmdWriteStreamData": true,
+}
+
 type command struct {
-	ConstName  string
-	StructName string
-	MethodName string
-	HasBytes   bool
-	Sync       bool
+	ConstName         string
+	StructName        string
+	MethodName        string
+	HasBytes          bool
+	Sync              bool
+	SelfManagedBuffer bool
 }
 
 func parseBytesStructs(srcPath string) (map[string]bool, error) {
@@ -125,12 +131,20 @@ func genCommandCalls(commands []command, packageName string) ([]byte, error) {
 			fmt.Fprintf(&buf, "goto BadCmdFormat\n")
 			fmt.Fprintf(&buf, "}\n")
 			if cmd.Sync {
-				fmt.Fprintf(&buf, "s.%s(clientMark, req)\n", cmd.MethodName)
-				fmt.Fprintf(&buf, "s.releaseFastBuffer(dataBuf)\n")
+				if cmd.SelfManagedBuffer {
+					fmt.Fprintf(&buf, "s.%s(clientMark, req, dataBuf)\n", cmd.MethodName)
+				} else {
+					fmt.Fprintf(&buf, "s.%s(clientMark, req)\n", cmd.MethodName)
+					fmt.Fprintf(&buf, "s.releaseFastBuffer(dataBuf)\n")
+				}
 			} else {
 				fmt.Fprintf(&buf, "s.cmdGroup.Go(func() error {\n")
-				fmt.Fprintf(&buf, "defer s.releaseFastBuffer(dataBuf)\n")
-				fmt.Fprintf(&buf, "s.%s(clientMark, req)\n", cmd.MethodName)
+				if cmd.SelfManagedBuffer {
+					fmt.Fprintf(&buf, "s.%s(clientMark, req, dataBuf)\n", cmd.MethodName)
+				} else {
+					fmt.Fprintf(&buf, "defer s.releaseFastBuffer(dataBuf)\n")
+					fmt.Fprintf(&buf, "s.%s(clientMark, req)\n", cmd.MethodName)
+				}
 				fmt.Fprintf(&buf, "return nil\n")
 				fmt.Fprintf(&buf, "})\n")
 			}
@@ -185,6 +199,7 @@ func main() {
 	}
 	for i := range commands {
 		commands[i].HasBytes = bytesStructs[commands[i].StructName]
+		commands[i].SelfManagedBuffer = selfManagedBufferCommands[commands[i].ConstName]
 	}
 
 	out, err := genCommandCalls(commands, os.Args[3])

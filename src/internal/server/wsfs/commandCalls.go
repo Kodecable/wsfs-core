@@ -264,8 +264,7 @@ func (s *session) doCommandCall(clientMark, cmd uint8, r io.Reader) {
 			s.releaseFastBuffer(dataBuf)
 			goto BadCmdFormat
 		}
-		s.cmdWriteStreamOpen(clientMark, req)
-		s.releaseFastBuffer(dataBuf)
+		s.cmdWriteStreamOpen(clientMark, req, dataBuf)
 		return
 	case wsfsprotocol.CmdWriteStreamData:
 		var req wsfsprotocol.CmdWriteStreamDataStruct
@@ -275,8 +274,7 @@ func (s *session) doCommandCall(clientMark, cmd uint8, r io.Reader) {
 			s.releaseFastBuffer(dataBuf)
 			goto BadCmdFormat
 		}
-		s.cmdWriteStreamData(clientMark, req)
-		s.releaseFastBuffer(dataBuf)
+		s.cmdWriteStreamData(clientMark, req, dataBuf)
 		return
 	case wsfsprotocol.CmdCloneFileRange:
 		var req wsfsprotocol.CmdCloneFileRangeStruct

@@ -19,6 +19,9 @@ var (
 	ErrSessionBusy = errors.New("wsfs: session busy")
 )
 
+const writeStreamInputBuffer = 4
+const sessionFastBuffer = 32
+
 type session struct {
 	// Lock is an external indicator of whether a session is running.
 	Lock sync.Mutex
@@ -60,7 +63,7 @@ func newSession(registry *SessionRegistry, id string, username string, storage *
 		registry:    registry,
 		storage:     storage,
 		fsIds:       fsIds,
-		fastBuffers: make(chan []byte, 16),
+		fastBuffers: make(chan []byte, sessionFastBuffer),
 	}
 	s.cmdGroup.SetLimit(64)
 	for range cap(s.fastBuffers) {
@@ -110,8 +113,8 @@ func (s *session) stopConn() {
 	if conn != nil && closeStatus == -1 {
 		_ = conn.CloseNow()
 	}
-	_ = s.cmdGroup.Wait()
 	s.clearWriteStreams()
+	_ = s.cmdGroup.Wait()
 	s.connErrLock.Unlock()
 
 	if gracefulClose {
@@ -129,7 +132,8 @@ func (s *session) stopConn() {
 }
 
 func (s *session) clearWriteStreams() {
-	s.writeStreams.Range(func(key, _ any) bool {
+	s.writeStreams.Range(func(key, value any) bool {
+		value.(*writeStream).closeInput()
 		s.writeStreams.Delete(key)
 		return true
 	})
@@ -143,19 +147,66 @@ func (s *session) clearFDs() {
 	})
 }
 
-type writeStreamState struct {
-	fd           sfd_t
-	offset       uint64
-	written      uint64
-	writeErrSent bool
+type writeStreamInput struct {
+	data    []byte
+	dataBuf []byte
+	isEnd   bool
 }
 
-func (s *session) loadWriteStream(clientMark uint8) (*writeStreamState, bool) {
+type writeStream struct {
+	session    *session
+	clientMark uint8
+	input      chan writeStreamInput
+	closeOnce  sync.Once
+}
+
+func (ws *writeStream) enqueue(msg writeStreamInput) {
+	ws.input <- msg
+}
+
+func (ws *writeStream) closeInput() {
+	ws.closeOnce.Do(func() {
+		close(ws.input)
+	})
+}
+
+func (ws *writeStream) releaseInput(msg writeStreamInput) {
+	if msg.dataBuf != nil {
+		ws.session.releaseFastBuffer(msg.dataBuf)
+	}
+}
+
+func (ws *writeStream) run(fd sfd_t, offset uint64) {
+	defer ws.session.writeStreams.Delete(ws.clientMark)
+
+	var writtenTotal uint64
+	writeErrSent := false
+	for msg := range ws.input {
+		if len(msg.data) > 0 && !writeErrSent {
+			written, errCode, errDesc, ok := writeStreamWriteChunk(fd, offset, msg.data)
+			offset += written
+			writtenTotal += written
+			if !ok {
+				writeErrSent = true
+				ws.session.writeRspError(ws.clientMark, errCode, errDesc)
+			}
+		}
+
+		ws.releaseInput(msg)
+
+		if msg.isEnd {
+			ws.session.writeRspWriteStreamClose(ws.clientMark, writtenTotal)
+			return
+		}
+	}
+}
+
+func (s *session) loadWriteStream(clientMark uint8) (*writeStream, bool) {
 	v, ok := s.writeStreams.Load(clientMark)
 	if !ok {
 		return nil, false
 	}
-	return v.(*writeStreamState), true
+	return v.(*writeStream), true
 }
 
 func (s *session) readLoop(conn *websocket.Conn) {

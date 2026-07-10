@@ -557,30 +557,26 @@ func (s *session) cmdWriteAt(clientMark uint8, req wsfsprotocol.CmdWriteAtStruct
 	}
 }
 
-func (s *session) writeStreamChunk(clientMark uint8, stream *writeStreamState, data []byte) {
-	if stream.writeErrSent || len(data) == 0 {
-		return
-	}
-
+func writeStreamWriteChunk(fd sfd_t, offset uint64, data []byte) (uint64, uint8, string, bool) {
+	var totalWritten uint64
 	for len(data) > 0 {
 		var written int
 		var err error
 		ignoringEINTR(func() error {
-			written, err = syscall.Pwrite(int(stream.fd), data, int64(stream.offset))
+			written, err = syscall.Pwrite(int(fd), data, int64(offset))
 			return err
 		})
 		if err != nil {
-			s.markWriteStreamError(clientMark, stream, wsfsErrCode(err), "syscall error")
-			return
+			return totalWritten, wsfsErrCode(err), "syscall error", false
 		}
 		if written == 0 {
-			s.markWriteStreamError(clientMark, stream, wsfsprotocol.ErrorIO, "short write")
-			return
+			return totalWritten, wsfsprotocol.ErrorIO, "short write", false
 		}
-		stream.offset += uint64(written)
-		stream.written += uint64(written)
+		offset += uint64(written)
+		totalWritten += uint64(written)
 		data = data[written:]
 	}
+	return totalWritten, 0, "", true
 }
 
 func (s *session) cmdCopyFileRange(clientMark uint8, req wsfsprotocol.CmdCopyFileRangeStruct) {
