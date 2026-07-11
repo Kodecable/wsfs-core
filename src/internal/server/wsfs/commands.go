@@ -114,15 +114,22 @@ func (s *session) restrictingSymlinkByFileInfo(base string, fi fs.FileInfo) (fs.
 	}
 }
 
-func (s *session) lookupDirent(base string, dirent fs.DirEntry) (wdirent wsfsprotocol.Dirent, err error) {
+func ensureDirBase(path string) string {
+	if strings.HasSuffix(path, "/") {
+		return path
+	}
+	return path + "/"
+}
+
+func (s *session) lookupDirent(dirBase string, dirent fs.DirEntry) (wdirent wsfsprotocol.Dirent, err error) {
 	wdirent.Name = dirent.Name()
-	entryPath := base + dirent.Name()
+	entryPath := dirBase + dirent.Name()
 	fi, mtime, err := timeval.Stat(entryPath, false)
 	if err != nil {
 		return
 	}
 	if fi.Mode()&fs.ModeSymlink != 0 {
-		fi, mtime, err = s.restrictingSymlinkByFileInfo(base, fi)
+		fi, mtime, err = s.restrictingSymlinkByFileInfo(dirBase, fi)
 		if err != nil {
 			return
 		}
@@ -153,6 +160,7 @@ func (s *session) cmdReadDir(clientMark uint8, req wsfsprotocol.CmdReadDirStruct
 		return
 	}
 	apath := s.storage.Path + path
+	dirBase := ensureDirBase(apath)
 
 	f, err := os.Open(apath)
 	if err != nil {
@@ -176,7 +184,7 @@ func (s *session) cmdReadDir(clientMark uint8, req wsfsprotocol.CmdReadDirStruct
 		}
 
 		for _, dirent := range dirents {
-			wdirent, lookupErr := s.lookupDirent(apath, dirent)
+			wdirent, lookupErr := s.lookupDirent(dirBase, dirent)
 			if lookupErr != nil {
 				wdirent = wsfsprotocol.Dirent{
 					Name:  dirent.Name(),
@@ -224,8 +232,8 @@ BAD:
 	s.writeRspError(clientMark, osErrCode(err), "syscall error")
 }
 
-func (s *session) lookupDirentSafe(apath string, entry fs.DirEntry) wsfsprotocol.Dirent {
-	wdirent, err := s.lookupDirent(apath, entry)
+func (s *session) lookupDirentSafe(dirBase string, entry fs.DirEntry) wsfsprotocol.Dirent {
+	wdirent, err := s.lookupDirent(dirBase, entry)
 	if err != nil {
 		return wsfsprotocol.Dirent{
 			Name:  entry.Name(),
@@ -262,8 +270,8 @@ type prefetchDirState struct {
 	count   int
 }
 
-func (s *session) preparePrefetchDir(basePath string, entry fs.DirEntry) (*prefetchDirState, error) {
-	childAbsPath := basePath + entry.Name() + "/"
+func (s *session) preparePrefetchDir(dirBase string, entry fs.DirEntry) (*prefetchDirState, error) {
+	childAbsPath := dirBase + entry.Name() + "/"
 	cf, err := os.Open(childAbsPath)
 	if err != nil {
 		return nil, err
@@ -282,7 +290,7 @@ func (s *session) preparePrefetchDir(basePath string, entry fs.DirEntry) (*prefe
 	}, nil
 }
 
-func (s *session) nextPrefetchDir(first []fs.DirEntry, basePath string, start int, used *int) (*prefetchDirState, int, error) {
+func (s *session) nextPrefetchDir(first []fs.DirEntry, dirBase string, start int, used *int) (*prefetchDirState, int, error) {
 	for i := start; i < len(first); i++ {
 		if *used >= maxPrefetchDirs {
 			return nil, i, nil
@@ -291,7 +299,7 @@ func (s *session) nextPrefetchDir(first []fs.DirEntry, basePath string, start in
 			continue
 		}
 		*used++
-		state, err := s.preparePrefetchDir(basePath, first[i])
+		state, err := s.preparePrefetchDir(dirBase, first[i])
 		if err != nil {
 			return nil, i + 1, err
 		}
@@ -337,6 +345,7 @@ func (s *session) cmdReadDirPlus(clientMark uint8, req wsfsprotocol.CmdReadDirPl
 		return
 	}
 	apath := s.storage.Path + path
+	dirBase := ensureDirBase(apath)
 
 	f, err := os.Open(apath)
 	if err != nil {
@@ -357,14 +366,14 @@ func (s *session) cmdReadDirPlus(clientMark uint8, req wsfsprotocol.CmdReadDirPl
 	rsp := bufPool.Get().(*util.Buffer)
 	rsp.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
 	for _, entry := range first {
-		s.writeDirentChunk(rsp, clientMark, s.lookupDirentSafe(apath, entry))
+		s.writeDirentChunk(rsp, clientMark, s.lookupDirentSafe(dirBase, entry))
 	}
 
 	// 继续读剩余 ROOT 条目
 	for {
 		more, err := f.ReadDir(16)
 		for _, entry := range more {
-			s.writeDirentChunk(rsp, clientMark, s.lookupDirentSafe(apath, entry))
+			s.writeDirentChunk(rsp, clientMark, s.lookupDirentSafe(dirBase, entry))
 		}
 		if err != nil && !errors.Is(err, io.EOF) {
 			putBuf(rsp)
@@ -401,7 +410,7 @@ func (s *session) cmdReadDirPlus(clientMark uint8, req wsfsprotocol.CmdReadDirPl
 	//   then the next indicator arrives without any CONTINUE records in between.
 	prefetchCount := 0
 	for idx := 0; idx < len(first) && prefetchCount < maxPrefetchDirs; {
-		state, nextIdx, err := s.nextPrefetchDir(first, apath, idx, &prefetchCount)
+		state, nextIdx, err := s.nextPrefetchDir(first, dirBase, idx, &prefetchCount)
 		idx = nextIdx
 		if err != nil {
 			s.writeRspError(clientMark, wsfsprotocol.ErrorIO, "read prefetch dir failed")
@@ -422,7 +431,7 @@ func (s *session) cmdReadDirPlus(clientMark uint8, req wsfsprotocol.CmdReadDirPl
 				break
 			}
 
-			nextState, newIdx, err := s.nextPrefetchDir(first, apath, idx, &prefetchCount)
+			nextState, newIdx, err := s.nextPrefetchDir(first, dirBase, idx, &prefetchCount)
 			idx = newIdx
 			if err != nil || nextState == nil {
 				putBuf(rsp)
