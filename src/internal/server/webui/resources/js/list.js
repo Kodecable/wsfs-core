@@ -294,25 +294,31 @@ function Sort(field, factor) {
     let index = GTableHeaderCellIndex[field]
     items.sort(function (o1, o2) {
         let cmp = 0;
-        if (field == "size") {
-            let s1 = parseInt(o1.children[index].getAttribute("title"));
-            let s2 = parseInt(o2.children[index].getAttribute("title"));
-            if (isNaN(s1)) s1 = -1;
-            if (isNaN(s2)) s2 = -1;
-            cmp = s1 - s2;
-        } else if (field == "time") {
+        let isDir1 = o1.classList.contains("dirItem");
+        let isDir2 = o2.classList.contains("dirItem");
+
+        if (field == "time") {
             let t1 = Date.parse(o1.children[index].getAttribute("title"));
             let t2 = Date.parse(o2.children[index].getAttribute("title"));
             if (isNaN(t1)) t1 = -1;
             if (isNaN(t2)) t2 = -1;
             cmp = t1 - t2;
+        } else if (field == "size") {
+            if (isDir1 != isDir2) return isDir1 ? -1 : 1;
+            let s1 = parseInt(o1.children[index].getAttribute("title"));
+            let s2 = parseInt(o2.children[index].getAttribute("title"));
+            if (isNaN(s1)) s1 = -1;
+            if (isNaN(s2)) s2 = -1;
+            cmp = s1 - s2;
         }
         if (cmp != 0) return cmp * sortFactor;
+
+        // fallback sort for size / time
+        let nameSortFactor = sortFactor
+        if (field != "name") nameSortFactor = 1;
         
-        let isDir1 = o1.classList.contains("dirItem");
-        let isDir2 = o2.classList.contains("dirItem");
         if (isDir1 != isDir2) return isDir1 ? -1 : 1;
-        return sortFactor * (o1.children[index].innerHTML.localeCompare(o2.children[index].innerHTML));
+        return nameSortFactor * (o1.children[index].innerHTML.localeCompare(o2.children[index].innerHTML));
     })
     for (let value of items) {
         GItemsElement.appendChild(value)
