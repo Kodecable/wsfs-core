@@ -151,12 +151,13 @@ func (s *Server) writeMethodNotAllow(rsp http.ResponseWriter, allow string) {
 	rsp.WriteHeader(http.StatusMethodNotAllowed)
 }
 
+// return nil for auth fail
 func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (user *storage.User) {
 	var err error
 
 	user, err = httpBasicAuth(s.users, req)
 	switch err {
-	case nil:
+	case nil: // pass
 	case ErrAuthHeaderNotExists, ErrAnonymous:
 		if s.anonymous != nil && !req.URL.Query().Has("must-login") {
 			user = s.anonymous
@@ -165,7 +166,9 @@ func (s *Server) tryAuth(rsp http.ResponseWriter, req *http.Request) (user *stor
 		fallthrough
 	case ErrBadHttpAuthHeader, ErrUserNotExists, ErrHashMismatch:
 		s.writeAuthRsp(rsp)
+		user = nil
 	default:
+		user = nil
 		log.Error().Err(err).Msg("Unable to auth user")
 		s.ServeError(rsp, req, internalerror.Wrap(err))
 	}
