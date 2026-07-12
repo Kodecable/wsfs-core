@@ -74,7 +74,9 @@ func NewServer(c config.Server, wsfsRegistry *wsfs.SessionRegistry) (s *Server, 
 			err = resolveErr
 			return
 		}
-		s.wsfsHandler = wsfs.NewHandler(s, fsIds, wsfsRegistry)
+		s.wsfsHandler = wsfs.NewHandler(s, fsIds, wsfs.FeatureOptions{
+			EnableLink: c.WSFS.EnableLink,
+		}, wsfsRegistry)
 	}
 
 	return

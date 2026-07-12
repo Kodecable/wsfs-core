@@ -426,3 +426,7 @@ func (s *session) cmdFsStat(clientMark uint8, req wsfsprotocol.CmdFsStatStruct) 
 		s.writeDone(err)
 	}
 }
+
+func (s *session) cmdLink(clientMark uint8, _ wsfsprotocol.CmdLinkStruct) {
+	s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "syscall error")
+}

@@ -44,9 +44,15 @@ Enable = true
 # changes.
 #CustomResources = "/path/to/custom"
 
-#[WSFS]
-#Enable = true
-#
+[WSFS]
+Enable = true
+
+# Not recommended for production use.
+#InsecureSessionIdMathRand = false
+
+# Hard links are not recommended. Only works in Unix.
+#EnableLink = false
+
 #[FsIds]
 #Uid = 1000
 #Gid = 1000

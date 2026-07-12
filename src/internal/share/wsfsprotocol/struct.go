@@ -177,6 +177,11 @@ type CmdSetFileLockWaitStruct struct {
 	FileLock FileLockInfo
 }
 
+type CmdLinkStruct struct {
+	TargetPath string
+	FilePath   string
+}
+
 type RspError struct {
 	Desc string
 }
@@ -260,3 +265,5 @@ type RspGetFileLock struct {
 type RspSetFileLock struct{}
 
 type RspSetFileLockWait struct{}
+
+type RspLink struct{}

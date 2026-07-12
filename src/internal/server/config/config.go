@@ -24,6 +24,7 @@ type Webdav struct {
 type WSFS struct {
 	Enable                    bool
 	InsecureSessionIdMathRand bool
+	EnableLink                bool
 }
 
 type Listener struct {

@@ -79,7 +79,7 @@ func (r *SessionRegistry) getSession(id string) *session {
 	return v.(*session)
 }
 
-func (r *SessionRegistry) newSession(username string, storage *storage.Storage, fsIds util.FsIds) (string, error) {
+func (r *SessionRegistry) newSession(username string, storage *storage.Storage, fsIds util.FsIds, featureOpts FeatureOptions) (string, error) {
 	for {
 		r.lock.Lock()
 		idSource := r.idSource
@@ -92,7 +92,7 @@ func (r *SessionRegistry) newSession(username string, storage *storage.Storage, 
 		if _, loaded := r.sessions.LoadOrStore(id, (*session)(nil)); loaded {
 			continue
 		}
-		r.sessions.Store(id, newSession(r, id, username, storage, fsIds))
+		r.sessions.Store(id, newSession(r, id, username, storage, fsIds, featureOpts))
 		log.Info().Str("Id", id).Msg("Session created")
 		return id, nil
 	}

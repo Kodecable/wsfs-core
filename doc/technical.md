@@ -71,6 +71,12 @@ RealIpHeader = "X-Forwarded-For"
 # Common choices are `X-Forwarded-For` or `X-Real-IP`, depending on your proxy setup.
 ```
 
+### WSFS
+
+#### Hard Link
+
+WSFS does not use an inode model, and does not support the hard link count (`st_nlink`). It is also a bad abstraction because you may cross filesystems on the server side but you only see one WSFS filesystem on the client side. Using a symbolic link instead is recommended.
+
 ## Client
 
 ### Mount

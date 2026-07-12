@@ -40,6 +40,7 @@ const (
 	CmdGetFileLock     uint8 = 26
 	CmdSetFileLock     uint8 = 27
 	CmdSetFileLockWait uint8 = 28
+	CmdLink            uint8 = 29
 )
 
 const (

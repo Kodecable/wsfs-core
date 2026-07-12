@@ -15,17 +15,23 @@ var (
 	ErrBadSubprotocol = errors.New("wsfs: bad websocket sub protocol")
 )
 
+type FeatureOptions struct {
+	EnableLink bool
+}
+
 type Handler struct {
 	errorHandler internalerror.ErrorHandler
 	registry     *SessionRegistry
 	fsIds        util.FsIds
+	featureOpts  FeatureOptions
 }
 
-func NewHandler(errorHandler internalerror.ErrorHandler, fsIds util.FsIds, registry *SessionRegistry) *Handler {
+func NewHandler(errorHandler internalerror.ErrorHandler, fsIds util.FsIds, featureOpts FeatureOptions, registry *SessionRegistry) *Handler {
 	return &Handler{
 		errorHandler: errorHandler,
 		registry:     registry,
 		fsIds:        fsIds,
+		featureOpts:  featureOpts,
 	}
 }
 
@@ -65,7 +71,7 @@ func (h *Handler) ServeHTTP(rsp http.ResponseWriter, req *http.Request, user *st
 	id := req.Header.Get("X-Wsfs-Resume")
 	if id == "" {
 		var err error
-		id, err = h.registry.newSession(user.Name, user.Storage, h.fsIds)
+		id, err = h.registry.newSession(user.Name, user.Storage, h.fsIds, h.featureOpts)
 		if err != nil {
 			log.Error().Err(err).Msg("Generate session id failed")
 			rsp.WriteHeader(http.StatusInternalServerError)

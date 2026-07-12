@@ -73,6 +73,10 @@ func GetCmdGetFileLockStructRequiredSize(d CmdGetFileLockStruct) int {
 	return GetFileLockInfoRequiredSize(d.FileLock) + 4
 }
 
+func GetCmdLinkStructRequiredSize(d CmdLinkStruct) int {
+	return len(d.TargetPath) + len(d.FilePath) + 4
+}
+
 func GetCmdMkdirStructRequiredSize(d CmdMkdirStruct) int {
 	return len(d.Path) + 6
 }
@@ -199,6 +203,10 @@ func GetRspGetAttrRequiredSize(d RspGetAttr) int {
 
 func GetRspGetFileLockRequiredSize(d RspGetFileLock) int {
 	return GetFileLockInfoRequiredSize(d.FileLock) + 0
+}
+
+func GetRspLinkRequiredSize(d RspLink) int {
+	return 0
 }
 
 func GetRspMkdirRequiredSize(d RspMkdir) int {
@@ -380,6 +388,18 @@ func WriteCmdGetFileLockStructToWriter(d CmdGetFileLockStruct, w io.Writer) erro
 	}
 	// FileLock FileLockInfo
 	if err := WriteFileLockInfoToWriter(d.FileLock, w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdLinkStructToWriter(d CmdLinkStruct, w io.Writer) error {
+	// TargetPath string
+	if err := WriteStrToWriter(d.TargetPath, w); err != nil {
+		return err
+	}
+	// FilePath string
+	if err := WriteStrToWriter(d.FilePath, w); err != nil {
 		return err
 	}
 	return nil
@@ -769,6 +789,10 @@ func WriteRspGetFileLockToWriter(d RspGetFileLock, w io.Writer) error {
 	return nil
 }
 
+func WriteRspLinkToWriter(d RspLink, w io.Writer) error {
+	return nil
+}
+
 func WriteRspMkdirToWriter(d RspMkdir, w io.Writer) error {
 	return nil
 }
@@ -992,6 +1016,18 @@ func ReadCmdGetFileLockStructFromReader(d *CmdGetFileLockStruct, r io.Reader) er
 	}
 	// FileLock FileLockInfo
 	if err := ReadFileLockInfoFromReader(&d.FileLock, r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdLinkStructFromReader(d *CmdLinkStruct, r io.Reader) error {
+	// TargetPath string
+	if err := ReadStrFromReader(r, &d.TargetPath); err != nil {
+		return err
+	}
+	// FilePath string
+	if err := ReadStrFromReader(r, &d.FilePath); err != nil {
 		return err
 	}
 	return nil
@@ -1386,6 +1422,10 @@ func ReadRspGetFileLockFromReader(d *RspGetFileLock, r io.Reader) error {
 	if err := ReadFileLockInfoFromReader(&d.FileLock, r); err != nil {
 		return err
 	}
+	return nil
+}
+
+func ReadRspLinkFromReader(d *RspLink, r io.Reader) error {
 	return nil
 }
 

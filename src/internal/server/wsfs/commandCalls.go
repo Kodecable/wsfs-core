@@ -320,6 +320,17 @@ func (s *session) doCommandCall(clientMark, cmd uint8, r io.Reader) {
 			return nil
 		})
 		return
+	case wsfsprotocol.CmdLink:
+		var req wsfsprotocol.CmdLinkStruct
+		err := wsfsprotocol.ReadCmdLinkStructFromReader(&req, r)
+		if err != nil {
+			goto BadCmdFormat
+		}
+		s.cmdGroup.Go(func() error {
+			s.cmdLink(clientMark, req)
+			return nil
+		})
+		return
 	default:
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "Unknown command")
 	}

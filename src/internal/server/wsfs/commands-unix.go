@@ -753,3 +753,25 @@ func (s *session) cmdSetFileLockCommon(clientMark uint8, fd uint32, lock wsfspro
 	}
 	s.writeRspOK(clientMark)
 }
+
+func (s *session) cmdLink(clientMark uint8, req wsfsprotocol.CmdLinkStruct) {
+	if !util.IsUrlValid(req.TargetPath) || !util.IsUrlValid(req.FilePath) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
+		return
+	}
+	aOldPath := s.storage.Path + req.TargetPath
+	aNewPath := s.storage.Path + req.FilePath
+
+	if !s.featureOpts.EnableLink {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorNotSupport, "syscall error")
+		return
+	}
+
+	err := syscall.Link(aOldPath, aNewPath)
+
+	if err != nil {
+		s.writeRspError(clientMark, wsfsErrCode(err), "syscall error")
+	} else {
+		s.writeRspOK(clientMark)
+	}
+}

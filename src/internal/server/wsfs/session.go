@@ -32,6 +32,8 @@ type session struct {
 	storage  *storage.Storage
 	fsIds    util.FsIds
 
+	featureOpts FeatureOptions
+
 	inactiveCount uint32
 
 	// this should only be read by write caller
@@ -56,13 +58,14 @@ type session struct {
 	fastBuffers chan []byte
 }
 
-func newSession(registry *SessionRegistry, id string, username string, storage *storage.Storage, fsIds util.FsIds) *session {
+func newSession(registry *SessionRegistry, id string, username string, storage *storage.Storage, fsIds util.FsIds, featureOpts FeatureOptions) *session {
 	s := &session{
 		Id:          id,
 		Username:    username,
 		registry:    registry,
 		storage:     storage,
 		fsIds:       fsIds,
+		featureOpts: featureOpts,
 		fastBuffers: make(chan []byte, sessionFastBuffer),
 	}
 	s.cmdGroup.SetLimit(64)
