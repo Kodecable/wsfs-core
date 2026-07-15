@@ -1145,7 +1145,7 @@ func setupRandomReaddirWalkDeepFanout(_ context.Context, env *harness.Env) error
 		for depth := 1; depth <= 6; depth++ {
 			for i := range count {
 				name := fmt.Sprintf("f-%d-%04d.dat", depth, i)
-				payload := []byte(fmt.Sprintf("root=%d depth=%d file=%d", rootIdx, depth, i))
+				payload := fmt.Appendf(nil, "root=%d depth=%d file=%d", rootIdx, depth, i)
 				if err := os.WriteFile(filepath.Join(current, name), payload, 0o644); err != nil {
 					return err
 				}
@@ -1349,7 +1349,7 @@ func expectedWalkPayload(rel string, name string) ([]byte, error) {
 	if _, err := fmt.Sscanf(name, "f-%d-%04d.dat", &depth, &fileIdx); err != nil {
 		return nil, fmt.Errorf("parse walk file %q: %w", name, err)
 	}
-	return []byte(fmt.Sprintf("root=%d depth=%d file=%d", rootIdx, depth, fileIdx)), nil
+	return fmt.Appendf(nil, "root=%d depth=%d file=%d", rootIdx, depth, fileIdx), nil
 }
 
 func verifyWalkTree(root string) error {

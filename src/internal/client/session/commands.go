@@ -1138,7 +1138,7 @@ func (s *Session) CmdSetAttrByFD(wfd uint32, flag uint8, fi wsfsprotocol.FileInf
 }
 
 func (s *Session) CmdSetXAttr(path string, key string, value []byte, mode uint32) uint8 {
-	if code := s.validateXAttr(path, key, mode, true); code != wsfsprotocol.ErrorOK {
+	if code := s.validateXAttr(key, mode, true); code != wsfsprotocol.ErrorOK {
 		return code
 	}
 	if s.setXAttrFits(path, key, value, mode) {
@@ -1170,7 +1170,7 @@ func (s *Session) CmdSetXAttr(path string, key string, value []byte, mode uint32
 }
 
 func (s *Session) CmdGetXAttr(path string, key string, mode uint32) ([]byte, uint8) {
-	if code := s.validateXAttr(path, key, mode, false); code != wsfsprotocol.ErrorOK {
+	if code := s.validateXAttr(key, mode, false); code != wsfsprotocol.ErrorOK {
 		return nil, code
 	}
 	clientMark, ok := s.newClientMark()
@@ -1220,7 +1220,7 @@ func (s *Session) CmdListXAttr(path string, mode uint32) ([]byte, uint8) {
 }
 
 func (s *Session) CmdRemoveXAttr(path string, key string, mode uint32) uint8 {
-	if code := s.validateXAttr(path, key, mode, false); code != wsfsprotocol.ErrorOK {
+	if code := s.validateXAttr(key, mode, false); code != wsfsprotocol.ErrorOK {
 		return code
 	}
 	clientMark, ok := s.newClientMark()
@@ -1345,8 +1345,8 @@ func (s *Session) maxXAttrChunkSize(path string, key string, mode uint32) int {
 	return low
 }
 
-func (s *Session) validateXAttr(path string, key string, mode uint32, isSet bool) uint8 {
-	if !util.IsUrlValid(path) || key == "" || strings.IndexByte(key, 0) >= 0 {
+func (s *Session) validateXAttr(key string, mode uint32, isSet bool) uint8 {
+	if key == "" || strings.IndexByte(key, 0) >= 0 {
 		return wsfsprotocol.ErrorInvalid
 	}
 	if isSet {
