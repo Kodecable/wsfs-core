@@ -28,6 +28,7 @@ var errorCodeMap = map[uint8]syscall.Errno{
 	wsfsprotocol.ErrorStateBlocked:       syscall.EPERM,
 	wsfsprotocol.ErrorSpecialFileBlocked: syscall.ETXTBSY,
 	wsfsprotocol.ErrorCrossDevice:        syscall.EXDEV,
+	wsfsprotocol.ErrorRange:              syscall.ERANGE,
 	//syscall.EMLINK:       wsfsprotocol.ErrorLinkMax,
 }
 

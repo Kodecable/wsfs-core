@@ -32,6 +32,7 @@ var (
 	noLogColor                bool
 	insecureSessionIdMathRand bool
 	passwordSource            string
+	xattrPrefixes             []string
 	logLevel                  zerolog.Level = zerolog.InfoLevel
 )
 
@@ -160,6 +161,7 @@ var QuickServeCmd = &cobra.Command{
 		configStorage(&config, c)
 		configIDs(&config, c)
 		config.WSFS.InsecureSessionIdMathRand = insecureSessionIdMathRand
+		config.WSFS.AllowedXAttrPrefix = xattrPrefixes
 
 		if len(args) != 0 {
 			parseArg(&config, c, args[0])
@@ -208,4 +210,5 @@ func init() {
 	QuickServeCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
 	QuickServeCmd.Flags().BoolVarP(&insecureSessionIdMathRand, "insecure-session-id-math-rand", "", false, "Use math/rand for WSFS session resume IDs instead of crypto/rand; insecure and easier to predict")
 	QuickServeCmd.Flags().StringVarP(&passwordSource, "password", "", "", cmdpassword.FlagUsage)
+	QuickServeCmd.Flags().StringArrayVarP(&xattrPrefixes, "xattr-prefix", "", nil, "Allow xattr names with this prefix; may be repeated")
 }

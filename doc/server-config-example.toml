@@ -53,6 +53,9 @@ Enable = true
 # Hard links are not recommended. Only works in Unix.
 #EnableLink = false
 
+# Allow xattr names that start with one of these prefixes. Empty prefixes are ignored.
+#AllowedXAttrPrefix = ["user.wsfs_test."]
+
 #[FsIds]
 #Uid = 1000
 #Gid = 1000

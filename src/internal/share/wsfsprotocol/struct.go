@@ -182,6 +182,30 @@ type CmdLinkStruct struct {
 	FilePath   string
 }
 
+type CmdSetXAttrStruct struct {
+	Path  string
+	Flag  uint32
+	Key   string
+	Value []byte
+}
+
+type CmdGetXAttrStruct struct {
+	Path string
+	Key  string
+	Mode uint32
+}
+
+type CmdListXAttrStruct struct {
+	Path string
+	Mode uint32
+}
+
+type CmdRemoveXAttrStruct struct {
+	Path string
+	Key  string
+	Mode uint32
+}
+
 type RspError struct {
 	Desc string
 }
@@ -267,3 +291,15 @@ type RspSetFileLock struct{}
 type RspSetFileLockWait struct{}
 
 type RspLink struct{}
+
+type RspSetXAttr struct{}
+
+type RspGetXAttr struct {
+	Data []byte
+}
+
+type RspListXAttr struct {
+	Data []byte
+}
+
+type RspRemoveXAttr struct{}

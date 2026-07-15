@@ -25,6 +25,7 @@ type WSFS struct {
 	Enable                    bool
 	InsecureSessionIdMathRand bool
 	EnableLink                bool
+	AllowedXAttrPrefix        []string
 }
 
 type Listener struct {

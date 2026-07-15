@@ -3,16 +3,25 @@
 package wsfs
 
 import (
+	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"wsfs-core/internal/server/wsfs/timeval"
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/share/wsfsstdconv"
 	"wsfs-core/internal/util"
 )
+
+func wsfsErrCode(err error) uint8 {
+	if errors.Is(err, syscall.ENOTSUP) {
+		return wsfsprotocol.ErrorNotSupport
+	}
+	return osErrCode(err)
+}
 
 type sfd_t *os.File
 

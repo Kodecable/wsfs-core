@@ -1,6 +1,7 @@
 package wsfs
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"sync"
 
 	"wsfs-core/internal/server/wsfs/timeval"
+	"wsfs-core/internal/server/wsfs/xattr"
 	"wsfs-core/internal/share/wsfsprotocol"
 	"wsfs-core/internal/util"
 
@@ -21,12 +23,14 @@ import (
 //go:generate go run genCommandCalls.go -- "../../share/wsfsprotocol/const.go" "commandCalls.go" "wsfs"
 
 const (
-	MaxMsgSize            = wsfsprotocol.MaxMsgSize
-	maxReadPayLoad uint64 = uint64(MaxMsgSize) - 2
+	MaxMsgSize                     = wsfsprotocol.MaxMsgSize
+	maxReadPayLoad          uint64 = uint64(MaxMsgSize) - 2
+	maxXAttrResponsePayload        = wsfsprotocol.MaxResponseLength - 2
 )
 
 var (
-	bufPool = sync.Pool{
+	errInvalidXAttrList = errors.New("invalid xattr list")
+	bufPool             = sync.Pool{
 		New: func() any {
 			return util.NewBuffer(MaxMsgSize)
 		},
@@ -75,6 +79,13 @@ func osErrCode(err error) uint8 {
 	} else {
 		return wsfsprotocol.ErrorUnknown
 	}
+}
+
+func xattrErrorCode(err error) uint8 {
+	if xattr.IsNoXAttr(err) {
+		return wsfsprotocol.ErrorNoXAttr
+	}
+	return wsfsErrCode(err)
 }
 
 func makeWSFSFileInfo(fi fs.FileInfo, mtime wsfsprotocol.Timespec, owner uint8) wsfsprotocol.FileInfo {
@@ -505,4 +516,148 @@ func (s *session) writeRspWriteStreamClose(clientMark uint8, written uint64) {
 	}
 	err := wsfsprotocol.WriteRspWriteStreamCloseToWriter(wsfsprotocol.RspWriteStreamClose{Written: written}, s.writer)
 	s.writeDone(err)
+}
+
+func (s *session) cmdSetXAttr(clientMark uint8, req wsfsprotocol.CmdSetXAttrStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
+		return
+	}
+	if req.Key == "" || strings.IndexByte(req.Key, 0) >= 0 {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad xattr key")
+		return
+	}
+	if !s.isXAttrKeyAllowed(req.Key) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorStateBlocked, "xattr key is not allowed")
+		return
+	}
+	path := s.storage.Path + req.Path
+
+	if err := xattr.Set(path, req.Key, req.Value, req.Flag); err != nil {
+		s.writeRspError(clientMark, xattrErrorCode(err), "xattr syscall error")
+		return
+	}
+	s.writeRspOK(clientMark)
+}
+
+func (s *session) cmdGetXAttr(clientMark uint8, req wsfsprotocol.CmdGetXAttrStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
+		return
+	}
+	if req.Key == "" || strings.IndexByte(req.Key, 0) >= 0 {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad xattr key")
+		return
+	}
+	if !s.isXAttrKeyAllowed(req.Key) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorStateBlocked, "xattr key is not allowed")
+		return
+	}
+	path := s.storage.Path + req.Path
+
+	data, err := xattr.Get(path, req.Key, req.Mode)
+
+	if err != nil {
+		s.writeRspError(clientMark, xattrErrorCode(err), "xattr syscall error")
+		return
+	}
+	s.writeXAttrData(clientMark, data)
+}
+
+func (s *session) cmdListXAttr(clientMark uint8, req wsfsprotocol.CmdListXAttrStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
+		return
+	}
+	path := s.storage.Path + req.Path
+
+	data, err := xattr.List(path, req.Mode)
+	if err != nil {
+		s.writeRspError(clientMark, xattrErrorCode(err), "xattr syscall error")
+		return
+	}
+	data, err = s.filterXAttrList(data)
+
+	if err != nil {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorIO, "bad xattr list")
+		return
+	}
+	s.writeXAttrData(clientMark, data)
+}
+
+func (s *session) cmdRemoveXAttr(clientMark uint8, req wsfsprotocol.CmdRemoveXAttrStruct) {
+	if !util.IsUrlValid(req.Path) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad path")
+		return
+	}
+	if req.Key == "" || strings.IndexByte(req.Key, 0) >= 0 {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "bad xattr key")
+		return
+	}
+	if !s.isXAttrKeyAllowed(req.Key) {
+		s.writeRspError(clientMark, wsfsprotocol.ErrorStateBlocked, "xattr key is not allowed")
+		return
+	}
+
+	path := s.storage.Path + req.Path
+
+	if err := xattr.Remove(path, req.Key, req.Mode); err != nil {
+		s.writeRspError(clientMark, xattrErrorCode(err), "xattr syscall error")
+		return
+	}
+	s.writeRspOK(clientMark)
+}
+
+func (s *session) isXAttrKeyAllowed(key string) bool {
+	for _, prefix := range s.featureOpts.AllowedXAttrPrefix {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *session) filterXAttrList(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return data, nil
+	}
+	if data[len(data)-1] != 0 {
+		return nil, errInvalidXAttrList
+	}
+
+	filtered := make([]byte, 0, len(data))
+	for len(data) > 0 {
+		end := bytes.IndexByte(data, 0)
+		if end <= 0 {
+			return nil, errInvalidXAttrList
+		}
+		key := string(data[:end])
+		for _, prefix := range s.featureOpts.AllowedXAttrPrefix {
+			if strings.HasPrefix(key, prefix) {
+				filtered = append(filtered, data[:end+1]...)
+				break
+			}
+		}
+		data = data[end+1:]
+	}
+	return filtered, nil
+}
+
+func (s *session) writeXAttrData(clientMark uint8, data []byte) {
+	if len(data) == 0 {
+		s.writeRspOK(clientMark)
+		return
+	}
+
+	buf := bufPool.Get().(*util.Buffer)
+	defer putBuf(buf)
+	for len(data) > maxXAttrResponsePayload {
+		buf.Write([]byte{clientMark, wsfsprotocol.ErrorPartialResponse})
+		buf.Write(data[:maxXAttrResponsePayload])
+		s.write(buf.Done())
+		data = data[maxXAttrResponsePayload:]
+	}
+	buf.Write([]byte{clientMark, wsfsprotocol.ErrorOK})
+	buf.Write(data)
+	s.write(buf.Done())
 }

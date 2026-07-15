@@ -23,17 +23,19 @@ const (
 )
 
 type MountOption struct {
-	AttrTimeout      time.Duration
-	EntryTimeout     time.Duration
-	NegativeTimeout  time.Duration
-	PingInterval     time.Duration
-	UseFusemount     bool
-	VolumeLabel      string
-	MasqueradeAsNtfs bool
-	EnableFuseLog    bool
-	FuseFsName       string
-	FsIds            util.FsIds
-	FlockMode        session.FlockMode
+	AttrTimeout        time.Duration
+	EntryTimeout       time.Duration
+	NegativeTimeout    time.Duration
+	PingInterval       time.Duration
+	UseFusemount       bool
+	VolumeLabel        string
+	MasqueradeAsNtfs   bool
+	EnableFuseLog      bool
+	FuseFsName         string
+	FsIds              util.FsIds
+	FlockMode          session.FlockMode
+	AllowedXAttrPrefix []string
+	DisableXAttrAppend bool
 }
 
 func dial(url, username, password, resumeId, expectedCertHash string) (conn *websocket.Conn, rsp *http.Response, err error) {
@@ -122,7 +124,7 @@ func Mount(mountpoint, url, expectedCertHash, username, password string, opt Mou
 		log.Warn().Msg("Server do not support session resume")
 	}
 
-	s, err := session.NewSession(reDialFunc(url, username, password, resumeId, expectedCertHash), opt.PingInterval)
+	s, err := session.NewSession(reDialFunc(url, username, password, resumeId, expectedCertHash), opt.PingInterval, opt.AllowedXAttrPrefix, !opt.DisableXAttrAppend)
 	if err != nil {
 		log.Error().Err(err).Msg("Unable to create session")
 		return err

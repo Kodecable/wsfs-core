@@ -17,6 +17,8 @@ import (
 	"wsfs-core-mount-blackbox/harness"
 )
 
+var cases = []harness.Case{}
+
 type testCase struct {
 	name          string
 	setup         func(context.Context, *harness.Env) error
@@ -51,8 +53,8 @@ func (c testCase) VerifyStorage(ctx context.Context, env *harness.Env) error {
 	return c.verifyStorage(ctx, env)
 }
 
-func All() []harness.Case {
-	return []harness.Case{
+func init() {
+	cases = append(cases,
 		testCase{name: "create_write_read_small", run: createWriteReadSmall, verifyStorage: verifyStorageCreateWriteReadSmall},
 		testCase{name: "overwrite_existing_file", setup: setupOverwriteExistingFile, run: overwriteExistingFile, verifyStorage: verifyStorageOverwriteExistingFile},
 		testCase{name: "append_via_std_write", run: appendViaStdWrite, verifyStorage: verifyStorageAppendViaStdWrite},
@@ -80,17 +82,16 @@ func All() []harness.Case {
 		testCase{name: "session_resume_existing_open_fd", run: sessionResumeExistingOpenFD, verifyStorage: verifyStorageSessionResumeExistingOpenFD},
 		testCase{name: "session_close_normal", run: sessionCloseNormal},
 		testCase{name: "sticky_bit_roundtrip", run: stickyBitRoundtrip, verifyStorage: verifyStorageStickyBitRoundtrip},
-	}
+	)
 }
 
 func Lookup(names []string) ([]harness.Case, error) {
-	all := All()
 	if len(names) == 0 {
-		return all, nil
+		return cases, nil
 	}
 
 	byName := map[string]harness.Case{}
-	for _, c := range all {
+	for _, c := range cases {
 		byName[c.Name()] = c
 	}
 
@@ -1435,9 +1436,8 @@ func fileSHA256(path string) ([32]byte, error) {
 }
 
 func Names() []string {
-	all := All()
-	names := make([]string, 0, len(all))
-	for _, c := range all {
+	names := make([]string, 0, len(cases))
+	for _, c := range cases {
 		names = append(names, c.Name())
 	}
 	sort.Strings(names)

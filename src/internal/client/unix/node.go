@@ -570,30 +570,6 @@ func (n *fsNode) Setattr(ctx context.Context, f fusefs.FileHandle, in *fuse.SetA
 	return errnoFromCode(code)
 }
 
-var _ = (fusefs.NodeGetxattrer)((*fsNode)(nil))
-
-func (n *fsNode) Getxattr(_ context.Context, _ string, _ []byte) (uint32, syscall.Errno) {
-	return 0, syscall.ENOTSUP
-}
-
-var _ = (fusefs.NodeSetxattrer)((*fsNode)(nil))
-
-func (n *fsNode) Setxattr(_ context.Context, _ string, _ []byte, _ uint32) syscall.Errno {
-	return syscall.ENOTSUP
-}
-
-var _ = (fusefs.NodeRemovexattrer)((*fsNode)(nil))
-
-func (n *fsNode) Removexattr(_ context.Context, _ string) syscall.Errno {
-	return syscall.ENOTSUP
-}
-
-var _ = (fusefs.NodeListxattrer)((*fsNode)(nil))
-
-func (n *fsNode) Listxattr(_ context.Context, _ []byte) (uint32, syscall.Errno) {
-	return 0, syscall.ENOTSUP
-}
-
 var _ = (fusefs.NodeMknoder)((*fsNode)(nil))
 
 func (n *fsNode) Mknod(_ context.Context, _ string, _ uint32, _ uint32, _ *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {

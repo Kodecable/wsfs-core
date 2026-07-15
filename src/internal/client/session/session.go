@@ -43,8 +43,10 @@ type Session struct {
 	exitWg  sync.WaitGroup
 	reDial  ReDialFunc
 
-	pingInterval time.Duration
-	exitOnce     sync.Once
+	pingInterval       time.Duration
+	allowedXAttrPrefix []string
+	autoXAttrAppend    bool
+	exitOnce           sync.Once
 
 	lifecycleLock sync.Mutex
 	lifecycleCond *sync.Cond
@@ -65,17 +67,31 @@ type Session struct {
 	marks     [256]sync.Mutex
 }
 
-func NewSession(reDial ReDialFunc, pingInterval time.Duration) (*Session, error) {
+func NewSession(reDial ReDialFunc, pingInterval time.Duration, allowedXAttrPrefix []string, autoXAttrAppend bool) (*Session, error) {
 	s := &Session{
-		reDial:       reDial,
-		pingInterval: pingInterval,
-		state:        sessionStateRunning,
+		reDial:             reDial,
+		pingInterval:       pingInterval,
+		allowedXAttrPrefix: normalizeXAttrPrefixes(allowedXAttrPrefix),
+		autoXAttrAppend:    autoXAttrAppend,
+		state:              sessionStateRunning,
 	}
 	s.lifecycleCond = sync.NewCond(&s.lifecycleLock)
 	for i := range s.responses {
 		s.responses[i] = make(chan *util.Buffer, 1)
 	}
 	return s, nil
+}
+
+func normalizeXAttrPrefixes(prefixes []string) []string {
+	filtered := make([]string, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		if prefix == "" {
+			log.Warn().Msg("Ignoring empty xattr prefix")
+			continue
+		}
+		filtered = append(filtered, prefix)
+	}
+	return filtered
 }
 
 func (s *Session) exit(err error) {

@@ -331,6 +331,53 @@ func (s *session) doCommandCall(clientMark, cmd uint8, r io.Reader) {
 			return nil
 		})
 		return
+	case wsfsprotocol.CmdSetXAttr:
+		var req wsfsprotocol.CmdSetXAttrStruct
+		dataBuf := s.acquireFastBuffer()
+		err := wsfsprotocol.ReadCmdSetXAttrStructFromReaderWithBuffer(&req, r, dataBuf)
+		if err != nil {
+			s.releaseFastBuffer(dataBuf)
+			goto BadCmdFormat
+		}
+		s.cmdGroup.Go(func() error {
+			defer s.releaseFastBuffer(dataBuf)
+			s.cmdSetXAttr(clientMark, req)
+			return nil
+		})
+		return
+	case wsfsprotocol.CmdGetXAttr:
+		var req wsfsprotocol.CmdGetXAttrStruct
+		err := wsfsprotocol.ReadCmdGetXAttrStructFromReader(&req, r)
+		if err != nil {
+			goto BadCmdFormat
+		}
+		s.cmdGroup.Go(func() error {
+			s.cmdGetXAttr(clientMark, req)
+			return nil
+		})
+		return
+	case wsfsprotocol.CmdListXAttr:
+		var req wsfsprotocol.CmdListXAttrStruct
+		err := wsfsprotocol.ReadCmdListXAttrStructFromReader(&req, r)
+		if err != nil {
+			goto BadCmdFormat
+		}
+		s.cmdGroup.Go(func() error {
+			s.cmdListXAttr(clientMark, req)
+			return nil
+		})
+		return
+	case wsfsprotocol.CmdRemoveXAttr:
+		var req wsfsprotocol.CmdRemoveXAttrStruct
+		err := wsfsprotocol.ReadCmdRemoveXAttrStructFromReader(&req, r)
+		if err != nil {
+			goto BadCmdFormat
+		}
+		s.cmdGroup.Go(func() error {
+			s.cmdRemoveXAttr(clientMark, req)
+			return nil
+		})
+		return
 	default:
 		s.writeRspError(clientMark, wsfsprotocol.ErrorInvalid, "Unknown command")
 	}

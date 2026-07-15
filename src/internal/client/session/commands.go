@@ -3,7 +3,9 @@ package session
 import (
 	"bytes"
 	"os"
+	"strings"
 	"wsfs-core/internal/share/wsfsprotocol"
+	"wsfs-core/internal/util"
 
 	"github.com/rs/zerolog/log"
 )
@@ -1133,4 +1135,252 @@ func (s *Session) CmdSetAttrByFD(wfd uint32, flag uint8, fi wsfsprotocol.FileInf
 	code = rspBuf.Bytes[1]
 	bufPool.Put(rspBuf)
 	return
+}
+
+func (s *Session) CmdSetXAttr(path string, key string, value []byte, mode uint32) uint8 {
+	if code := s.validateXAttr(path, key, mode, true); code != wsfsprotocol.ErrorOK {
+		return code
+	}
+	if s.setXAttrFits(path, key, value, mode) {
+		return s.sendSetXAttr(path, key, value, mode)
+	}
+	if !s.autoXAttrAppend {
+		return wsfsprotocol.ErrorRange
+	}
+
+	oldValue, code := s.CmdGetXAttr(path, key, mode&wsfsprotocol.XATTR_NOFOLLOW)
+	oldExists := code == wsfsprotocol.ErrorOK
+	if !oldExists && code != wsfsprotocol.ErrorNoXAttr {
+		return code
+	}
+
+	code = s.sendSplitXAttr(path, key, value, mode)
+	if code == wsfsprotocol.ErrorOK {
+		return code
+	}
+	if rollbackCode := s.restoreXAttr(path, key, oldValue, oldExists, mode); rollbackCode != wsfsprotocol.ErrorOK {
+		log.Warn().
+			Str("Path", path).
+			Str("Key", key).
+			Uint8("WriteCode", code).
+			Uint8("RollbackCode", rollbackCode).
+			Msg("Xattr append rollback failed")
+	}
+	return code
+}
+
+func (s *Session) CmdGetXAttr(path string, key string, mode uint32) ([]byte, uint8) {
+	if code := s.validateXAttr(path, key, mode, false); code != wsfsprotocol.ErrorOK {
+		return nil, code
+	}
+	clientMark, ok := s.newClientMark()
+	if !ok {
+		return nil, wsfsprotocol.ErrorIO
+	}
+	defer s.releaseClientMark(clientMark)
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdGetXAttr) {
+		return nil, wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdGetXAttrStructToWriter(wsfsprotocol.CmdGetXAttrStruct{Path: path, Key: key, Mode: mode}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		return nil, wsfsprotocol.ErrorIO
+	}
+	return s.readXAttrData(clientMark)
+}
+
+func (s *Session) CmdListXAttr(path string, mode uint32) ([]byte, uint8) {
+	if !util.IsUrlValid(path) || mode&^wsfsprotocol.XATTR_NOFOLLOW != 0 {
+		return nil, wsfsprotocol.ErrorInvalid
+	}
+	clientMark, ok := s.newClientMark()
+	if !ok {
+		return nil, wsfsprotocol.ErrorIO
+	}
+	defer s.releaseClientMark(clientMark)
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdListXAttr) {
+		return nil, wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdListXAttrStructToWriter(wsfsprotocol.CmdListXAttrStruct{Path: path, Mode: mode}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		return nil, wsfsprotocol.ErrorIO
+	}
+	data, code := s.readXAttrData(clientMark)
+	if code != wsfsprotocol.ErrorOK {
+		return nil, code
+	}
+	data, ok = s.filterXAttrList(data)
+	if !ok {
+		return nil, wsfsprotocol.ErrorIO
+	}
+	return data, wsfsprotocol.ErrorOK
+}
+
+func (s *Session) CmdRemoveXAttr(path string, key string, mode uint32) uint8 {
+	if code := s.validateXAttr(path, key, mode, false); code != wsfsprotocol.ErrorOK {
+		return code
+	}
+	clientMark, ok := s.newClientMark()
+	if !ok {
+		return wsfsprotocol.ErrorIO
+	}
+	defer s.releaseClientMark(clientMark)
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdRemoveXAttr) {
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdRemoveXAttrStructToWriter(wsfsprotocol.CmdRemoveXAttrStruct{Path: path, Key: key, Mode: mode}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		return wsfsprotocol.ErrorIO
+	}
+	rsp := <-s.responses[clientMark]
+	code := rsp.Bytes[1]
+	bufPool.Put(rsp)
+	return code
+}
+
+func (s *Session) sendSetXAttr(path string, key string, value []byte, mode uint32) uint8 {
+	clientMark, ok := s.newClientMark()
+	if !ok {
+		return wsfsprotocol.ErrorIO
+	}
+	defer s.releaseClientMark(clientMark)
+
+	if !s.beginRequest(clientMark, wsfsprotocol.CmdSetXAttr) {
+		return wsfsprotocol.ErrorIO
+	}
+	err := wsfsprotocol.WriteCmdSetXAttrStructToWriter(wsfsprotocol.CmdSetXAttrStruct{Path: path, Flag: mode, Key: key, Value: value}, s.writer)
+	s.writeDone(err)
+	if err != nil {
+		return wsfsprotocol.ErrorIO
+	}
+	rsp := <-s.responses[clientMark]
+	code := rsp.Bytes[1]
+	bufPool.Put(rsp)
+	return code
+}
+
+func (s *Session) readXAttrData(clientMark uint8) ([]byte, uint8) {
+	var data []byte
+	for {
+		rsp := <-s.responses[clientMark]
+		code := rsp.Bytes[1]
+		if code != wsfsprotocol.ErrorOK && code != wsfsprotocol.ErrorPartialResponse {
+			bufPool.Put(rsp)
+			return nil, code
+		}
+		data = append(data, rsp.Bytes[2:rsp.Written()]...)
+		bufPool.Put(rsp)
+		if code == wsfsprotocol.ErrorOK {
+			return data, code
+		}
+	}
+}
+
+func (s *Session) sendSplitXAttr(path string, key string, value []byte, mode uint32) uint8 {
+	chunkSize := s.maxXAttrChunkSize(path, key, mode)
+	if chunkSize == 0 {
+		return wsfsprotocol.ErrorRange
+	}
+	chunk := value
+	if len(chunk) > chunkSize {
+		chunk = value[:chunkSize]
+	}
+	if code := s.sendSetXAttr(path, key, chunk, mode); code != wsfsprotocol.ErrorOK {
+		return code
+	}
+	value = value[len(chunk):]
+	appendMode := wsfsprotocol.SETXATTR_APPEND | mode&wsfsprotocol.XATTR_NOFOLLOW
+	for len(value) > 0 {
+		chunkSize = s.maxXAttrChunkSize(path, key, appendMode)
+		if chunkSize == 0 {
+			return wsfsprotocol.ErrorRange
+		}
+		chunk = value
+		if len(chunk) > chunkSize {
+			chunk = value[:chunkSize]
+		}
+		if code := s.sendSetXAttr(path, key, chunk, appendMode); code != wsfsprotocol.ErrorOK {
+			return code
+		}
+		value = value[len(chunk):]
+	}
+	return wsfsprotocol.ErrorOK
+}
+
+func (s *Session) restoreXAttr(path string, key string, oldValue []byte, oldExists bool, mode uint32) uint8 {
+	nofollow := mode & wsfsprotocol.XATTR_NOFOLLOW
+	if !oldExists {
+		return s.CmdRemoveXAttr(path, key, nofollow)
+	}
+	if s.setXAttrFits(path, key, oldValue, nofollow) {
+		return s.sendSetXAttr(path, key, oldValue, nofollow)
+	}
+	return s.sendSplitXAttr(path, key, oldValue, nofollow)
+}
+
+func (s *Session) setXAttrFits(path string, key string, value []byte, mode uint32) bool {
+	return 2+wsfsprotocol.GetCmdSetXAttrStructRequiredSize(wsfsprotocol.CmdSetXAttrStruct{
+		Path: path, Flag: mode, Key: key, Value: value,
+	}) <= wsfsprotocol.MaxCommandLength
+}
+
+func (s *Session) maxXAttrChunkSize(path string, key string, mode uint32) int {
+	if !s.setXAttrFits(path, key, nil, mode) {
+		return 0
+	}
+	low, high := 0, wsfsprotocol.MaxCommandLength
+	for low < high {
+		mid := low + (high-low+1)/2
+		if s.setXAttrFits(path, key, make([]byte, mid), mode) {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+	return low
+}
+
+func (s *Session) validateXAttr(path string, key string, mode uint32, isSet bool) uint8 {
+	if !util.IsUrlValid(path) || key == "" || strings.IndexByte(key, 0) >= 0 {
+		return wsfsprotocol.ErrorInvalid
+	}
+	if isSet {
+		switch mode & ^wsfsprotocol.XATTR_NOFOLLOW {
+		case wsfsprotocol.SETXATTR_NORMAL, wsfsprotocol.SETXATTR_APPEND, wsfsprotocol.SETXATTR_CREATE, wsfsprotocol.SETXATTR_REPLACE:
+		default:
+			return wsfsprotocol.ErrorInvalid
+		}
+	} else if mode&^wsfsprotocol.XATTR_NOFOLLOW != 0 {
+		return wsfsprotocol.ErrorInvalid
+	}
+	for _, prefix := range s.allowedXAttrPrefix {
+		if strings.HasPrefix(key, prefix) {
+			return wsfsprotocol.ErrorOK
+		}
+	}
+	return wsfsprotocol.ErrorStateBlocked
+}
+
+func (s *Session) filterXAttrList(data []byte) ([]byte, bool) {
+	var filtered []byte
+	for len(data) > 0 {
+		end := bytes.IndexByte(data, 0)
+		if end <= 0 {
+			return nil, false
+		}
+		key := string(data[:end])
+		for _, prefix := range s.allowedXAttrPrefix {
+			if strings.HasPrefix(key, prefix) {
+				filtered = append(filtered, data[:end+1]...)
+				break
+			}
+		}
+		data = data[end+1:]
+	}
+	return filtered, true
 }

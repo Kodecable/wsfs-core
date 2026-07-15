@@ -81,6 +81,7 @@ var errorCodeMap map[syscall.Errno]uint8 = map[syscall.Errno]uint8{
 	syscall.EIO:          wsfsprotocol.ErrorIO,
 	syscall.ENOTSUP:      wsfsprotocol.ErrorNotSupport,
 	syscall.ETXTBSY:      wsfsprotocol.ErrorSpecialFileBlocked,
+	syscall.ERANGE:       wsfsprotocol.ErrorRange,
 	//syscall.EMLINK:       wsfsprotocol.ErrorLinkMax,
 }
 

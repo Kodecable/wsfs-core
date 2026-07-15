@@ -41,6 +41,10 @@ const (
 	CmdSetFileLock     uint8 = 27
 	CmdSetFileLockWait uint8 = 28
 	CmdLink            uint8 = 29
+	CmdSetXAttr        uint8 = 30
+	CmdGetXAttr        uint8 = 31
+	CmdListXAttr       uint8 = 32
+	CmdRemoveXAttr     uint8 = 33
 )
 
 const (
@@ -63,6 +67,8 @@ const (
 	ErrorStateBlocked       uint8 = 16
 	ErrorSpecialFileBlocked uint8 = 17
 	ErrorCrossDevice        uint8 = 18
+	ErrorNoXAttr            uint8 = 19
+	ErrorRange              uint8 = 20
 )
 
 const (
@@ -153,6 +159,14 @@ const (
 	FILELOCK_UNLOCK    uint8 = 0
 	FILELOCK_READLOCK  uint8 = 1
 	FILELOCK_WRITELOCK uint8 = 2
+)
+
+const (
+	SETXATTR_NORMAL  uint32 = 0
+	SETXATTR_APPEND  uint32 = 1
+	SETXATTR_CREATE  uint32 = 2
+	SETXATTR_REPLACE uint32 = 3
+	XATTR_NOFOLLOW   uint32 = 0x80000000
 )
 
 const (

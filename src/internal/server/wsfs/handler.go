@@ -16,7 +16,8 @@ var (
 )
 
 type FeatureOptions struct {
-	EnableLink bool
+	EnableLink         bool
+	AllowedXAttrPrefix []string
 }
 
 type Handler struct {
@@ -27,12 +28,25 @@ type Handler struct {
 }
 
 func NewHandler(errorHandler internalerror.ErrorHandler, fsIds util.FsIds, featureOpts FeatureOptions, registry *SessionRegistry) *Handler {
+	featureOpts.AllowedXAttrPrefix = normalizeXAttrPrefixes(featureOpts.AllowedXAttrPrefix)
 	return &Handler{
 		errorHandler: errorHandler,
 		registry:     registry,
 		fsIds:        fsIds,
 		featureOpts:  featureOpts,
 	}
+}
+
+func normalizeXAttrPrefixes(prefixes []string) []string {
+	filtered := make([]string, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		if prefix == "" {
+			log.Warn().Msg("Ignoring empty xattr prefix")
+			continue
+		}
+		filtered = append(filtered, prefix)
+	}
+	return filtered
 }
 
 func (h *Handler) TryServerHTTP(rsp http.ResponseWriter, req *http.Request, user *storage.User, forced bool) (handled bool) {

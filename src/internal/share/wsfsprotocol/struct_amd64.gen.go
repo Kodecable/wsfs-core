@@ -15,6 +15,7 @@ import (
 
 /*
 Command structs with []byte payload fields:
+  - CmdSetXAttrStruct
   - CmdWriteAtStruct
   - CmdWriteStreamDataStruct
   - CmdWriteStreamOpenStruct
@@ -73,8 +74,16 @@ func GetCmdGetFileLockStructRequiredSize(d CmdGetFileLockStruct) int {
 	return GetFileLockInfoRequiredSize(d.FileLock) + 4
 }
 
+func GetCmdGetXAttrStructRequiredSize(d CmdGetXAttrStruct) int {
+	return len(d.Path) + len(d.Key) + 8
+}
+
 func GetCmdLinkStructRequiredSize(d CmdLinkStruct) int {
 	return len(d.TargetPath) + len(d.FilePath) + 4
+}
+
+func GetCmdListXAttrStructRequiredSize(d CmdListXAttrStruct) int {
+	return len(d.Path) + 6
 }
 
 func GetCmdMkdirStructRequiredSize(d CmdMkdirStruct) int {
@@ -109,6 +118,10 @@ func GetCmdRemoveStructRequiredSize(d CmdRemoveStruct) int {
 	return len(d.Path) + 2
 }
 
+func GetCmdRemoveXAttrStructRequiredSize(d CmdRemoveXAttrStruct) int {
+	return len(d.Path) + len(d.Key) + 8
+}
+
 func GetCmdRenameStructRequiredSize(d CmdRenameStruct) int {
 	return len(d.OldPath) + len(d.NewPath) + 8
 }
@@ -135,6 +148,10 @@ func GetCmdSetFileLockStructRequiredSize(d CmdSetFileLockStruct) int {
 
 func GetCmdSetFileLockWaitStructRequiredSize(d CmdSetFileLockWaitStruct) int {
 	return GetFileLockInfoRequiredSize(d.FileLock) + 4
+}
+
+func GetCmdSetXAttrStructRequiredSize(d CmdSetXAttrStruct) int {
+	return len(d.Path) + len(d.Key) + len(d.Value) + 8
 }
 
 func GetCmdSymLinkStructRequiredSize(d CmdSymLinkStruct) int {
@@ -205,8 +222,16 @@ func GetRspGetFileLockRequiredSize(d RspGetFileLock) int {
 	return GetFileLockInfoRequiredSize(d.FileLock) + 0
 }
 
+func GetRspGetXAttrRequiredSize(d RspGetXAttr) int {
+	return len(d.Data) + 0
+}
+
 func GetRspLinkRequiredSize(d RspLink) int {
 	return 0
+}
+
+func GetRspListXAttrRequiredSize(d RspListXAttr) int {
+	return len(d.Data) + 0
 }
 
 func GetRspMkdirRequiredSize(d RspMkdir) int {
@@ -237,6 +262,10 @@ func GetRspRemoveRequiredSize(d RspRemove) int {
 	return 0
 }
 
+func GetRspRemoveXAttrRequiredSize(d RspRemoveXAttr) int {
+	return 0
+}
+
 func GetRspRenameRequiredSize(d RspRename) int {
 	return 0
 }
@@ -262,6 +291,10 @@ func GetRspSetFileLockRequiredSize(d RspSetFileLock) int {
 }
 
 func GetRspSetFileLockWaitRequiredSize(d RspSetFileLockWait) int {
+	return 0
+}
+
+func GetRspSetXAttrRequiredSize(d RspSetXAttr) int {
 	return 0
 }
 
@@ -393,6 +426,22 @@ func WriteCmdGetFileLockStructToWriter(d CmdGetFileLockStruct, w io.Writer) erro
 	return nil
 }
 
+func WriteCmdGetXAttrStructToWriter(d CmdGetXAttrStruct, w io.Writer) error {
+	// Path string
+	if err := WriteStrToWriter(d.Path, w); err != nil {
+		return err
+	}
+	// Key string
+	if err := WriteStrToWriter(d.Key, w); err != nil {
+		return err
+	}
+	// Mode uint32
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Mode)), 4)); err != nil {
+		return err
+	}
+	return nil
+}
+
 func WriteCmdLinkStructToWriter(d CmdLinkStruct, w io.Writer) error {
 	// TargetPath string
 	if err := WriteStrToWriter(d.TargetPath, w); err != nil {
@@ -400,6 +449,18 @@ func WriteCmdLinkStructToWriter(d CmdLinkStruct, w io.Writer) error {
 	}
 	// FilePath string
 	if err := WriteStrToWriter(d.FilePath, w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdListXAttrStructToWriter(d CmdListXAttrStruct, w io.Writer) error {
+	// Path string
+	if err := WriteStrToWriter(d.Path, w); err != nil {
+		return err
+	}
+	// Mode uint32
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Mode)), 4)); err != nil {
 		return err
 	}
 	return nil
@@ -488,6 +549,22 @@ func WriteCmdReadStructToWriter(d CmdReadStruct, w io.Writer) error {
 func WriteCmdRemoveStructToWriter(d CmdRemoveStruct, w io.Writer) error {
 	// Path string
 	if err := WriteStrToWriter(d.Path, w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdRemoveXAttrStructToWriter(d CmdRemoveXAttrStruct, w io.Writer) error {
+	// Path string
+	if err := WriteStrToWriter(d.Path, w); err != nil {
+		return err
+	}
+	// Key string
+	if err := WriteStrToWriter(d.Key, w); err != nil {
+		return err
+	}
+	// Mode uint32
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Mode)), 4)); err != nil {
 		return err
 	}
 	return nil
@@ -584,6 +661,26 @@ func WriteCmdSetFileLockWaitStructToWriter(d CmdSetFileLockWaitStruct, w io.Writ
 	}
 	// FileLock FileLockInfo
 	if err := WriteFileLockInfoToWriter(d.FileLock, w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func WriteCmdSetXAttrStructToWriter(d CmdSetXAttrStruct, w io.Writer) error {
+	// Path string
+	if err := WriteStrToWriter(d.Path, w); err != nil {
+		return err
+	}
+	// Flag uint32
+	if _, err := w.Write(unsafe.Slice((*byte)(unsafe.Pointer(&d.Flag)), 4)); err != nil {
+		return err
+	}
+	// Key string
+	if err := WriteStrToWriter(d.Key, w); err != nil {
+		return err
+	}
+	// Value []byte
+	if _, err := w.Write(d.Value); err != nil {
 		return err
 	}
 	return nil
@@ -789,7 +886,23 @@ func WriteRspGetFileLockToWriter(d RspGetFileLock, w io.Writer) error {
 	return nil
 }
 
+func WriteRspGetXAttrToWriter(d RspGetXAttr, w io.Writer) error {
+	// Data []byte
+	if _, err := w.Write(d.Data); err != nil {
+		return err
+	}
+	return nil
+}
+
 func WriteRspLinkToWriter(d RspLink, w io.Writer) error {
+	return nil
+}
+
+func WriteRspListXAttrToWriter(d RspListXAttr, w io.Writer) error {
+	// Data []byte
+	if _, err := w.Write(d.Data); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -841,6 +954,10 @@ func WriteRspRemoveToWriter(d RspRemove, w io.Writer) error {
 	return nil
 }
 
+func WriteRspRemoveXAttrToWriter(d RspRemoveXAttr, w io.Writer) error {
+	return nil
+}
+
 func WriteRspRenameToWriter(d RspRename, w io.Writer) error {
 	return nil
 }
@@ -870,6 +987,10 @@ func WriteRspSetFileLockToWriter(d RspSetFileLock, w io.Writer) error {
 }
 
 func WriteRspSetFileLockWaitToWriter(d RspSetFileLockWait, w io.Writer) error {
+	return nil
+}
+
+func WriteRspSetXAttrToWriter(d RspSetXAttr, w io.Writer) error {
 	return nil
 }
 
@@ -1021,6 +1142,22 @@ func ReadCmdGetFileLockStructFromReader(d *CmdGetFileLockStruct, r io.Reader) er
 	return nil
 }
 
+func ReadCmdGetXAttrStructFromReader(d *CmdGetXAttrStruct, r io.Reader) error {
+	// Path string
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
+		return err
+	}
+	// Key string
+	if err := ReadStrFromReader(r, &d.Key); err != nil {
+		return err
+	}
+	// Mode uint32
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Mode)), 4)); err != nil {
+		return err
+	}
+	return nil
+}
+
 func ReadCmdLinkStructFromReader(d *CmdLinkStruct, r io.Reader) error {
 	// TargetPath string
 	if err := ReadStrFromReader(r, &d.TargetPath); err != nil {
@@ -1028,6 +1165,18 @@ func ReadCmdLinkStructFromReader(d *CmdLinkStruct, r io.Reader) error {
 	}
 	// FilePath string
 	if err := ReadStrFromReader(r, &d.FilePath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdListXAttrStructFromReader(d *CmdListXAttrStruct, r io.Reader) error {
+	// Path string
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
+		return err
+	}
+	// Mode uint32
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Mode)), 4)); err != nil {
 		return err
 	}
 	return nil
@@ -1116,6 +1265,22 @@ func ReadCmdReadStructFromReader(d *CmdReadStruct, r io.Reader) error {
 func ReadCmdRemoveStructFromReader(d *CmdRemoveStruct, r io.Reader) error {
 	// Path string
 	if err := ReadStrFromReader(r, &d.Path); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdRemoveXAttrStructFromReader(d *CmdRemoveXAttrStruct, r io.Reader) error {
+	// Path string
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
+		return err
+	}
+	// Key string
+	if err := ReadStrFromReader(r, &d.Key); err != nil {
+		return err
+	}
+	// Mode uint32
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Mode)), 4)); err != nil {
 		return err
 	}
 	return nil
@@ -1212,6 +1377,28 @@ func ReadCmdSetFileLockWaitStructFromReader(d *CmdSetFileLockWaitStruct, r io.Re
 	}
 	// FileLock FileLockInfo
 	if err := ReadFileLockInfoFromReader(&d.FileLock, r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdSetXAttrStructFromReader(d *CmdSetXAttrStruct, r io.Reader) error {
+	// Path string
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
+		return err
+	}
+	// Flag uint32
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Flag)), 4)); err != nil {
+		return err
+	}
+	// Key string
+	if err := ReadStrFromReader(r, &d.Key); err != nil {
+		return err
+	}
+	// Value []byte
+	var err error
+	d.Value, err = io.ReadAll(r)
+	if err != nil {
 		return err
 	}
 	return nil
@@ -1425,7 +1612,27 @@ func ReadRspGetFileLockFromReader(d *RspGetFileLock, r io.Reader) error {
 	return nil
 }
 
+func ReadRspGetXAttrFromReader(d *RspGetXAttr, r io.Reader) error {
+	// Data []byte
+	var err error
+	d.Data, err = io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func ReadRspLinkFromReader(d *RspLink, r io.Reader) error {
+	return nil
+}
+
+func ReadRspListXAttrFromReader(d *RspListXAttr, r io.Reader) error {
+	// Data []byte
+	var err error
+	d.Data, err = io.ReadAll(r)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1483,6 +1690,10 @@ func ReadRspRemoveFromReader(d *RspRemove, r io.Reader) error {
 	return nil
 }
 
+func ReadRspRemoveXAttrFromReader(d *RspRemoveXAttr, r io.Reader) error {
+	return nil
+}
+
 func ReadRspRenameFromReader(d *RspRename, r io.Reader) error {
 	return nil
 }
@@ -1512,6 +1723,10 @@ func ReadRspSetFileLockFromReader(d *RspSetFileLock, r io.Reader) error {
 }
 
 func ReadRspSetFileLockWaitFromReader(d *RspSetFileLockWait, r io.Reader) error {
+	return nil
+}
+
+func ReadRspSetXAttrFromReader(d *RspSetXAttr, r io.Reader) error {
 	return nil
 }
 
@@ -1554,6 +1769,28 @@ func ReadTimespecFromReader(d *Timespec, r io.Reader) error {
 	}
 	// Nanoseconds int64
 	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Nanoseconds)), 8)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCmdSetXAttrStructFromReaderWithBuffer(d *CmdSetXAttrStruct, r io.Reader, dataBuf []byte) error {
+	// Path string
+	if err := ReadStrFromReader(r, &d.Path); err != nil {
+		return err
+	}
+	// Flag uint32
+	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.Flag)), 4)); err != nil {
+		return err
+	}
+	// Key string
+	if err := ReadStrFromReader(r, &d.Key); err != nil {
+		return err
+	}
+	// Value []byte
+	var err error
+	d.Value, err = readAllToBuffer(r, dataBuf)
+	if err != nil {
 		return err
 	}
 	return nil
@@ -1614,6 +1851,26 @@ func ReadCmdWriteStructFromReaderWithBuffer(d *CmdWriteStruct, r io.Reader, data
 	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(unsafe.Pointer(&d.FD)), 4)); err != nil {
 		return err
 	}
+	// Data []byte
+	var err error
+	d.Data, err = readAllToBuffer(r, dataBuf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadRspGetXAttrFromReaderWithBuffer(d *RspGetXAttr, r io.Reader, dataBuf []byte) error {
+	// Data []byte
+	var err error
+	d.Data, err = readAllToBuffer(r, dataBuf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadRspListXAttrFromReaderWithBuffer(d *RspListXAttr, r io.Reader, dataBuf []byte) error {
 	// Data []byte
 	var err error
 	d.Data, err = readAllToBuffer(r, dataBuf)

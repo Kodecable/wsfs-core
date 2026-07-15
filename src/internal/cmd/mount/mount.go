@@ -21,21 +21,23 @@ import (
 )
 
 var (
-	volumeLabel      string
-	masqueradeAsNtfs bool
-	structTimeout    int16
-	pingInterval     int16
-	directMount      bool
-	noLogTime        bool
-	noLogColor       bool
-	uid              int64
-	gid              int64
-	otherUid         int64
-	otherGid         int64
-	logLevel         zerolog.Level = zerolog.InfoLevel
-	certHash         string
-	passwordSource   string
-	flockMode        clientSession.FlockMode
+	volumeLabel        string
+	masqueradeAsNtfs   bool
+	structTimeout      int16
+	pingInterval       int16
+	directMount        bool
+	noLogTime          bool
+	noLogColor         bool
+	uid                int64
+	gid                int64
+	otherUid           int64
+	otherGid           int64
+	logLevel           zerolog.Level = zerolog.InfoLevel
+	certHash           string
+	passwordSource     string
+	flockMode          clientSession.FlockMode
+	xattrPrefixes      []string
+	disableXAttrAppend bool
 )
 
 var MountCmd = &cobra.Command{
@@ -104,17 +106,19 @@ var MountCmd = &cobra.Command{
 		}
 
 		opts := client.MountOption{
-			AttrTimeout:      time.Duration(structTimeout) * time.Second,
-			EntryTimeout:     time.Duration(structTimeout) * time.Second,
-			NegativeTimeout:  time.Duration(structTimeout) * time.Second,
-			PingInterval:     time.Duration(pingInterval) * time.Second,
-			UseFusemount:     !directMount,
-			VolumeLabel:      volumeLabel,
-			MasqueradeAsNtfs: masqueradeAsNtfs,
-			EnableFuseLog:    false,
-			FuseFsName:       inputedEndpoint.Host,
-			FsIds:            fsIds,
-			FlockMode:        flockMode,
+			AttrTimeout:        time.Duration(structTimeout) * time.Second,
+			EntryTimeout:       time.Duration(structTimeout) * time.Second,
+			NegativeTimeout:    time.Duration(structTimeout) * time.Second,
+			PingInterval:       time.Duration(pingInterval) * time.Second,
+			UseFusemount:       !directMount,
+			VolumeLabel:        volumeLabel,
+			MasqueradeAsNtfs:   masqueradeAsNtfs,
+			EnableFuseLog:      false,
+			FuseFsName:         inputedEndpoint.Host,
+			FsIds:              fsIds,
+			FlockMode:          flockMode,
+			AllowedXAttrPrefix: xattrPrefixes,
+			DisableXAttrAppend: disableXAttrAppend,
 		}
 		if logLevel == zerolog.TraceLevel {
 			opts.EnableFuseLog = true
@@ -172,6 +176,8 @@ func init() {
 		"Sets logging level; can be 'trace', 'debug', 'info', 'warning', 'error', 'fatal', 'panic'")
 	MountCmd.Flags().StringVarP(&certHash, "cert-hash", "", "", "Only verify TLS server cert hash; copy the hash from the connection log")
 	MountCmd.Flags().StringVarP(&passwordSource, "password", "", "", cmdpassword.FlagUsage)
+	MountCmd.Flags().StringArrayVarP(&xattrPrefixes, "xattr-prefix", "", nil, "Allow xattr names with this prefix; may be repeated")
+	MountCmd.Flags().BoolVarP(&disableXAttrAppend, "disable-xattr-append", "", false, "Return ERANGE instead of splitting oversized xattr writes")
 	MountCmd.Flags().VarP(
 		enumflag.New(&flockMode, "MODE", map[clientSession.FlockMode][]string{
 			clientSession.FlockModeOFD:         {"ofd"},
