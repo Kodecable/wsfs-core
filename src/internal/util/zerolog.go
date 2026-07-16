@@ -18,9 +18,18 @@ var ZerologLevelIds = map[zerolog.Level][]string{
 	zerolog.PanicLevel: {"panic"},
 }
 
-func SetupZerolog(noLogTime bool, noColor bool, level zerolog.Level) {
+func SetupZerolog(noLogTime bool, noColor bool, jsonLog bool, level zerolog.Level) {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	zerolog.ErrorFieldName = "Error"
+	if jsonLog {
+		logger := zerolog.New(os.Stdout)
+		if !noLogTime {
+			logger = logger.With().Timestamp().Logger()
+		}
+		log.Logger = logger
+		zerolog.SetGlobalLevel(level)
+		return
+	}
 	if noLogTime {
 		log.Logger = log.Output(zerolog.ConsoleWriter{
 			Out:             os.Stdout,

@@ -154,7 +154,7 @@ var QuickServeCmd = &cobra.Command{
   wsfs quick-serve unix://username:password@/run/unix.sock`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(c *cobra.Command, args []string) {
-		util.SetupZerolog(noLogTime, noLogColor, logLevel)
+		util.SetupZerolog(noLogTime, noLogColor, false, logLevel)
 
 		config := serverConfig.Default
 

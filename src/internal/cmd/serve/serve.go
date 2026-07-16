@@ -28,7 +28,7 @@ var ServeCmd = &cobra.Command{
 	Short: "Start a Websocket Filesystem server",
 	Args:  cobra.NoArgs,
 	Run: func(c *cobra.Command, _ []string) {
-		util.SetupZerolog(noLogTime, noLogColor, logLevel)
+		util.SetupZerolog(noLogTime, noLogColor, false, logLevel)
 
 		config := findAndDecodeConfig()
 		if c.Flags().Changed("insecure-session-id-math-rand") {

@@ -23,19 +23,20 @@ const (
 )
 
 type MountOption struct {
-	AttrTimeout        time.Duration
-	EntryTimeout       time.Duration
-	NegativeTimeout    time.Duration
-	PingInterval       time.Duration
-	UseFusemount       bool
-	VolumeLabel        string
-	MasqueradeAsNtfs   bool
-	EnableFuseLog      bool
-	FuseFsName         string
-	FsIds              util.FsIds
-	FlockMode          session.FlockMode
-	AllowedXAttrPrefix []string
-	DisableXAttrAppend bool
+	AttrTimeout          time.Duration
+	EntryTimeout         time.Duration
+	NegativeTimeout      time.Duration
+	PingInterval         time.Duration
+	UseFusemount         bool
+	VolumeLabel          string
+	MasqueradeAsNtfs     bool
+	EnableFuseLog        bool
+	FuseFsName           string
+	FsIds                util.FsIds
+	FlockMode            session.FlockMode
+	AllowedXAttrPrefix   []string
+	DisableXAttrAppend   bool
+	ReportFuseConnection bool
 }
 
 func dial(url, username, password, resumeId, expectedCertHash string) (conn *websocket.Conn, rsp *http.Response, err error) {

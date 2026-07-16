@@ -28,6 +28,7 @@ var (
 	directMount        bool
 	noLogTime          bool
 	noLogColor         bool
+	jsonLog            bool
 	uid                int64
 	gid                int64
 	otherUid           int64
@@ -58,7 +59,7 @@ var MountCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		util.SetupZerolog(noLogTime, noLogColor, logLevel)
+		util.SetupZerolog(noLogTime, noLogColor, jsonLog, logLevel)
 
 		urlArg := args[0]
 		if ok, _ := regexp.MatchString(`.*:?\/\/`, urlArg); !ok {
@@ -106,19 +107,20 @@ var MountCmd = &cobra.Command{
 		}
 
 		opts := client.MountOption{
-			AttrTimeout:        time.Duration(structTimeout) * time.Second,
-			EntryTimeout:       time.Duration(structTimeout) * time.Second,
-			NegativeTimeout:    time.Duration(structTimeout) * time.Second,
-			PingInterval:       time.Duration(pingInterval) * time.Second,
-			UseFusemount:       !directMount,
-			VolumeLabel:        volumeLabel,
-			MasqueradeAsNtfs:   masqueradeAsNtfs,
-			EnableFuseLog:      false,
-			FuseFsName:         inputedEndpoint.Host,
-			FsIds:              fsIds,
-			FlockMode:          flockMode,
-			AllowedXAttrPrefix: xattrPrefixes,
-			DisableXAttrAppend: disableXAttrAppend,
+			AttrTimeout:          time.Duration(structTimeout) * time.Second,
+			EntryTimeout:         time.Duration(structTimeout) * time.Second,
+			NegativeTimeout:      time.Duration(structTimeout) * time.Second,
+			PingInterval:         time.Duration(pingInterval) * time.Second,
+			UseFusemount:         !directMount,
+			VolumeLabel:          volumeLabel,
+			MasqueradeAsNtfs:     masqueradeAsNtfs,
+			EnableFuseLog:        false,
+			FuseFsName:           inputedEndpoint.Host,
+			FsIds:                fsIds,
+			FlockMode:            flockMode,
+			AllowedXAttrPrefix:   xattrPrefixes,
+			DisableXAttrAppend:   disableXAttrAppend,
+			ReportFuseConnection: jsonLog,
 		}
 		if logLevel == zerolog.TraceLevel {
 			opts.EnableFuseLog = true
@@ -170,6 +172,7 @@ func init() {
 	MountCmd.Flags().BoolVarP(&masqueradeAsNtfs, "masquerade-as-ntfs", "", false, "Allow Windows to run executable as administrator (Windows only)")
 	MountCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
 	MountCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
+	MountCmd.Flags().BoolVarP(&jsonLog, "json-log", "", false, "Write logs as newline-delimited JSON")
 	MountCmd.Flags().VarP(
 		enumflag.New(&logLevel, "LEVEL", util.ZerologLevelIds, enumflag.EnumCaseInsensitive),
 		"level", "l",
