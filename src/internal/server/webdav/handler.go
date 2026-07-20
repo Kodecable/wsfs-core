@@ -3,6 +3,7 @@ package webdav
 import (
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -159,6 +160,28 @@ func (h *Handler) handleGetHead(rsp http.ResponseWriter, req *http.Request, st *
 	}
 	if fi.IsDir() {
 		return http.StatusMethodNotAllowed, nil
+	}
+
+	if uq := req.URL.Query(); uq.Has("download") {
+		dqtext := uq.Get("download")
+
+		// mime.FormatMediaType serializes media-type parameters according to
+		// RFC 2045 and RFC 2616. Its non-ASCII encoding follows RFC 2231,
+		// which extends RFC 2045. RFC 5987 profiles that extension for HTTP.
+		// RFC 6266 specifies the RFC 5987 encoding for Content-Disposition's
+		// filename* parameter; Therefore, mime.FormatMediaType uses an
+		// equivalent encoding for Content-Disposition.
+
+		if dqtext == "false" || dqtext == "0" {
+			rsp.Header().Set("Content-Disposition", "inline")
+		} else {
+			rsp.Header().Set("Content-Disposition", mime.FormatMediaType(
+				"attachment",
+				map[string]string{
+					"filename": filepath.Base(path),
+				},
+			))
+		}
 	}
 
 	if !h.enableContentTypeProbe {
