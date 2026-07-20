@@ -17,6 +17,7 @@ import (
 	"wsfs-core/version"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -174,6 +175,15 @@ var QuickServeCmd = &cobra.Command{
 		if err != nil {
 			return cmdexit.New(2, fmt.Errorf("init server failed: %w", err))
 		}
+
+		util.SetupSignalHandlers(util.SignalHandlers{
+			Sighup:  hub.IssueShutdown,
+			Sigint:  hub.IssueShutdown,
+			Sigterm: hub.IssueShutdown,
+			OnHandlerPanic: func(obj any) {
+				log.Error().Any("Error", obj).Msg("Panic during signal handling")
+			},
+		})
 
 		err = hub.Run(config)
 

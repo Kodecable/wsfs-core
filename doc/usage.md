@@ -53,6 +53,8 @@ On Unix systems, the `serve` command handles the following signals:
 - `SIGHUP` reloads the server configuration.
 - `SIGINT` and `SIGTERM` request a graceful shutdown. The server stops accepting new HTTP connections and waits for active HTTP requests to finish. It does not explicitly close long-lived WSFS sessions in the shutdown handler.
 
+The `quick-serve` command handles all the three signals as a graceful shutdown.
+
 ### Reload Command
 
 This command instructs the server to reload its configuration. To view all available options:
