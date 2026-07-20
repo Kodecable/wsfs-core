@@ -53,7 +53,7 @@ func fuseMount(mountpoint string, session *session.Session, opt MountOption) err
 	if err != nil {
 		return err
 	}
-	if opt.ReportFuseConnection && opt.UseFusemount {
+	if opt.UseFusemount {
 		connectionID, err := fuseConnectionID(mountpoint)
 		if err != nil {
 			log.Warn().Err(err).Str("Mountpoint", mountpoint).Msg("Unable to determine FUSE connection Id")

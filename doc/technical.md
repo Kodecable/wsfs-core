@@ -114,7 +114,7 @@ The direct-mount method requires root privileges but does not require userspace 
 
 ##### FUSE Connection ID
 
-On Linux, when `--json-log` is enabled and the mount uses the default userspace `fusemount` method, the mount client tries to read and log the FUSE connection ID from `/proc/self/mountinfo`. This value also can be found as the Dev field in the Stat_t result for a file in the mount. If the ID cannot be determined, the client logs a warning instead.
+On Linux, when the mount uses the default userspace `fusemount` method, the mount client tries to read and log the FUSE connection ID from `/proc/self/mountinfo`. This value also can be found as the Dev field in the Stat_t result for a file in the mount. If the ID cannot be determined, the client logs a warning instead.
 
 The connection ID can be used to abort a FUSE connection when a mount is stuck and cannot be unmounted normally. Replace `<id>` and `<mountpoint>` with the values from the mount log:
 

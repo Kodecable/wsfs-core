@@ -103,20 +103,19 @@ var MountCmd = &cobra.Command{
 		}
 
 		opts := client.MountOption{
-			AttrTimeout:          time.Duration(structTimeout) * time.Second,
-			EntryTimeout:         time.Duration(structTimeout) * time.Second,
-			NegativeTimeout:      time.Duration(structTimeout) * time.Second,
-			PingInterval:         time.Duration(pingInterval) * time.Second,
-			UseFusemount:         !directMount,
-			VolumeLabel:          volumeLabel,
-			MasqueradeAsNtfs:     masqueradeAsNtfs,
-			EnableFuseLog:        false,
-			FuseFsName:           inputedEndpoint.Host,
-			FsIds:                fsIds,
-			FlockMode:            flockMode,
-			AllowedXAttrPrefix:   xattrPrefixes,
-			DisableXAttrAppend:   disableXAttrAppend,
-			ReportFuseConnection: jsonLog,
+			AttrTimeout:        time.Duration(structTimeout) * time.Second,
+			EntryTimeout:       time.Duration(structTimeout) * time.Second,
+			NegativeTimeout:    time.Duration(structTimeout) * time.Second,
+			PingInterval:       time.Duration(pingInterval) * time.Second,
+			UseFusemount:       !directMount,
+			VolumeLabel:        volumeLabel,
+			MasqueradeAsNtfs:   masqueradeAsNtfs,
+			EnableFuseLog:      false,
+			FuseFsName:         inputedEndpoint.Host,
+			FsIds:              fsIds,
+			FlockMode:          flockMode,
+			AllowedXAttrPrefix: xattrPrefixes,
+			DisableXAttrAppend: disableXAttrAppend,
 		}
 		if logLevel == zerolog.TraceLevel {
 			opts.EnableFuseLog = true
