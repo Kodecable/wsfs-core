@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+	cmdexit "wsfs-core/internal/cmd/exit"
 
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/spf13/cobra"
@@ -44,34 +45,31 @@ var ReloadConfigCmd = &cobra.Command{
 	Use:   "reload-server",
 	Short: "Tell a server reload config",
 	Args:  cobra.NoArgs,
-	Run: func(c *cobra.Command, _ []string) {
+	RunE: func(c *cobra.Command, _ []string) error {
 		var err error
 
 		if !c.Flags().Changed("pid") {
 			serverPid, err = findProcess()
 
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Find server process failed: %e\n", err)
-				os.Exit(2)
+				return cmdexit.New(2, fmt.Errorf("find server process failed: %w", err))
 			}
 
 			if serverPid <= 0 {
-				fmt.Fprintf(os.Stderr, "No server found. Try specifying the pid manually.\n")
-				os.Exit(1)
+				return cmdexit.New(1, fmt.Errorf("no server found; try specifying the pid manually"))
 			}
 		}
 
 		p, err := process.NewProcess(serverPid)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Send signal failed: %e\n", err)
-			os.Exit(2)
+			return cmdexit.New(2, fmt.Errorf("send signal failed: %w", err))
 		}
 
 		err = p.SendSignal(syscall.SIGHUP)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Send signal failed: %e\n", err)
-			os.Exit(2)
+			return cmdexit.New(2, fmt.Errorf("send signal failed: %w", err))
 		}
+		return nil
 	},
 }
 

@@ -1,9 +1,14 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"wsfs-core/internal/cmd"
 )
 
 func main() {
-	cmd.Execute()
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(cmd.ExitCode(err))
+	}
 }

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	cmdexit "wsfs-core/internal/cmd/exit"
+	cmdflags "wsfs-core/internal/cmd/flags"
 	cmdpassword "wsfs-core/internal/cmd/password"
 	"wsfs-core/internal/server"
 	serverConfig "wsfs-core/internal/server/config"
@@ -16,48 +18,39 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
-	"github.com/thediveo/enumflag"
 	"golang.org/x/crypto/bcrypt"
 )
 
 var randomPasswordRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*")
 
 var (
-	uid                       uint32
-	gid                       uint32
-	otherUid                  uint32
-	otherGid                  uint32
-	storage                   string
-	noLogTime                 bool
-	noLogColor                bool
-	insecureSessionIdMathRand bool
-	passwordSource            string
-	xattrPrefixes             []string
-	logLevel                  zerolog.Level = zerolog.InfoLevel
+	uid            uint32
+	gid            uint32
+	otherUid       uint32
+	otherGid       uint32
+	storage        string
+	noLogTime      bool
+	noLogColor     bool
+	jsonLog        bool
+	passwordSource string
+	logLevel       zerolog.Level = zerolog.InfoLevel
 )
-
-func exitWithError(code int, msg string, err error) {
-	fmt.Fprintln(os.Stderr, msg)
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(code)
-}
 
 const storageId = "main"
 
-func configStorage(config *serverConfig.Server, c *cobra.Command) {
+func configStorage(config *serverConfig.Server, c *cobra.Command) error {
 	if !c.Flags().Changed("storage") {
 		fmt.Fprintln(os.Stdout, "Warning: use working directory as storage")
 		workingDir, err := os.Getwd()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Unable to determine working directory")
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return fmt.Errorf("unable to determine working directory: %w", err)
 		}
 		storage = workingDir
 	}
 
 	config.Storages = append(config.Storages, serverConfig.Storage{Id: storageId, Path: storage})
 	config.Anonymous.Storage = storageId
+	return nil
 }
 
 func configIDs(config *serverConfig.Server, c *cobra.Command) {
@@ -76,12 +69,12 @@ func configIDs(config *serverConfig.Server, c *cobra.Command) {
 	}
 }
 
-func parseArg(config *serverConfig.Server, c *cobra.Command, args string) {
+func parseArg(config *serverConfig.Server, c *cobra.Command, args string) error {
 	arg := strings.TrimSpace(args)
 
 	if _, err := strconv.ParseUint(arg, 10, 16); err == nil {
 		if c.Flags().Changed("password") {
-			exitWithError(2, "Resolve password failed", cmdpassword.ErrMissingUsername)
+			return fmt.Errorf("resolve password failed: %w", cmdpassword.ErrMissingUsername)
 		}
 		config.Listener.Address = ":" + arg
 	} else {
@@ -91,7 +84,7 @@ func parseArg(config *serverConfig.Server, c *cobra.Command, args string) {
 
 		parsedUrl, err := url.Parse(arg)
 		if err != nil {
-			exitWithError(2, "Parse url failed", err)
+			return fmt.Errorf("parse URL failed: %w", err)
 		}
 
 		switch strings.ToLower(parsedUrl.Scheme) {
@@ -100,20 +93,19 @@ func parseArg(config *serverConfig.Server, c *cobra.Command, args string) {
 		case "unix":
 			config.Listener.Network = "unix"
 		default:
-			fmt.Fprintln(os.Stderr, "Unsupported listen network: '"+parsedUrl.Scheme+"'")
-			os.Exit(2)
+			return fmt.Errorf("unsupported listen network: %q", parsedUrl.Scheme)
 		}
 
 		username := parsedUrl.User.Username()
 		if username == "" && c.Flags().Changed("password") {
-			exitWithError(2, "Resolve password failed", cmdpassword.ErrMissingUsername)
+			return fmt.Errorf("resolve password failed: %w", cmdpassword.ErrMissingUsername)
 		}
 		if username != "" {
 			password, hasURLPassword := parsedUrl.User.Password()
 			var hash []byte
 			password, err = cmdpassword.Resolve(password, hasURLPassword, true, passwordSource, c.Flags().Changed("password"))
 			if err != nil {
-				exitWithError(2, "Resolve password failed", err)
+				return fmt.Errorf("resolve password failed: %w", err)
 			}
 			if password == "" {
 				fmt.Fprintln(os.Stderr, "Warning: password is empty; generating a random password")
@@ -121,7 +113,7 @@ func parseArg(config *serverConfig.Server, c *cobra.Command, args string) {
 				fmt.Fprintln(os.Stdout, "Password for user '"+username+"' is '"+password+"'")
 			}
 			if hash, err = bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost); err != nil {
-				exitWithError(2, "Unable to generate password hash", err)
+				return fmt.Errorf("unable to generate password hash: %w", err)
 			}
 			config.Users = append(config.Users, serverConfig.User{Name: username, SecretHash: string(hash), Storage: storageId})
 		}
@@ -142,6 +134,7 @@ func parseArg(config *serverConfig.Server, c *cobra.Command, args string) {
 			config.Listener.Address = hostname
 		}
 	}
+	return nil
 }
 
 var QuickServeCmd = &cobra.Command{
@@ -153,20 +146,22 @@ var QuickServeCmd = &cobra.Command{
   wsfs quick-serve http://username:password@[fe80::12:34]:20001
   wsfs quick-serve unix://username:password@/run/unix.sock`,
 	Args: cobra.MaximumNArgs(1),
-	Run: func(c *cobra.Command, args []string) {
-		util.SetupZerolog(noLogTime, noLogColor, false, logLevel)
+	RunE: func(c *cobra.Command, args []string) error {
+		util.SetupZerolog(noLogTime, noLogColor, jsonLog, logLevel)
 
 		config := serverConfig.Default
 
-		configStorage(&config, c)
+		if err := configStorage(&config, c); err != nil {
+			return cmdexit.New(1, err)
+		}
 		configIDs(&config, c)
-		config.WSFS.InsecureSessionIdMathRand = insecureSessionIdMathRand
-		config.WSFS.AllowedXAttrPrefix = xattrPrefixes
 
 		if len(args) != 0 {
-			parseArg(&config, c, args[0])
+			if err := parseArg(&config, c, args[0]); err != nil {
+				return cmdexit.New(2, err)
+			}
 		} else if c.Flags().Changed("password") {
-			exitWithError(2, "Resolve password failed", cmdpassword.ErrMissingUsername)
+			return cmdexit.New(2, fmt.Errorf("resolve password failed: %w", cmdpassword.ErrMissingUsername))
 		}
 
 		if len(config.Users) == 0 {
@@ -177,18 +172,15 @@ var QuickServeCmd = &cobra.Command{
 
 		hub, err := server.NewHub()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Init server failed")
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
+			return cmdexit.New(2, fmt.Errorf("init server failed: %w", err))
 		}
 
 		err = hub.Run(config)
 
 		if err != nil && err != http.ErrServerClosed {
-			fmt.Fprintln(os.Stderr, "Server stopped for error")
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return cmdexit.New(1, fmt.Errorf("server stopped for error: %w", err))
 		}
+		return nil
 	},
 }
 
@@ -197,18 +189,8 @@ func init() {
 		logLevel = zerolog.DebugLevel // default debug level in debug mode
 	}
 
-	QuickServeCmd.Flags().VarP(
-		enumflag.New(&logLevel, "LEVEL", util.ZerologLevelIds, enumflag.EnumCaseInsensitive),
-		"level", "l",
-		"Sets logging level; can be 'trace', 'debug', 'info', 'warning', 'error', 'fatal', 'panic'")
-	QuickServeCmd.Flags().Uint32VarP(&uid, "uid", "", 0, "Uid in filesystem")
-	QuickServeCmd.Flags().Uint32VarP(&gid, "gid", "", 0, "Gid in filesystem")
-	QuickServeCmd.Flags().Uint32VarP(&otherUid, "other-uid", "", 0, "Other uid in filesystem")
-	QuickServeCmd.Flags().Uint32VarP(&otherGid, "other-gid", "", 0, "Other gid in filesystem")
+	cmdflags.AddLoggingFlags(QuickServeCmd.Flags(), &logLevel, &noLogTime, &noLogColor, &jsonLog)
+	cmdflags.AddFsIDFlags(QuickServeCmd.Flags(), &uid, &gid, &otherUid, &otherGid)
 	QuickServeCmd.Flags().StringVarP(&storage, "storage", "s", "", "Storage path")
-	QuickServeCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
-	QuickServeCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
-	QuickServeCmd.Flags().BoolVarP(&insecureSessionIdMathRand, "insecure-session-id-math-rand", "", false, "Use math/rand for WSFS session resume IDs instead of crypto/rand; insecure and easier to predict")
-	QuickServeCmd.Flags().StringVarP(&passwordSource, "password", "", "", cmdpassword.FlagUsage)
-	QuickServeCmd.Flags().StringArrayVarP(&xattrPrefixes, "xattr-prefix", "", nil, "Allow xattr names with this prefix; may be repeated")
+	cmdflags.AddPasswordFlag(QuickServeCmd.Flags(), &passwordSource)
 }

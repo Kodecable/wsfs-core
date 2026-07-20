@@ -3,7 +3,8 @@ package serve
 import (
 	"fmt"
 	"net/http"
-	"os"
+	cmdexit "wsfs-core/internal/cmd/exit"
+	cmdflags "wsfs-core/internal/cmd/flags"
 	"wsfs-core/internal/server"
 	serverConfig "wsfs-core/internal/server/config"
 	"wsfs-core/internal/util"
@@ -12,13 +13,13 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"github.com/thediveo/enumflag"
 )
 
 var (
 	configPath                string
 	noLogTime                 bool
 	noLogColor                bool
+	jsonLog                   bool
 	insecureSessionIdMathRand bool
 	logLevel                  zerolog.Level = zerolog.InfoLevel
 )
@@ -27,19 +28,20 @@ var ServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start a Websocket Filesystem server",
 	Args:  cobra.NoArgs,
-	Run: func(c *cobra.Command, _ []string) {
-		util.SetupZerolog(noLogTime, noLogColor, false, logLevel)
+	RunE: func(c *cobra.Command, _ []string) error {
+		util.SetupZerolog(noLogTime, noLogColor, jsonLog, logLevel)
 
-		config := findAndDecodeConfig()
+		config, err := findAndDecodeConfig(configPath)
+		if err != nil {
+			return cmdexit.New(2, err)
+		}
 		if c.Flags().Changed("insecure-session-id-math-rand") {
 			config.WSFS.InsecureSessionIdMathRand = insecureSessionIdMathRand
 		}
 
 		hub, err := server.NewHub()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Init server failed")
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
+			return cmdexit.New(2, fmt.Errorf("init server failed: %w", err))
 		}
 
 		hub.GetConfig = func() (serverConfig.Server, error) {
@@ -65,10 +67,9 @@ var ServeCmd = &cobra.Command{
 		err = hub.Run(config)
 
 		if err != nil && err != http.ErrServerClosed {
-			fmt.Fprintln(os.Stderr, "Server stopped for error")
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return cmdexit.New(1, fmt.Errorf("server stopped for error: %w", err))
 		}
+		return nil
 	},
 }
 
@@ -78,11 +79,6 @@ func init() {
 	}
 
 	ServeCmd.Flags().StringVarP(&configPath, "config", "c", internalDefaultConfigPath, "Path to config file")
-	ServeCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
-	ServeCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
-	ServeCmd.Flags().BoolVarP(&insecureSessionIdMathRand, "insecure-session-id-math-rand", "", false, "Use math/rand for WSFS session resume IDs instead of crypto/rand; insecure and easier to predict")
-	ServeCmd.Flags().VarP(
-		enumflag.New(&logLevel, "LEVEL", util.ZerologLevelIds, enumflag.EnumCaseInsensitive),
-		"level", "l",
-		"Sets logging level; can be 'trace', 'debug', 'info', 'warning', 'error', 'fatal', 'panic'")
+	cmdflags.AddLoggingFlags(ServeCmd.Flags(), &logLevel, &noLogTime, &noLogColor, &jsonLog)
+	ServeCmd.Flags().BoolVar(&insecureSessionIdMathRand, "insecure-session-id-math-rand", false, "Use math/rand for WSFS session resume IDs instead of crypto/rand; insecure and easier to predict")
 }

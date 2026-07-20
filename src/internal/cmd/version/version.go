@@ -69,7 +69,7 @@ var VersionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Args:  cobra.NoArgs,
-	Run: func(_ *cobra.Command, _ []string) {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		bi, ok := debug.ReadBuildInfo()
 		goVersion := "Unknown (Error: ReadBuildInfo() failed)"
 		if ok {
@@ -85,6 +85,7 @@ var VersionCmd = &cobra.Command{
 			printDependencies(bi, ok)
 			printSettings(bi, ok)
 		}
+		return nil
 	},
 }
 

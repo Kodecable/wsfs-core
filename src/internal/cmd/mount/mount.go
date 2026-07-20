@@ -3,6 +3,7 @@
 package mount
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"time"
 	"wsfs-core/internal/client"
 	clientSession "wsfs-core/internal/client/session"
+	cmdexit "wsfs-core/internal/cmd/exit"
+	cmdflags "wsfs-core/internal/cmd/flags"
 	cmdpassword "wsfs-core/internal/cmd/password"
 	"wsfs-core/internal/util"
 	"wsfs-core/version"
@@ -29,10 +32,10 @@ var (
 	noLogTime          bool
 	noLogColor         bool
 	jsonLog            bool
-	uid                int64
-	gid                int64
-	otherUid           int64
-	otherGid           int64
+	uid                uint32
+	gid                uint32
+	otherUid           uint32
+	otherGid           uint32
 	logLevel           zerolog.Level = zerolog.InfoLevel
 	certHash           string
 	passwordSource     string
@@ -48,16 +51,14 @@ var MountCmd = &cobra.Command{
   wsfs mount wsfss+unix://host.name/path/to/socket.sock/./server/path/?wsfs /path/to/mountpoint
   wsfs mount windows.mountpoint.like "P:"`,
 	Args: cobra.ExactArgs(2),
-	Run: func(c *cobra.Command, args []string) {
+	RunE: func(c *cobra.Command, args []string) error {
 		if pingInterval != 0 && pingInterval < 10 {
-			fmt.Fprintln(os.Stderr, "Bad ping interval: must be 0 or at least 10 seconds")
-			os.Exit(2)
+			return cmdexit.New(2, errors.New("bad ping interval: must be 0 or at least 10 seconds"))
 		}
 
 		fsIds, err := resolveFsIds(c)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return cmdexit.New(1, err)
 		}
 		util.SetupZerolog(noLogTime, noLogColor, jsonLog, logLevel)
 
@@ -68,9 +69,7 @@ var MountCmd = &cobra.Command{
 
 		inputedEndpoint, err := url.Parse(urlArg)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Parse endpoint url failed")
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return cmdexit.New(1, fmt.Errorf("parse endpoint URL failed: %w", err))
 		}
 
 		endpoint := url.URL{
@@ -85,8 +84,7 @@ var MountCmd = &cobra.Command{
 		passwd, hasURLPassword := inputedEndpoint.User.Password()
 		passwd, err = cmdpassword.Resolve(passwd, hasURLPassword, username != "", passwordSource, c.Flags().Changed("password"))
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return cmdexit.New(1, err)
 		}
 		if username != "" && passwd == "" {
 			fmt.Fprintln(os.Stderr, "Warning: password is empty")
@@ -101,9 +99,7 @@ var MountCmd = &cobra.Command{
 		case "ws", "wss", "wsfs+unix", "wsfss+unix":
 			endpoint.Scheme = inputedEndpoint.Scheme
 		default:
-			fmt.Fprintln(os.Stderr, "Bad endpoint url: unknown scheme")
-			fmt.Fprintln(os.Stderr, "Want: 'wsfs' or 'wsfss', have: "+inputedEndpoint.Scheme)
-			os.Exit(1)
+			return cmdexit.New(1, fmt.Errorf("bad endpoint URL: unknown scheme; want 'wsfs' or 'wsfss', have: %s", inputedEndpoint.Scheme))
 		}
 
 		opts := client.MountOption{
@@ -129,28 +125,25 @@ var MountCmd = &cobra.Command{
 		err = client.Mount(args[1], endpoint.String(), certHash, username, passwd, opts)
 
 		if err != nil {
-			os.Exit(2)
+			return cmdexit.New(2, fmt.Errorf("mount failed: %w", err))
 		}
+		return nil
 	},
 }
 
 func resolveFsIds(c *cobra.Command) (util.FsIds, error) {
 	ids := util.OptionalFsIds{}
 	if c.Flags().Changed("uid") {
-		value := uint32(uid)
-		ids.Uid = &value
+		ids.Uid = &uid
 	}
 	if c.Flags().Changed("gid") {
-		value := uint32(gid)
-		ids.Gid = &value
+		ids.Gid = &gid
 	}
 	if c.Flags().Changed("other-uid") {
-		value := uint32(otherUid)
-		ids.OtherUid = &value
+		ids.OtherUid = &otherUid
 	}
 	if c.Flags().Changed("other-gid") {
-		value := uint32(otherGid)
-		ids.OtherGid = &value
+		ids.OtherGid = &otherGid
 	}
 
 	return ids.Resolve()
@@ -161,26 +154,17 @@ func init() {
 		logLevel = zerolog.DebugLevel // default debug level in debug mode
 	}
 
-	MountCmd.Flags().Int64VarP(&uid, "uid", "", 0, "Uid in filesystem (Unix only)")
-	MountCmd.Flags().Int64VarP(&gid, "gid", "", 0, "Gid in filesystem (Unix only)")
-	MountCmd.Flags().Int64VarP(&otherUid, "other-uid", "", 0, "Other uid in filesystem (Unix only)")
-	MountCmd.Flags().Int64VarP(&otherGid, "other-gid", "", 0, "Other gid in filesystem (Unix only)")
-	MountCmd.Flags().StringVarP(&volumeLabel, "volume-label", "", "WSFS Storage", "Volume label (Windows only)")
-	MountCmd.Flags().BoolVarP(&directMount, "direct-mount", "", false, "Use mount syscall instead fusemount, root needed (Unix only)")
-	MountCmd.Flags().Int16VarP(&structTimeout, "struct-timeout", "", 60, "Fuse struct cache timeout in seconds, improves performance and inconsistency")
-	MountCmd.Flags().Int16VarP(&pingInterval, "ping-interval", "", 60, "WebSocket ping interval in seconds; 0 disables client keepalive")
-	MountCmd.Flags().BoolVarP(&masqueradeAsNtfs, "masquerade-as-ntfs", "", false, "Allow Windows to run executable as administrator (Windows only)")
-	MountCmd.Flags().BoolVarP(&noLogTime, "no-log-time", "", false, "Use log format without time")
-	MountCmd.Flags().BoolVarP(&noLogColor, "no-log-color", "", false, "Disable colors in log output")
-	MountCmd.Flags().BoolVarP(&jsonLog, "json-log", "", false, "Write logs as newline-delimited JSON")
-	MountCmd.Flags().VarP(
-		enumflag.New(&logLevel, "LEVEL", util.ZerologLevelIds, enumflag.EnumCaseInsensitive),
-		"level", "l",
-		"Sets logging level; can be 'trace', 'debug', 'info', 'warning', 'error', 'fatal', 'panic'")
-	MountCmd.Flags().StringVarP(&certHash, "cert-hash", "", "", "Only verify TLS server cert hash; copy the hash from the connection log")
-	MountCmd.Flags().StringVarP(&passwordSource, "password", "", "", cmdpassword.FlagUsage)
-	MountCmd.Flags().StringArrayVarP(&xattrPrefixes, "xattr-prefix", "", nil, "Allow xattr names with this prefix; may be repeated")
-	MountCmd.Flags().BoolVarP(&disableXAttrAppend, "disable-xattr-append", "", false, "Return ERANGE instead of splitting oversized xattr writes")
+	cmdflags.AddFsIDFlags(MountCmd.Flags(), &uid, &gid, &otherUid, &otherGid)
+	MountCmd.Flags().StringVar(&volumeLabel, "volume-label", "WSFS Storage", "Volume label (Windows only)")
+	MountCmd.Flags().BoolVar(&directMount, "direct-mount", false, "Use mount syscall instead fusemount, root needed (Unix only)")
+	MountCmd.Flags().Int16Var(&structTimeout, "struct-timeout", 60, "Fuse struct cache timeout in seconds, improves performance and inconsistency")
+	MountCmd.Flags().Int16Var(&pingInterval, "ping-interval", 60, "WebSocket ping interval in seconds; 0 disables client keepalive")
+	MountCmd.Flags().BoolVar(&masqueradeAsNtfs, "masquerade-as-ntfs", false, "Allow Windows to run executable as administrator (Windows only)")
+	cmdflags.AddLoggingFlags(MountCmd.Flags(), &logLevel, &noLogTime, &noLogColor, &jsonLog)
+	MountCmd.Flags().StringVar(&certHash, "cert-hash", "", "Only verify TLS server cert hash; copy the hash from the connection log")
+	cmdflags.AddPasswordFlag(MountCmd.Flags(), &passwordSource)
+	MountCmd.Flags().StringArrayVar(&xattrPrefixes, "xattr-prefix", nil, "Allow xattr names with this prefix; may be repeated")
+	MountCmd.Flags().BoolVar(&disableXAttrAppend, "disable-xattr-append", false, "Return ERANGE instead of splitting oversized xattr writes")
 	MountCmd.Flags().VarP(
 		enumflag.New(&flockMode, "MODE", map[clientSession.FlockMode][]string{
 			clientSession.FlockModeOFD:         {"ofd"},
