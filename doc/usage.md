@@ -42,9 +42,16 @@ This command is essentially a wrapper around the Serve Command.
 
 WebDAV and WebUI are enabled, with WebUI custom disabled.
 
-If no username is given, anonymous access is enabled. If no password is provided, a random one will be generated and printed. If no storage path is specified, the server will use the working directory.
+If no username is given, writable anonymous access is enabled. Do not expose a server started in this mode to an untrusted network. If a username is given but no password is provided, a random password will be generated and printed. If no storage path is specified, the server will use the working directory.
 
 Servers started by this command cannot be reloaded.
+
+### Signal Handling
+
+On Unix systems, the `serve` command handles the following signals:
+
+- `SIGHUP` reloads the server configuration.
+- `SIGINT` and `SIGTERM` request a graceful shutdown. The server stops accepting new HTTP connections and waits for active HTTP requests to finish. It does not explicitly close long-lived WSFS sessions in the shutdown handler.
 
 ### Reload Command
 
@@ -62,6 +69,8 @@ If no PID is specified, it will automatically try to find one. However, this aut
 
 This command cannot check the result of reload; please check the server's log.
 
+Reloading does not intentionally destroy established WSFS sessions. For listener changes, the server starts the replacement listener before shutting down the old one and waits for active work to finish. See [technical.md](https://github.com/Kodecable/wsfs-core/blob/main/doc/technical.md) for the session lifecycle details.
+
 ### Hash Command
 
 This command generates a bcrypt hash used in server configuration. To view all available options:
@@ -71,6 +80,16 @@ $ wsfs hash --help
 ```
 
 If no password is given as arguments, one will be read from stdin.
+
+### Password Sources
+
+The `--password` option is available for `mount` and `quick-serve`. It accepts one of the following sources:
+
+- `stdin` reads the password interactively or from standard input.
+- `env:NAME` reads the password from the environment variable `NAME`.
+- `file:PATH` reads the password from `PATH` and removes trailing line endings.
+
+For `mount`, the URL must include a username when `--password` is used. A password embedded in the URL and `--password` cannot be used together. Using a password source is recommended when putting credentials in the command line or shell history would be undesirable.
 
 ## Client
 
@@ -98,19 +117,19 @@ Typical workflow:
 2. Copy the printed hash value, for example `SHA256:0123456789abcdef...`.
 3. Re-run mount with `--cert-hash <copied-hash>`.
 
+The client sends WebSocket ping frames every 60 seconds by default. Use `--ping-interval 0` to disable client keepalive, or set another interval of at least 10 seconds. A failed ping triggers the session recovery process described in [technical.md](https://github.com/Kodecable/wsfs-core/blob/main/doc/technical.md).
+
 #### Linux
 
 Although FUSE supports multi-user access, it is very dangerous and not recommended on WSFS. We recommend running WSFS mount as a normal user and only using this user to access the file system.
 
-The SIGHUP/SIGINT/SIGTERM signals are supported for graceful system shutdown. It waits until there are no ongoing requests, performing a WebSocket close handshake to complete the shutdown.
+The mount client supports `SIGHUP`, `SIGINT`, and `SIGTERM` for graceful shutdown. When it receives one of these signals, it waits for all ongoing requests to finish and completes the WebSocket close handshake before shutting down.
 
-If you are on Android, you may need root to mount, use the option `--direct-mount`.
+On Android, where the userspace FUSE mounting tools may be unavailable, use `--direct-mount`. This option uses the `mount` syscall and requires root privileges. For details, see [technical.md](https://github.com/Kodecable/wsfs-core/blob/main/doc/technical.md).
 
-The `--flock` option controls how BSD `flock(2)` requests are handled:
+The `--flock` option controls how BSD `flock(2)` requests are handled. For details, see [technical.md](https://github.com/Kodecable/wsfs-core/blob/main/doc/technical.md).
 
-- `ofd` maps `flock` to whole-file OFD locks. This is the default. It provides practical cross-client locking, but `flock` shares the same conflict domain as WSFS fcntl/OFD byte-range locks and is not a strict Linux local-filesystem `flock` emulation.
-- `unsupported` returns `ENOTSUP` for `flock` requests.
-- `noop` reports `flock` success without taking any lock. 
+When the WebSocket connection is interrupted, the client attempts to resume the existing WSFS session automatically. The session may be unavailable briefly while the server finishes handling the previous connection.
 
 #### Windows
 
